@@ -23,9 +23,11 @@ attribution.textContent =
 overlay.appendChild(attribution);
 
 const scenes = new SceneManager();
+const input = new Input();
+input.attachPointer(renderer.domElement);
 const ctx: GameContext = {
   world: new World(renderer),
-  input: new Input(),
+  input,
   scenes,
   overlay,
   go: {

@@ -206,7 +206,7 @@ MVP は **PLATEAU の1区画**で進める。
 | ミニマップ | 国土地理院 淡色地図（地理院タイル） | CSS フィルタで反転して暗い配色にしている |
 | 通り名 | OpenStreetMap（`src/data/roadLabels.json`） | 幹線道路に沿って約350mごとのラベル位置。`node scripts/fetch-roads.mjs` で作り直せる |
 | 3D の駅名・通り名 | 上の駅・通り名データ | 駅は上空の看板（近い10駅）、通り名は路面に描く文字。カメラの周りだけ作る（`src/world/Labels.ts`） |
-| 空・雲 | three.js の Sky（大気散乱） | 太陽の向き・雲の量などは `ATMOSPHERE`（`src/core/config.ts`） |
+| 空・雲 | アニメ調の夕焼け（`src/world/AnimeSky.ts`）／ three.js の Sky（大気散乱） | `ATMOSPHERE.style` で切り替え。空・雲・光の色や太陽の向きも `ATMOSPHERE`（`src/core/config.ts`） |
 | 現在地 | 駅：OpenStreetMap（`src/data/stations.json`）、住所：国土地理院 逆ジオコーダ | 駅一覧は `node scripts/fetch-stations.mjs` で作り直せる |
 
 配信 URL は PLATEAU のデータカタログ API（`https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets`）で探せる。
@@ -247,3 +247,5 @@ npm run preview  # ビルド結果の確認
 | Space | 上昇 |
 | Shift | 下降 |
 | Esc | ポーズ / 再開 |
+| マウスドラッグ | 自機のまわりを見回す（離して1.5秒で後ろへ戻る） |
+| マウスホイール | カメラの距離を変える |

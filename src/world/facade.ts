@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { WORLD } from '../core/config';
 
 /**
  * テクスチャの無い建物（LOD1 など）に貼る、手続き的に描いた外壁テンプレート。
@@ -88,6 +89,7 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
   const map = getAtlas();
   material.onBeforeCompile = (shader) => {
     shader.uniforms.facadeMap = { value: map };
+    shader.uniforms.facadeBrightness = { value: WORLD.buildings.facadeBrightness };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -109,6 +111,7 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
         '#include <common>',
         `#include <common>
         uniform sampler2D facadeMap;
+        uniform float facadeBrightness;
         varying vec3 vFacade;
         varying vec3 vFacadeWorldPos;
         varying vec3 vFacadeWorldNormal;`,
@@ -135,7 +138,7 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
           float v = (row + PAD + fract(cont.y) * (1.0 - 2.0 * PAD)) / ROWS;
           vec2 g = vec2(1.0, 1.0 / ROWS);
           vec4 facadeColor = textureGrad(facadeMap, vec2(cont.x, v), dFdx(cont) * g, dFdy(cont) * g);
-          diffuseColor.rgb *= facadeColor.rgb * vFacade.z;
+          diffuseColor.rgb *= facadeColor.rgb * vFacade.z * facadeBrightness;
         }`,
       );
   };

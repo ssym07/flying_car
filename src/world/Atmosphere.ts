@@ -1,61 +1,56 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { ATMOSPHERE, WORLD } from '../core/config';
+import { AnimeSky } from './AnimeSky';
 
 /**
- * 空・雲・太陽・霧・環境光をまとめて扱う。
- * 空は物理ベースの大気散乱シェーダー（three.js の Sky）で描き、雲も同じシェーダーで流す。
+ * 空・雲・太陽・霧・環境光をまとめて扱う。ATMOSPHERE.style で空の描き方を選ぶ。
+ * - anime：アニメ調の夕焼け空（AnimeSky）
+ * - physical：物理ベースの大気散乱シェーダー（three.js の Sky）。雲も同じシェーダーで流す
  * 建物を照らす太陽光は空の太陽と同じ向きにし、ガラスに映る環境マップも空から作る。
  */
 export class Atmosphere {
-  private readonly sky = new Sky();
-  private readonly sun: THREE.DirectionalLight;
-  private readonly hemisphere: THREE.HemisphereLight;
+  private readonly sky: Sky | AnimeSky;
   private time = 0;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = ATMOSPHERE.exposure;
+    const anime = ATMOSPHERE.style === 'anime';
+    const preset = anime ? ATMOSPHERE.anime : ATMOSPHERE.physical;
+    const sunDir = sunDirection(preset.sunElevationDeg, preset.sunAzimuthDeg);
 
-    const sunDir = sunDirection();
-    const u = this.sky.material.uniforms;
-    u.turbidity.value = ATMOSPHERE.turbidity;
-    u.rayleigh.value = ATMOSPHERE.rayleigh;
-    u.mieCoefficient.value = ATMOSPHERE.mieCoefficient;
-    u.mieDirectionalG.value = ATMOSPHERE.mieDirectionalG;
-    u.sunPosition.value.copy(sunDir);
-    u.cloudCoverage.value = ATMOSPHERE.clouds.coverage;
-    u.cloudDensity.value = ATMOSPHERE.clouds.density;
-    u.cloudScale.value = ATMOSPHERE.clouds.scale;
-    u.cloudSpeed.value = ATMOSPHERE.clouds.speed;
-    u.cloudElevation.value = ATMOSPHERE.clouds.elevation;
+    // アニメ調は色をそのまま出したいので、色相のずれが少ないトーンマッピングにする
+    renderer.toneMapping = anime ? THREE.NeutralToneMapping : THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = preset.exposure;
 
-    // 空の箱はカメラに追従させる。描画距離より内側に収め、最初に描いて（深度は書かない）
+    this.sky = anime ? new AnimeSky(sunDir) : createPhysicalSky(sunDir);
+    // 空はカメラに追従させる。描画距離より内側に収め、最初に描いて（深度は書かない）
     // 後から描く建物や地形で上書きされるようにする
     this.sky.scale.setScalar(WORLD.viewDistance * 0.5);
     this.sky.renderOrder = -1;
     this.sky.frustumCulled = false;
     scene.add(this.sky);
 
-    this.sun = new THREE.DirectionalLight(0xfff4e5, ATMOSPHERE.sunIntensity);
-    this.sun.position.copy(sunDir);
-    this.hemisphere = new THREE.HemisphereLight(0xe6eef8, 0x4d4a44, ATMOSPHERE.ambientIntensity);
-    scene.add(this.sun, this.hemisphere);
+    const sun = new THREE.DirectionalLight(preset.sunColor, preset.sunIntensity);
+    sun.position.copy(sunDir);
+    const hemisphere = new THREE.HemisphereLight(preset.skyLight, preset.groundLight, preset.ambientIntensity);
+    scene.add(sun, hemisphere);
 
     scene.background = null;
-    scene.fog = new THREE.Fog(ATMOSPHERE.fogColor, WORLD.fog.near, WORLD.fog.far);
+    scene.fog = new THREE.Fog(preset.fogColor, preset.fog.near, preset.fog.far);
 
-    // ガラスなどに映る環境マップ（雲や太陽円盤は入れない）を1回だけ作る
+    // ガラスなどに映る環境マップを1回だけ作る
     const envScene = new THREE.Scene();
-    const envSky = new Sky();
+    const envSky = anime ? new AnimeSky(sunDir) : createPhysicalSky(sunDir);
+    if (envSky instanceof Sky) {
+      // 物理ベースの空は太陽円盤や雲を入れると映り込みがちらつく
+      envSky.material.uniforms.showSunDisc.value = 0;
+      envSky.material.uniforms.cloudCoverage.value = 0;
+    }
     envSky.scale.setScalar(1000);
-    Object.assign(envSky.material.uniforms, THREE.UniformsUtils.clone(this.sky.material.uniforms));
-    envSky.material.uniforms.showSunDisc.value = 0;
-    envSky.material.uniforms.cloudCoverage.value = 0;
     envScene.add(envSky);
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(envScene).texture;
-    scene.environmentIntensity = ATMOSPHERE.environmentIntensity;
+    scene.environmentIntensity = preset.environmentIntensity;
     pmrem.dispose();
     envSky.geometry.dispose();
     envSky.material.dispose();
@@ -65,14 +60,32 @@ export class Atmosphere {
   update(camera: THREE.Camera, dt: number): void {
     this.sky.position.copy(camera.position);
     this.time += dt;
-    this.sky.material.uniforms.time.value = this.time;
+    if (this.sky instanceof AnimeSky) this.sky.time = this.time;
+    else this.sky.material.uniforms.time.value = this.time;
   }
 }
 
+function createPhysicalSky(sunDir: THREE.Vector3): Sky {
+  const p = ATMOSPHERE.physical;
+  const sky = new Sky();
+  const u = sky.material.uniforms;
+  u.turbidity.value = p.turbidity;
+  u.rayleigh.value = p.rayleigh;
+  u.mieCoefficient.value = p.mieCoefficient;
+  u.mieDirectionalG.value = p.mieDirectionalG;
+  u.sunPosition.value.copy(sunDir);
+  u.cloudCoverage.value = p.clouds.coverage;
+  u.cloudDensity.value = p.clouds.density;
+  u.cloudScale.value = p.clouds.scale;
+  u.cloudSpeed.value = p.clouds.speed;
+  u.cloudElevation.value = p.clouds.elevation;
+  return sky;
+}
+
 /** 太陽の向き（ローカル座標、+x=西, +z=北, +y=上） */
-function sunDirection(): THREE.Vector3 {
-  const el = ATMOSPHERE.sunElevationDeg * THREE.MathUtils.DEG2RAD;
+function sunDirection(elevationDeg: number, azimuthDeg: number): THREE.Vector3 {
+  const el = elevationDeg * THREE.MathUtils.DEG2RAD;
   // 方位は北から時計回り。東 = -x、北 = +z
-  const az = ATMOSPHERE.sunAzimuthDeg * THREE.MathUtils.DEG2RAD;
+  const az = azimuthDeg * THREE.MathUtils.DEG2RAD;
   return new THREE.Vector3(-Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
 }

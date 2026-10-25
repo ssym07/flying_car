@@ -84,6 +84,9 @@ export class FlightScene implements GameScene {
   render(alpha: number, frameDt: number): void {
     const { world } = this.ctx;
     this.vehicle.syncMesh(alpha);
+    // マウス操作は受け取って捨てる（ポーズ中＝frameDt 0 の間は視点を動かさない）
+    const pointer = this.ctx.input.consumePointer();
+    if (frameDt > 0) this.chase.control(pointer.dx, pointer.dy, pointer.wheel, pointer.dragging);
     this.chase.follow(this.vehicle.mesh.position, this.vehicle.mesh.rotation.y, frameDt);
 
     const s = this.vehicle.state;

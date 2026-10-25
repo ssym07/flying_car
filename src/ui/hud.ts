@@ -12,7 +12,7 @@ export class Hud {
       <div class="hud-item"><span class="hud-label">SPEED</span><span class="hud-value" data-speed>0</span><span class="hud-unit">km/h</span></div>
       <div class="hud-item"><span class="hud-label">ALT</span><span class="hud-value" data-alt>0</span><span class="hud-unit">m</span></div>
       <div class="hud-item"><span class="hud-label">AGL</span><span class="hud-value" data-agl>0</span><span class="hud-unit">m</span></div>
-      <div class="hud-help">WASD 移動・旋回 / Space 上昇 / Shift 下降 / Esc ポーズ</div>
+      <div class="hud-help">WASD 移動・旋回 / Space 上昇 / Shift 下降 / ドラッグ 視点 / ホイール ズーム / Esc ポーズ</div>
     `;
     this.speedEl = this.root.querySelector('[data-speed]')!;
     this.altEl = this.root.querySelector('[data-alt]')!;

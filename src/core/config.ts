@@ -61,6 +61,25 @@ export const CAMERA = {
   lookRate: 12,
   /** 壁に当たった時に手前へ寄せる距離 (m) */
   wallPadding: 0.6,
+  /** マウスでの視点操作 */
+  mouse: {
+    /** ドラッグ 1px あたりの回転 (rad) */
+    sensitivity: 0.005,
+    /** 見上げ・見下ろしの範囲（水平からの角度） */
+    minPitchDeg: -5,
+    maxPitchDeg: 85,
+    /** ホイールでの距離の倍率の範囲 */
+    minZoom: 0.5,
+    maxZoom: 4,
+    /** ホイール 1 目盛り（deltaY 100）あたりの距離の変化率 */
+    zoomStep: 0.12,
+    /** ドラッグをやめてから自機の後ろへ戻り始めるまでの秒数 */
+    returnDelay: 1.5,
+    /** 後ろへ戻る速さ */
+    returnRate: 2.5,
+    /** マウスで回している間の追従の速さ（遅いとカメラが自機を突き抜ける） */
+    followRate: 18,
+  },
 };
 
 export const WORLD = {
@@ -74,13 +93,15 @@ export const WORLD = {
      * 粗い階層の建物は大きく簡略化されていて「くさび形」に崩れるので、霧より手前に出さないようにする
      */
     plainErrorTarget: 30,
+    /** 外壁テンプレートの明るさの倍率（色味は保ったまま全体を明るく・暗くする） */
+    facadeBrightness: 1.8,
   },
   /** 道路（PLATEAU 交通モデル LOD3, 千代田区のみ） */
   roads: {
     url: 'https://assets.cms.plateau.reearth.io/assets/c6/9e8877-46d9-45a4-aebf-aa8d6105d698/13101_chiyoda-ku_pref_2025_citygml_1_op_tran_3dtiles_lod3/tileset.json',
     errorTarget: 24,
     /** 配信データは白一色なので、アスファルトの色で塗る */
-    color: 0x5a5d61,
+    color: 0x7a7e86,
   },
   /**
    * タイルのキャッシュ（全レイヤー共有、GPU メモリ換算）。
@@ -104,7 +125,6 @@ export const WORLD = {
    * これより先のタイルは読まないので、広げると遠くの区の読込に回線を取られて手前が遅くなる
    */
   viewDistance: 5000,
-  fog: { near: 1200, far: 4500 },
   /**
    * 遠くのタイルセットほど詳細度を下げる。
    * タイルセットを囲む球までの距離が near を超えたら、errorTarget を距離に比例して最大 maxScale 倍まで上げる
@@ -169,37 +189,89 @@ export const MINIMAP = {
   maxLabelsPerName: 1,
 };
 
-/** 空・太陽・雲 */
+/** 空・太陽・雲・光。style で空の描き方を切り替える */
 export const ATMOSPHERE = {
-  /** 太陽の高さ（地平線からの角度） */
-  sunElevationDeg: 38,
-  /** 太陽の方位（北から時計回り）。200 で南南西 */
-  sunAzimuthDeg: 200,
-  /** 大気の濁り（大きいほど白っぽく霞む） */
-  turbidity: 6,
-  /** 空の青さ */
-  rayleigh: 1.6,
-  mieCoefficient: 0.004,
-  mieDirectionalG: 0.82,
-  /** 画面全体の明るさ（トーンマッピングの露出） */
-  exposure: 0.45,
-  sunIntensity: 2.6,
-  ambientIntensity: 1.0,
-  /** ガラスなどへの空の映り込みの強さ */
-  environmentIntensity: 0.3,
-  /** 霧の色。地平線付近の空の色に合わせる */
-  fogColor: 0xb4c9de,
-  clouds: {
-    /** 空のどれくらいを雲が覆うか (0..1) */
-    coverage: 0.45,
-    /** 雲の濃さ */
-    density: 0.5,
-    /** 雲の模様の細かさ */
-    scale: 0.0002,
-    /** 雲が流れる速さ */
-    speed: 0.00003,
-    /** 雲の高さの見え方（大きいほど低く・近く見える） */
-    elevation: 0.5,
+  /** 'anime'：アニメ調の夕焼け空 / 'physical'：物理ベースの昼の空 */
+  style: 'anime' as 'anime' | 'physical',
+
+  /** アニメ調の夕焼け（紫〜ピンクの空、夕日に縁が光る雲） */
+  anime: {
+    /** 太陽の高さ（地平線からの角度）と方位（北から時計回り）。255 で西南西 */
+    sunElevationDeg: 4,
+    sunAzimuthDeg: 255,
+    colors: {
+      /** 天頂 */
+      zenith: 0x5c58b0,
+      /** 空の中ほど */
+      upper: 0xa28ad6,
+      /** 地平線 */
+      horizon: 0xf2aac0,
+      /** 夕日のまわりの暖色 */
+      glow: 0xffc59c,
+      /** 雲の影・中間・日の当たる面・縁の光 */
+      cloudShadow: 0x8676bf,
+      cloudMid: 0xcfa2c9,
+      cloudLit: 0xffbfa6,
+      cloudRim: 0xfff0d8,
+    },
+    clouds: {
+      /** 雲の出る量（小さいほど多い。0..1） */
+      coverage: 0.5,
+      /** 雲の縁のくっきりさ（小さいほどくっきり） */
+      sharpness: 0.1,
+      /** 雲の模様の大きさ（小さいほど大きな雲） */
+      scale: 0.85,
+      /** 雲が流れる速さ */
+      speed: 0.003,
+    },
+    /** 画面全体の明るさ（トーンマッピングの露出） */
+    exposure: 1.3,
+    /** 夕日の光の色と強さ（建物の日の当たる面） */
+    sunColor: 0xffa77a,
+    sunIntensity: 3.5,
+    /** 空からの光（建物の影の面は紫がかる）と地面からの照り返し */
+    skyLight: 0xc4b6ee,
+    groundLight: 0x7c6c90,
+    ambientIntensity: 3.2,
+    environmentIntensity: 0.5,
+    /** 霧の色。空の地平線の色（colors.horizon）と同じにして、遠くの街を空に溶け込ませる */
+    fogColor: 0xf2aac0,
+    /** 霧のかかり始めと、完全に霞む距離 (m) */
+    fog: { near: 700, far: 4200 },
+  },
+
+  /** 物理ベースの昼の空（three.js の Sky） */
+  physical: {
+    sunElevationDeg: 38,
+    /** 200 で南南西 */
+    sunAzimuthDeg: 200,
+    /** 大気の濁り（大きいほど白っぽく霞む） */
+    turbidity: 6,
+    /** 空の青さ */
+    rayleigh: 1.6,
+    mieCoefficient: 0.004,
+    mieDirectionalG: 0.82,
+    exposure: 0.45,
+    sunColor: 0xfff4e5,
+    sunIntensity: 2.6,
+    skyLight: 0xe6eef8,
+    groundLight: 0x4d4a44,
+    ambientIntensity: 1.0,
+    environmentIntensity: 0.3,
+    fogColor: 0xb4c9de,
+    fog: { near: 1200, far: 4500 },
+    clouds: {
+      /** 空のどれくらいを雲が覆うか (0..1) */
+      coverage: 0.45,
+      /** 雲の濃さ */
+      density: 0.5,
+      /** 雲の模様の細かさ */
+      scale: 0.0002,
+      /** 雲が流れる速さ */
+      speed: 0.00003,
+      /** 雲の高さの見え方（大きいほど低く・近く見える） */
+      elevation: 0.5,
+    },
   },
 };
 
