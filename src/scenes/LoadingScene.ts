@@ -1,4 +1,4 @@
-import { CAMERA, VEHICLE, WORLD } from '../core/config';
+import { CAMERA, TERRAIN, VEHICLE, WORLD } from '../core/config';
 import { mountScreen, type GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 
@@ -45,7 +45,7 @@ export class LoadingScene implements GameScene {
   update(dt: number): void {
     const { layers, terrain } = this.ctx.world;
     this.elapsed += dt;
-    const idle = terrain.isLoaded && layers.every((l) => l.hasLoaded && !l.isLoading);
+    const idle = terrain.isLoadedWithin(TERRAIN.initialRadius) && layers.every((l) => l.isIdle);
     this.settled = idle ? this.settled + dt : 0;
 
     if (this.settled >= SETTLE_SEC || this.elapsed >= WORLD.loadTimeoutSec) {
@@ -57,7 +57,7 @@ export class LoadingScene implements GameScene {
   render(): void {
     this.ctx.world.render();
     const { layers, terrain } = this.ctx.world;
-    const all = [...layers.map((l) => l.progress), terrain.progress];
+    const all = [...layers.map((l) => l.progress), terrain.progressWithin(TERRAIN.initialRadius)];
     const pct = Math.round((all.reduce((a, b) => a + b, 0) / all.length) * 100);
     this.bar!.style.width = `${pct}%`;
     this.label!.textContent = `${pct}%`;

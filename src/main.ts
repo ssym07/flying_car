@@ -18,7 +18,8 @@ document.querySelector('#app')!.appendChild(renderer.domElement);
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const attribution = document.createElement('div');
 attribution.className = 'attribution';
-attribution.textContent = '出典：国土交通省 Project PLATEAU（3D都市モデル）／国土地理院（標高タイル・全国最新写真）';
+attribution.textContent =
+  '出典：国土交通省 Project PLATEAU（3D都市モデル）／国土地理院（標高タイル・全国最新写真・逆ジオコーダ）／駅：© OpenStreetMap contributors';
 overlay.appendChild(attribution);
 
 const scenes = new SceneManager();

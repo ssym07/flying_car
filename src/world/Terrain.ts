@@ -1,132 +1,226 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
-import { TERRAIN, WORLD } from '../core/config';
+import { TERRAIN } from '../core/config';
 
 /** 標高タイルの「データなし」（水面など） */
 const NO_DATA = Number.NaN;
 const TILE_PX = 256;
 
+interface Chunk {
+  x: number;
+  y: number;
+  /** チャンク中心のローカル座標 */
+  center: THREE.Vector3;
+  mesh: THREE.Mesh | null;
+  /** 読込中に範囲外になったら true（読み終わったら捨てる） */
+  dead: boolean;
+}
+
 /**
  * 国土地理院の標高タイルから地形メッシュを作り、航空写真を貼る。
+ * 標高タイル1枚（約1km四方）を1チャンクとし、カメラの周りだけ読んで離れたら捨てる。
  * 頂点は 緯度経度+楕円体高 → ECEF → ローカル座標 の順に変換するので、
  * PLATEAU の 3D Tiles とぴったり重なる。
  */
 export class Terrain {
   readonly group = new THREE.Group();
-  private done = 0;
-  private total = 1;
-  private finished = false;
-  /** 地形の一番低い所（ローカル座標の y） */
-  minHeight = 0;
+  private ecefToLocal: THREE.Matrix4 | null = null;
+  private localToEcef = new THREE.Matrix4();
+  private readonly chunks = new Map<string, Chunk>();
+  private loadingCount = 0;
+  /** 直近の update でカメラの読込範囲にあったチャンク */
+  private wanted: Chunk[] = [];
+  private readonly lastCamera = new THREE.Vector3();
+  /** 写真が取れなかったチャンク用（[本体, 縁の壁]） */
+  private readonly materials: THREE.Material[];
 
-  /** 0..1 */
-  get progress(): number {
-    return this.finished ? 1 : this.done / this.total;
+  constructor() {
+    this.materials = createMaterials(null);
   }
 
-  get isLoaded(): boolean {
-    return this.finished;
+  /** タイルと同じ ECEF → ローカル座標 の変換を渡す。これ以降 update で読み始める */
+  setFrame(ecefToLocal: THREE.Matrix4): void {
+    this.ecefToLocal = ecefToLocal.clone();
+    this.localToEcef.copy(ecefToLocal).invert();
   }
 
-  /** @param ecefToLocal タイルと同じ ECEF → ローカル座標の変換 */
-  async load(ecefToLocal: THREE.Matrix4): Promise<void> {
-    const { demZoom: z, radiusTiles: r, photoZoomOffset } = TERRAIN;
-    const center = lonLatToTile(WORLD.origin.lonDeg, WORLD.origin.latDeg, z);
-    const x0 = Math.floor(center.x) - r;
-    const y0 = Math.floor(center.y) - r;
-    const n = r * 2 + 1;
-    const photosPerTile = (1 << photoZoomOffset) ** 2;
-    this.total = n * n * (1 + photosPerTile);
+  /** カメラから radius (m) 以内のチャンクのうち、読み終わった割合 (0..1) */
+  progressWithin(radius: number): number {
+    if (!this.ecefToLocal) return 0;
+    const near = this.wantedWithin(radius);
+    if (near.length === 0) return 0;
+    return near.filter((c) => c.mesh).length / near.length;
+  }
 
-    try {
-      // 1) 標高を1枚の大きな配列に並べる（タイルの継ぎ目で段差が出ないように）
-      const size = n * TILE_PX;
-      const heights = new Float32Array(size * size).fill(NO_DATA);
-      await forEachLimited(grid(n), TERRAIN.concurrency, async ([i, j]) => {
-        const tile = await fetchDem(x0 + i, y0 + j, z);
-        this.done++;
-        if (!tile) return;
-        for (let py = 0; py < TILE_PX; py++) {
-          heights.set(tile.subarray(py * TILE_PX, (py + 1) * TILE_PX), (j * TILE_PX + py) * size + i * TILE_PX);
+  /** カメラから radius (m) 以内のチャンクがすべて読み終わっているか */
+  isLoadedWithin(radius: number): boolean {
+    return this.progressWithin(radius) === 1;
+  }
+
+  private wantedWithin(radius: number): Chunk[] {
+    const cam = this.lastCamera;
+    return this.wanted.filter((c) => Math.hypot(c.center.x - cam.x, c.center.z - cam.z) < radius);
+  }
+
+  /** ローカル座標 → 緯度経度（度） */
+  toLatLon(position: THREE.Vector3): { lat: number; lon: number } | null {
+    if (!this.ecefToLocal) return null;
+    const ecef = position.clone().applyMatrix4(this.localToEcef);
+    const carto = WGS84_ELLIPSOID.getPositionToCartographic(ecef, {}) as { lat: number; lon: number };
+    return { lat: carto.lat * THREE.MathUtils.RAD2DEG, lon: carto.lon * THREE.MathUtils.RAD2DEG };
+  }
+
+  /** カメラ位置に応じてチャンクを読込・破棄する。毎フレーム呼ぶ */
+  update(cameraPosition: THREE.Vector3): void {
+    const latLon = this.toLatLon(cameraPosition);
+    if (!latLon) return;
+    this.lastCamera.copy(cameraPosition);
+    const z = TERRAIN.demZoom;
+    const tile = lonLatToTile(latLon.lon, latLon.lat, z);
+    const tileMeters = (40075016 * Math.cos(latLon.lat * THREE.MathUtils.DEG2RAD)) / 2 ** z;
+    const reach = Math.ceil(TERRAIN.loadRadius / tileMeters) + 1;
+    const distanceTo = (c: Chunk) => Math.hypot(c.center.x - cameraPosition.x, c.center.z - cameraPosition.z);
+
+    // 読込範囲のチャンクを集める
+    const wanted: Chunk[] = [];
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const x = Math.floor(tile.x) + dx;
+        const y = Math.floor(tile.y) + dy;
+        const chunk = this.chunks.get(`${x}/${y}`) ?? this.createChunk(x, y);
+        if (distanceTo(chunk) < TERRAIN.loadRadius + tileMeters / 2) {
+          chunk.dead = false;
+          wanted.push(chunk);
         }
-      });
-      fillNoData(heights, size);
-
-      // 2) 標高タイル1枚ごとにメッシュを作り、航空写真を貼る
-      let minY = Infinity;
-      await forEachLimited(grid(n), TERRAIN.concurrency, async ([i, j]) => {
-        const geometry = buildGeometry(heights, size, i, j, x0, y0, z, ecefToLocal);
-        geometry.computeBoundingBox();
-        minY = Math.min(minY, geometry.boundingBox!.min.y);
-        geometry.computeBoundsTree();
-
-        const map = await fetchPhoto(x0 + i, y0 + j, z, photoZoomOffset, () => this.done++);
-        const material = new THREE.MeshStandardMaterial({
-          map,
-          color: map ? 0xffffff : 0x7d8a72,
-          roughness: 1,
-          // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
-          polygonOffset: true,
-          polygonOffsetFactor: 2,
-          polygonOffsetUnits: 2,
-        });
-        this.group.add(new THREE.Mesh(geometry, material));
-      });
-      this.minHeight = minY;
-    } catch (e) {
-      console.warn('[Terrain] 地形の読込に失敗しました', e);
+      }
     }
-    this.finished = true;
+    this.wanted = wanted;
+
+    // 近い順に読み始める
+    const pending = wanted.filter((c) => !c.mesh && !this.chunks.has(key(c)));
+    pending.sort((a, b) => distanceTo(a) - distanceTo(b));
+    for (const chunk of pending) {
+      if (this.loadingCount >= TERRAIN.concurrentChunks) break;
+      this.chunks.set(key(chunk), chunk);
+      this.loadingCount++;
+      void this.loadChunk(chunk).finally(() => this.loadingCount--);
+    }
+
+    // 遠くなったチャンクを捨てる
+    for (const chunk of this.chunks.values()) {
+      if (distanceTo(chunk) <= TERRAIN.unloadRadius) continue;
+      chunk.dead = true;
+      if (chunk.mesh) this.removeChunk(chunk);
+    }
   }
 
   dispose(): void {
-    this.group.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return;
-      obj.geometry.disposeBoundsTree();
-      obj.geometry.dispose();
-      obj.material.map?.dispose();
-      obj.material.dispose();
-    });
+    for (const chunk of [...this.chunks.values()]) {
+      chunk.dead = true;
+      if (chunk.mesh) this.removeChunk(chunk);
+    }
+    for (const m of this.materials) m.dispose();
+  }
+
+  private createChunk(x: number, y: number): Chunk {
+    const z = TERRAIN.demZoom;
+    const { lon, lat } = tileToLonLat(x + 0.5, y + 0.5, z);
+    const center = new THREE.Vector3();
+    WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, TERRAIN.geoidHeight, center);
+    center.applyMatrix4(this.ecefToLocal!);
+    return { x, y, center, mesh: null, dead: false };
+  }
+
+  private async loadChunk(chunk: Chunk): Promise<void> {
+    const z = TERRAIN.demZoom;
+    try {
+      const heights = (await fetchDem(chunk.x, chunk.y, z)) ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
+      fillNoData(heights, TILE_PX);
+      const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
+      const map = await fetchPhoto(chunk.x, chunk.y, z, TERRAIN.photoZoomOffset);
+      if (chunk.dead) {
+        geometry.dispose();
+        map?.dispose();
+        this.chunks.delete(key(chunk));
+        return;
+      }
+      geometry.computeBoundsTree();
+      chunk.mesh = new THREE.Mesh(geometry, map ? createMaterials(map) : this.materials);
+      this.group.add(chunk.mesh);
+    } catch (e) {
+      console.warn('[Terrain] チャンクの読込に失敗しました', chunk.x, chunk.y, e);
+      this.chunks.delete(key(chunk));
+    }
+  }
+
+  private removeChunk(chunk: Chunk): void {
+    const mesh = chunk.mesh!;
+    this.group.remove(mesh);
+    mesh.geometry.disposeBoundsTree();
+    mesh.geometry.dispose();
+    if (mesh.material !== this.materials) {
+      const materials = mesh.material as THREE.MeshStandardMaterial[];
+      materials[0].map?.dispose();
+      for (const m of materials) m.dispose();
+    }
+    chunk.mesh = null;
+    this.chunks.delete(key(chunk));
   }
 }
 
-/** タイル (i, j) の範囲の地形メッシュを作る */
+function key(chunk: { x: number; y: number }): string {
+  return `${chunk.x}/${chunk.y}`;
+}
+
+/** [本体, 縁の壁] のマテリアル */
+function createMaterials(map: THREE.Texture | null): THREE.Material[] {
+  const color = map ? 0xffffff : 0x7d8a72;
+  return [
+    // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
+    new THREE.MeshStandardMaterial({
+      map,
+      color,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: 2,
+      polygonOffsetUnits: 2,
+    }),
+    // 縁の壁はずらさない（垂直な面は大きく奥へずれて、隠したい隙間が見えてしまう）。
+    // 裏から見ても消えないよう両面にし、裏面が暗く照らされて黒い線に見えないようライティングもしない
+    new THREE.MeshBasicMaterial({ map, color, side: THREE.DoubleSide }),
+  ];
+}
+
+/** チャンク (x, y) の地形メッシュを作る。縁には隙間隠しの壁を付ける */
 function buildGeometry(
   heights: Float32Array,
-  size: number,
-  i: number,
-  j: number,
-  x0: number,
-  y0: number,
+  x: number,
+  y: number,
   z: number,
   ecefToLocal: THREE.Matrix4,
 ): THREE.BufferGeometry {
   const seg = TERRAIN.segments;
-  const positions = new Float32Array((seg + 1) ** 2 * 3);
-  const uvs = new Float32Array((seg + 1) ** 2 * 2);
+  const gridCount = (seg + 1) ** 2;
+  const perimeter = seg * 4;
+  const positions = new Float32Array((gridCount + perimeter * 2) * 3);
+  const uvs = new Float32Array((gridCount + perimeter * 2) * 2);
   const v = new THREE.Vector3();
-  const scale = 2 ** z;
-
-  let k = 0;
-  for (let row = 0; row <= seg; row++) {
-    for (let col = 0; col <= seg; col++) {
-      // 大きな配列上のピクセル座標（隣のタイルと端の値を共有する）
-      const px = (i + col / seg) * TILE_PX;
-      const py = (j + row / seg) * TILE_PX;
-      const h = sampleHeight(heights, size, px, py) + TERRAIN.geoidHeight;
-
-      const lon = ((x0 * TILE_PX + px) / TILE_PX / scale) * 360 - 180;
-      const lat = Math.atan(Math.sinh(Math.PI * (1 - (2 * (y0 * TILE_PX + py)) / TILE_PX / scale)));
-      WGS84_ELLIPSOID.getCartographicToPosition(lat, lon * THREE.MathUtils.DEG2RAD, h, v);
-      v.applyMatrix4(ecefToLocal);
-      positions.set([v.x, v.y, v.z], k * 3);
-      // 北が上の写真なので、行が下がるほど v を小さくする
-      uvs.set([col / seg, 1 - row / seg], k * 2);
-      k++;
-    }
-  }
-
   const index: number[] = [];
+
+  const place = (k: number, col: number, row: number, heightOffset: number) => {
+    const h = sampleHeight(heights, TILE_PX, (col / seg) * TILE_PX, (row / seg) * TILE_PX);
+    const { lon, lat } = tileToLonLat(x + col / seg, y + row / seg, z);
+    WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, h + TERRAIN.geoidHeight + heightOffset, v);
+    v.applyMatrix4(ecefToLocal);
+    positions.set([v.x, v.y, v.z], k * 3);
+    // 北が上の写真なので、行が下がるほど v を小さくする
+    uvs.set([col / seg, 1 - row / seg], k * 2);
+  };
+
+  // 本体のグリッド
+  for (let row = 0; row <= seg; row++) {
+    for (let col = 0; col <= seg; col++) place(row * (seg + 1) + col, col, row, 0);
+  }
   for (let row = 0; row < seg; row++) {
     for (let col = 0; col < seg; col++) {
       const a = row * (seg + 1) + col;
@@ -135,11 +229,36 @@ function buildGeometry(
     }
   }
 
+  // 縁を一周する点（col, row）
+  const ring: Array<[number, number]> = [];
+  for (let i = 0; i < seg; i++) ring.push([i, 0]);
+  for (let i = 0; i < seg; i++) ring.push([seg, i]);
+  for (let i = seg; i > 0; i--) ring.push([i, seg]);
+  for (let i = seg; i > 0; i--) ring.push([0, i]);
+
+  const mainIndexCount = index.length;
+
+  // 縁から下に垂らす壁。法線が本体に影響しないよう、頂点は本体と共有しない
+  ring.forEach(([col, row], i) => {
+    place(gridCount + i * 2, col, row, 0);
+    place(gridCount + i * 2 + 1, col, row, -TERRAIN.skirtDepth);
+  });
+  for (let i = 0; i < perimeter; i++) {
+    const top = gridCount + i * 2;
+    const nextTop = gridCount + ((i + 1) % perimeter) * 2;
+    index.push(top, top + 1, nextTop, nextTop, top + 1, nextTop + 1);
+  }
+
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(index);
+  geometry.addGroup(0, mainIndexCount, 0);
+  geometry.addGroup(mainIndexCount, index.length - mainIndexCount, 1);
   geometry.computeVertexNormals();
+  // 壁の法線は上向きにして、本体と同じ明るさにする
+  const normals = geometry.getAttribute('normal') as THREE.BufferAttribute;
+  for (let k = gridCount; k < normals.count; k++) normals.setXYZ(k, 0, 1, 0);
   return geometry;
 }
 
@@ -157,10 +276,11 @@ function sampleHeight(heights: Float32Array, size: number, px: number, py: numbe
   return top * (1 - fy) + bottom * fy;
 }
 
-/** データなし（水面など）を周りの値で埋める。最後まで埋まらなければ 0 m */
+/** データなし（水面など）を周りの値で埋める。最後まで埋まらなければ 0 m（海面） */
 function fillNoData(heights: Float32Array, size: number): void {
   for (let pass = 0; pass < 64; pass++) {
     let remaining = 0;
+    let filled = 0;
     const src = heights.slice();
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -178,11 +298,15 @@ function fillNoData(heights: Float32Array, size: number): void {
             count++;
           }
         }
-        if (count > 0) heights[idx] = sum / count;
-        else remaining++;
+        if (count > 0) {
+          heights[idx] = sum / count;
+          filled++;
+        } else {
+          remaining++;
+        }
       }
     }
-    if (remaining === 0) return;
+    if (remaining === 0 || filled === 0) break;
   }
   for (let k = 0; k < heights.length; k++) if (Number.isNaN(heights[k])) heights[k] = 0;
 }
@@ -195,6 +319,7 @@ async function fetchDem(x: number, y: number, z: number): Promise<Float32Array |
     const canvas = new OffscreenCanvas(TILE_PX, TILE_PX);
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.drawImage(image, 0, 0);
+    image.close();
     const { data } = ctx.getImageData(0, 0, TILE_PX, TILE_PX);
     const out = new Float32Array(TILE_PX * TILE_PX);
     for (let k = 0; k < out.length; k++) {
@@ -213,13 +338,7 @@ export function decodeDem(r: number, g: number, b: number): number {
 }
 
 /** 標高タイル1枚の範囲の航空写真を、細かいズームのタイルを並べて1枚にする */
-async function fetchPhoto(
-  x: number,
-  y: number,
-  z: number,
-  zoomOffset: number,
-  onEach: () => void,
-): Promise<THREE.Texture | null> {
+async function fetchPhoto(x: number, y: number, z: number, zoomOffset: number): Promise<THREE.Texture | null> {
   const k = 1 << zoomOffset;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = TILE_PX * k;
@@ -228,9 +347,9 @@ async function fetchPhoto(
   await Promise.all(
     grid(k).map(async ([i, j]) => {
       const image = await fetchImage(tileUrl(TERRAIN.photoUrl, x * k + i, y * k + j, z + zoomOffset));
-      onEach();
       if (!image) return;
       ctx.drawImage(image, i * TILE_PX, j * TILE_PX);
+      image.close();
       any = true;
     }),
   );
@@ -255,7 +374,7 @@ function tileUrl(template: string, x: number, y: number, z: number): string {
   return template.replace('{z}', `${z}`).replace('{x}', `${x}`).replace('{y}', `${y}`);
 }
 
-/** 経度緯度 → Web メルカトルのタイル座標（小数） */
+/** 経度緯度（度） → Web メルカトルのタイル座標（小数） */
 export function lonLatToTile(lonDeg: number, latDeg: number, z: number): { x: number; y: number } {
   const n = 2 ** z;
   const lat = latDeg * THREE.MathUtils.DEG2RAD;
@@ -265,17 +384,17 @@ export function lonLatToTile(lonDeg: number, latDeg: number, z: number): { x: nu
   };
 }
 
+/** タイル座標（小数） → 経度緯度（ラジアン） */
+function tileToLonLat(tx: number, ty: number, z: number): { lon: number; lat: number } {
+  const n = 2 ** z;
+  return {
+    lon: (tx / n) * Math.PI * 2 - Math.PI,
+    lat: Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / n))),
+  };
+}
+
 function grid(n: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) out.push([i, j]);
   return out;
-}
-
-/** 同時実行数を limit に抑えて items を処理する */
-async function forEachLimited<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) await fn(items[next++]);
-  });
-  await Promise.all(workers);
 }

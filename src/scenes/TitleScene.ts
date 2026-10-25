@@ -14,7 +14,7 @@ export class TitleScene implements GameScene {
       'title',
       `
       <h1>SKY DRIVE</h1>
-      <div class="sub">東京・千代田区の上空を、空飛ぶ車で</div>
+      <div class="sub">東京23区の上空を、空飛ぶ車で</div>
       <button type="button">START</button>
       <div class="sub">Enter / Space でもスタート</div>
       `,

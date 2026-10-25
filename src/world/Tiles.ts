@@ -4,6 +4,7 @@ import { GLTFExtensionsPlugin, ReorientationPlugin } from '3d-tiles-renderer/plu
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { WORLD } from '../core/config';
+import { assignFacadeAttributes, createFacadeMaterial } from './facade';
 
 // 当たり判定のレイキャストを BVH で高速化する
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -20,18 +21,18 @@ const draco = new DRACOLoader().setDecoderPath(`${import.meta.env.BASE_URL}draco
  */
 export class Tiles {
   readonly renderer: TilesRenderer;
-  private loading = false;
-  private loadedOnce = false;
-  /** ECEF → ローカル座標の変換行列。ルートの tileset を読んだ時点で決まる */
-  readonly ready: Promise<THREE.Matrix4>;
+  private rootLoaded = false;
+  private readonly baseErrorTarget: number;
+  /** タイルセット全体を囲む球（ローカル座標）。ルートを読むまでは null */
+  private bounds: THREE.Sphere | null = null;
 
   /**
-   * @param color 指定するとマテリアルをこの色で上書きする（テクスチャの無いデータ向け）
+   * @param appearance 見た目。データのまま / 外壁テンプレートを貼る / 単色で塗る
    */
   constructor(
     url: string,
     errorTarget: number,
-    color: number | null,
+    appearance: TileAppearance,
     camera: THREE.Camera,
     glRenderer: THREE.WebGLRenderer,
   ) {
@@ -47,42 +48,37 @@ export class Tiles {
         recenter: true,
       }),
     );
+    this.baseErrorTarget = errorTarget;
     tiles.errorTarget = errorTarget;
     tiles.lruCache.minBytesSize = WORLD.cacheBytes.min;
     tiles.lruCache.maxBytesSize = WORLD.cacheBytes.max;
     tiles.setCamera(camera);
     tiles.setResolutionFromRenderer(camera, glRenderer);
 
-    tiles.registerPlugin(new TileModelPlugin(color, WORLD.maxTextureSize));
-    tiles.addEventListener('load-model', ({ scene }) => {
+    const modelPlugin = new TileModelPlugin(appearance, WORLD.maxTextureSize);
+    tiles.registerPlugin(modelPlugin);
+    tiles.addEventListener('load-model', ({ scene, tile }) => {
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) obj.geometry.computeBoundsTree();
       });
+      // 共有マテリアルはタイルを捨てる時に一緒に破棄されないよう、破棄リストから外す
+      // （破棄されるとシェーダーの作り直しでカクつく）
+      const engineData = (tile as unknown as { engineData: { materials: THREE.Material[] | null } }).engineData;
+      if (modelPlugin.material && engineData.materials) {
+        engineData.materials = engineData.materials.filter((m) => m !== modelPlugin.material);
+      }
     });
     tiles.addEventListener('dispose-model', ({ scene }) => {
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) obj.geometry.disposeBoundsTree();
       });
     });
-    tiles.addEventListener('tiles-load-start', () => {
-      this.loading = true;
-    });
-    tiles.addEventListener('tiles-load-end', () => {
-      this.loading = false;
-      this.loadedOnce = true;
-    });
     tiles.addEventListener('load-error', ({ url, error }) => {
       console.warn('[Tiles] load error', url, error);
     });
 
-    // ReorientationPlugin が同じイベントで group の変換を設定するので、それより後に読む
-    this.ready = new Promise((resolve) => {
-      tiles.addEventListener('load-root-tileset', () => {
-        queueMicrotask(() => {
-          tiles.group.updateMatrixWorld();
-          resolve(tiles.group.matrixWorld.clone());
-        });
-      });
+    tiles.addEventListener('load-root-tileset', () => {
+      this.rootLoaded = true;
     });
 
     this.renderer = tiles;
@@ -97,19 +93,37 @@ export class Tiles {
     return this.renderer.loadProgress;
   }
 
-  get isLoading(): boolean {
-    return this.loading;
-  }
-
-  /** 一度でも読込キューが空になったか */
-  get hasLoaded(): boolean {
-    return this.loadedOnce;
+  /**
+   * ルートの tileset を読み終え、いま必要なタイルの取得・解析待ちが無いか。
+   * 視界に入らないタイルセットはルートだけ読んで待ちが無くなるので、すぐ true になる
+   */
+  get isIdle(): boolean {
+    // stats は実装にはあるが型定義に無い
+    const { downloading, parsing, queued } = (this.renderer as unknown as { stats: TileStats }).stats;
+    return this.rootLoaded && downloading === 0 && parsing === 0 && queued === 0;
   }
 
   /** カメラ位置に応じてタイルを読込・破棄する。毎フレーム呼ぶ */
   update(camera: THREE.Camera): void {
     camera.updateMatrixWorld();
+    this.adjustErrorTarget(camera.position);
     this.renderer.update();
+  }
+
+  /**
+   * カメラから離れたタイルセット（遠くの区）ほど粗く読む。
+   * 霧の向こうの区の細かいタイルに回線を取られて、手前の読込が遅れるのを防ぐ
+   */
+  private adjustErrorTarget(cameraPosition: THREE.Vector3): void {
+    if (!this.bounds) {
+      const sphere = new THREE.Sphere();
+      if (!this.renderer.getBoundingSphere(sphere)) return;
+      this.renderer.group.updateMatrixWorld();
+      this.bounds = sphere.applyMatrix4(this.renderer.group.matrixWorld);
+    }
+    const { near, maxScale } = WORLD.distantLod;
+    const distance = Math.max(0, cameraPosition.distanceTo(this.bounds.center) - this.bounds.radius);
+    this.renderer.errorTarget = this.baseErrorTarget * THREE.MathUtils.clamp(distance / near, 1, maxScale);
   }
 
   setResolution(camera: THREE.Camera, glRenderer: THREE.WebGLRenderer): void {
@@ -121,22 +135,38 @@ export class Tiles {
   }
 }
 
+interface TileStats {
+  downloading: number;
+  parsing: number;
+  queued: number;
+}
+
+/** タイルの見た目 */
+export type TileAppearance = 'original' | 'facade' | { color: number };
+
+/** 外壁テンプレートのマテリアル（全タイルで共有） */
+let facadeMaterial: THREE.Material | null = null;
+
 /**
  * タイルのモデルを読み込んだ直後（キャッシュのメモリ計算より前）に手を加えるプラグイン。
  * - 大きすぎるテクスチャを縮小して GPU メモリを抑える
- * - 色の指定があればマテリアルを上書きする
+ * - テクスチャの無いデータには外壁テンプレートを貼るか、単色で塗る
  */
 class TileModelPlugin {
-  private readonly material: THREE.Material | null;
+  /** 上書きに使う共有マテリアル（データのままなら null） */
+  readonly material: THREE.Material | null;
 
   constructor(
-    color: number | null,
+    private readonly appearance: TileAppearance,
     private readonly maxTextureSize: number,
   ) {
-    this.material = color === null ? null : new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
+    if (appearance === 'facade') this.material = facadeMaterial ??= createFacadeMaterial();
+    else if (appearance === 'original') this.material = null;
+    else this.material = new THREE.MeshStandardMaterial({ color: appearance.color, roughness: 0.9 });
   }
 
   async processTileModel(scene: THREE.Object3D): Promise<void> {
+    if (this.appearance === 'facade') assignFacadeAttributes(scene);
     const textures = new Set<THREE.Texture>();
     scene.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;

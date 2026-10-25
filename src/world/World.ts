@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { CAMERA, WORLD } from '../core/config';
+import { CAMERA, TERRAIN, WORLD } from '../core/config';
+import { WARDS } from '../data/wards';
+import { computeEcefToLocal } from './geoFrame';
 import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
 
@@ -9,7 +11,8 @@ import { Tiles } from './Tiles';
 export class World {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
-  readonly buildings: Tiles;
+  /** 区ごとの建物 */
+  readonly buildings: Tiles[];
   readonly roads: Tiles;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
@@ -21,12 +24,12 @@ export class World {
       CAMERA.fov,
       window.innerWidth / window.innerHeight,
       CAMERA.near,
-      CAMERA.far,
+      WORLD.viewDistance,
     );
 
     const sky = new THREE.Color(0x9cc8ee);
     this.scene.background = sky;
-    this.scene.fog = new THREE.Fog(sky, 1500, 6000);
+    this.scene.fog = new THREE.Fog(sky, WORLD.fog.near, WORLD.fog.far);
 
     this.scene.add(new THREE.HemisphereLight(0xdfefff, 0x6b6250, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -36,19 +39,27 @@ export class World {
     this.ground = buildGround();
     this.scene.add(this.ground);
 
-    const { buildings, roads } = WORLD.layers;
-    this.buildings = new Tiles(buildings.url, buildings.errorTarget, buildings.color, this.camera, renderer);
-    this.roads = new Tiles(roads.url, roads.errorTarget, roads.color, this.camera, renderer);
-    this.scene.add(this.buildings.group, this.roads.group, this.terrain.group);
-    this.colliders = [this.buildings.group, this.roads.group, this.terrain.group];
+    this.buildings = WARDS.map(
+      (ward) =>
+        new Tiles(
+          ward.url,
+          ward.kind === 'lod2-texture' ? WORLD.buildings.errorTarget : WORLD.buildings.plainErrorTarget,
+          // テクスチャの無い区には、手続き的に描いた外壁テンプレートを貼る
+          ward.kind === 'lod2-texture' ? 'original' : 'facade',
+          this.camera,
+          renderer,
+        ),
+    );
+    const { roads } = WORLD;
+    this.roads = new Tiles(roads.url, roads.errorTarget, { color: roads.color }, this.camera, renderer);
+    this.scene.add(...this.layers.map((l) => l.group), this.terrain.group);
+    this.colliders = [...this.layers.map((l) => l.group), this.terrain.group];
 
-    // 地形はタイルと同じ座標変換で作るので、建物のルート tileset を待ってから読む
-    this.buildings.ready
-      .then((ecefToLocal) => this.terrain.load(ecefToLocal))
-      .then(() => {
-        // 地形の外側の平面は、地形の一番低い所より少し下に置く
-        if (this.terrain.group.children.length > 0) this.groundY = this.terrain.minHeight - 1;
-      });
+    // 地形の外側の平面は海面より少し下に置く（ローカル座標の y=0 は原点の楕円体高）
+    this.groundY = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight - 5;
+
+    // 地形はタイルと同じ座標変換で作る
+    this.terrain.setFrame(computeEcefToLocal());
 
     window.addEventListener('resize', () => this.resize());
   }
@@ -69,11 +80,17 @@ export class World {
   }
 
   get layers(): Tiles[] {
-    return [this.buildings, this.roads];
+    return [...this.buildings, this.roads];
+  }
+
+  /** ローカル座標 → 緯度経度（度）。座標変換が決まる前は null */
+  toLatLon(position: THREE.Vector3): { lat: number; lon: number } | null {
+    return this.terrain.toLatLon(position);
   }
 
   render(): void {
     for (const layer of this.layers) layer.update(this.camera);
+    this.terrain.update(this.camera.position);
     this.renderer.render(this.scene, this.camera);
   }
 }

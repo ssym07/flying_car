@@ -4,6 +4,7 @@ import type { GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Hud } from '../ui/hud';
+import { LocationLabel } from '../ui/locationLabel';
 import { step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
 import { Collision } from '../world/Collision';
@@ -13,6 +14,8 @@ export class FlightScene implements GameScene {
   private collision!: Collision;
   private chase!: ChaseCamera;
   private hud!: Hud;
+  private location!: LocationLabel;
+  private sinceLocation = Infinity;
   private groundHeight = 0;
   private readonly control: ControlInput = { throttle: 0, turn: 0, lift: 0 };
 
@@ -34,6 +37,7 @@ export class FlightScene implements GameScene {
 
     this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
     this.hud = new Hud(this.ctx.overlay);
+    this.location = new LocationLabel(this.ctx.overlay);
 
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });
@@ -45,6 +49,7 @@ export class FlightScene implements GameScene {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
     this.hud.dispose();
+    this.location.dispose();
   }
 
   update(dt: number): void {
@@ -75,6 +80,16 @@ export class FlightScene implements GameScene {
     // ローカル座標の y=0 は原点の楕円体高。ジオイド高を引くと標高（海抜）になる
     const seaLevel = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight;
     this.hud.set(speed(s.velocity), bottom - seaLevel, bottom - this.groundHeight);
+
+    // 現在地表示は 0.5 秒ごとで十分
+    this.sinceLocation += frameDt;
+    if (this.sinceLocation >= 0.5) {
+      const latLon = world.toLatLon(this.vehicle.mesh.position);
+      if (latLon) {
+        this.location.update(latLon.lat, latLon.lon);
+        this.sinceLocation = 0;
+      }
+    }
 
     world.render();
   }
