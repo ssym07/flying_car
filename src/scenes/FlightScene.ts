@@ -1,0 +1,78 @@
+import * as THREE from 'three';
+import { KEYS, PHYSICS, VEHICLE } from '../core/config';
+import type { GameContext } from '../core/context';
+import type { GameScene } from '../core/SceneManager';
+import { ChaseCamera } from '../camera/ChaseCamera';
+import { Hud } from '../ui/hud';
+import { step, speed, type ControlInput } from '../vehicle/physics';
+import { Vehicle } from '../vehicle/Vehicle';
+import { Collision } from '../world/Collision';
+
+export class FlightScene implements GameScene {
+  private vehicle!: Vehicle;
+  private collision!: Collision;
+  private chase!: ChaseCamera;
+  private hud!: Hud;
+  private groundHeight = 0;
+  private readonly control: ControlInput = { throttle: 0, turn: 0, lift: 0 };
+
+  constructor(private readonly ctx: GameContext) {}
+
+  enter(): void {
+    const { world, input } = this.ctx;
+    input.clearPresses();
+
+    this.vehicle = new Vehicle({
+      position: { x: 0, y: world.groundY + VEHICLE.startAltitude, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      yaw: 0,
+    });
+    world.scene.add(this.vehicle.mesh);
+
+    this.collision = new Collision(world.tiles.group, world.groundY, VEHICLE.radius, VEHICLE.halfHeight);
+    this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
+    this.hud = new Hud(this.ctx.overlay);
+    this.groundHeight = world.groundY;
+
+    // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
+    if (import.meta.env.DEV) Object.assign(window, { __flight: this });
+  }
+
+  exit(): void {
+    this.ctx.world.scene.remove(this.vehicle.mesh);
+    this.vehicle.mesh.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+    });
+    this.hud.dispose();
+  }
+
+  update(dt: number): void {
+    const { input } = this.ctx;
+    if (input.consumePress(KEYS.pause)) {
+      this.ctx.go.pause();
+      return;
+    }
+
+    this.control.throttle = input.axis(KEYS.back, KEYS.forward);
+    this.control.turn = input.axis(KEYS.left, KEYS.right);
+    this.control.lift = input.axis(KEYS.down, KEYS.up);
+
+    const prev = this.vehicle.state;
+    const next = step(prev, this.control, PHYSICS, dt);
+    const result = this.collision.resolve(prev, next);
+    this.vehicle.commit(result.state);
+    this.groundHeight = result.groundHeight;
+  }
+
+  render(alpha: number, frameDt: number): void {
+    const { world } = this.ctx;
+    this.vehicle.syncMesh(alpha);
+    this.chase.follow(this.vehicle.mesh.position, this.vehicle.mesh.rotation.y, frameDt);
+
+    const s = this.vehicle.state;
+    const bottom = s.position.y - VEHICLE.halfHeight;
+    this.hud.set(speed(s.velocity), bottom - world.groundY, bottom - this.groundHeight);
+
+    world.render();
+  }
+}
