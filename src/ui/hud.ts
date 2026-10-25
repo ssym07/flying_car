@@ -22,7 +22,7 @@ export class Hud {
 
   /**
    * @param speedMs 速度 (m/s)
-   * @param altitude 地面（平面）からの高度 (m)
+   * @param altitude 標高（海抜） (m)
    * @param agl 真下の地面・屋上からの高さ (m)
    */
   set(speedMs: number, altitude: number, agl: number): void {

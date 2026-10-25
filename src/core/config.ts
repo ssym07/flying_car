@@ -65,15 +65,61 @@ export const CAMERA = {
 };
 
 export const WORLD = {
-  /** PLATEAU 東京都千代田区 建物LOD1 (2022) */
-  tilesetUrl:
-    'https://assets.cms.plateau.reearth.io/assets/11/6d05db-ed47-4f88-b565-9eb385b1ebb0/13100_tokyo23-ku_2022_3dtiles%20_1_1_op_bldg_13101_chiyoda-ku_lod1/tileset.json',
+  /** PLATEAU 東京都千代田区 (2025) の 3D Tiles */
+  layers: {
+    /** 建築物 LOD2（テクスチャ付き） */
+    buildings: {
+      url: 'https://assets.cms.plateau.reearth.io/assets/28/07d0a1-b6be-46ef-bd87-4f0683b5ef6e/13101_chiyoda-ku_pref_2025_citygml_1_op_bldg_3dtiles_13101_chiyoda-ku_lod2/tileset.json',
+      /** タイルの詳細度（小さいほど細かい・重い） */
+      errorTarget: 20,
+      /** マテリアルを上書きする色（null ならデータのまま） */
+      color: null,
+    },
+    /** 交通（道路）LOD3 */
+    roads: {
+      url: 'https://assets.cms.plateau.reearth.io/assets/c6/9e8877-46d9-45a4-aebf-aa8d6105d698/13101_chiyoda-ku_pref_2025_citygml_1_op_tran_3dtiles_lod3/tileset.json',
+      errorTarget: 24,
+      /** 配信データは白一色なので、アスファルトの色で塗る */
+      color: 0x5a5d61,
+    },
+  },
+  /**
+   * タイルのキャッシュ（全レイヤー共有、GPU メモリ換算）。
+   * テクスチャ付き建物は1タイルで数MB使うので、既定値（約400MB）では足りず読込が止まる。
+   * 満杯になると残りのタイルが読まれず、建物が粗いまま（高層ビルだけ）になる
+   */
+  cacheBytes: { min: 600 * 1024 ** 2, max: 1000 * 1024 ** 2 },
+  /**
+   * 建物テクスチャの最大辺 (px)。配信データには 2048px もあり、そのままだと GPU メモリが足りない。
+   * 512 で高度60mから街を見渡しても約450MBに収まる（1024 だと 1GB を超える）
+   */
+  maxTextureSize: 512,
   /** 飛行開始地点（東京駅 丸の内側）。ここがローカル原点になる */
   origin: { latDeg: 35.6812, lonDeg: 139.7671, ellipsoidHeight: 40 },
-  /** タイルの詳細度（小さいほど細かい・重い） */
-  errorTarget: 12,
   /** 初期読込を諦めて先に進むまでの秒数 */
-  loadTimeoutSec: 20,
-  /** 地面平面の一辺 (m) */
+  loadTimeoutSec: 30,
+  /** 地形の外側に敷く平面の一辺 (m) */
   groundSize: 20000,
+};
+
+/** 国土地理院の標高タイル・航空写真から作る地形 */
+export const TERRAIN = {
+  /** 標高タイル（5mメッシュ）。無い所は 10m メッシュで補う */
+  demUrls: [
+    'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png',
+    'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png',
+  ],
+  demZoom: 15,
+  /** 地表に貼る航空写真（全国最新写真） */
+  photoUrl: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',
+  /** 標高タイル1枚あたり 2^photoZoomOffset 枚四方の写真を貼る */
+  photoZoomOffset: 1,
+  /** 原点のタイルから上下左右に何枚ぶん読むか */
+  radiusTiles: 3,
+  /** 標高タイル1枚あたりのメッシュ分割数 */
+  segments: 64,
+  /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。東京駅付近の値 */
+  geoidHeight: 36.76,
+  /** 同時に取りに行くリクエスト数 */
+  concurrency: 8,
 };

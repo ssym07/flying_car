@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { KEYS, PHYSICS, VEHICLE } from '../core/config';
+import { KEYS, PHYSICS, TERRAIN, VEHICLE, WORLD } from '../core/config';
 import type { GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
@@ -22,17 +22,18 @@ export class FlightScene implements GameScene {
     const { world, input } = this.ctx;
     input.clearPresses();
 
+    this.collision = new Collision(world.colliders, world.groundY, VEHICLE.radius, VEHICLE.halfHeight);
+    this.groundHeight = this.collision.groundHeightAt(0, 0);
+
     this.vehicle = new Vehicle({
-      position: { x: 0, y: world.groundY + VEHICLE.startAltitude, z: 0 },
+      position: { x: 0, y: this.groundHeight + VEHICLE.halfHeight + VEHICLE.startAltitude, z: 0 },
       velocity: { x: 0, y: 0, z: 0 },
       yaw: 0,
     });
     world.scene.add(this.vehicle.mesh);
 
-    this.collision = new Collision(world.tiles.group, world.groundY, VEHICLE.radius, VEHICLE.halfHeight);
     this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
     this.hud = new Hud(this.ctx.overlay);
-    this.groundHeight = world.groundY;
 
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });
@@ -71,7 +72,9 @@ export class FlightScene implements GameScene {
 
     const s = this.vehicle.state;
     const bottom = s.position.y - VEHICLE.halfHeight;
-    this.hud.set(speed(s.velocity), bottom - world.groundY, bottom - this.groundHeight);
+    // ローカル座標の y=0 は原点の楕円体高。ジオイド高を引くと標高（海抜）になる
+    const seaLevel = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight;
+    this.hud.set(speed(s.velocity), bottom - seaLevel, bottom - this.groundHeight);
 
     world.render();
   }

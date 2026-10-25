@@ -29,11 +29,11 @@ export class Collision {
   private readonly hits: THREE.Intersection[] = [];
 
   /**
-   * @param target 当たり判定の対象（タイルの group など）
+   * @param targets 当たり判定の対象（タイル・地形の group など）
    * @param groundY 平面で代用している地面の高さ
    */
   constructor(
-    private readonly target: THREE.Object3D,
+    private readonly targets: THREE.Object3D[],
     public groundY: number,
     private readonly radius: number,
     private readonly halfHeight: number,
@@ -123,8 +123,17 @@ export class Collision {
 
   private cast(): THREE.Intersection | null {
     this.hits.length = 0;
-    this.raycaster.intersectObject(this.target, true, this.hits);
+    this.raycaster.intersectObjects(this.targets, true, this.hits);
     return this.hits[0] ?? null;
+  }
+
+  /** (x, z) の真下の地面（屋上を含む）の高さ。上空 fromY から探す */
+  groundHeightAt(x: number, z: number, fromY = 1000): number {
+    this.origin.set(x, fromY, z);
+    this.raycaster.set(this.origin, DOWN);
+    this.raycaster.far = GROUND_PROBE;
+    const hit = this.cast();
+    return Math.max(this.groundY, hit ? hit.point.y : -Infinity);
   }
 
   /**

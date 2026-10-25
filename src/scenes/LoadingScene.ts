@@ -3,11 +3,10 @@ import { mountScreen, type GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 
 /** 読込キューが空の状態がこの秒数続いたら完了とみなす */
-const SETTLE_SEC = 0.5;
+const SETTLE_SEC = 1.0;
 
 /**
- * 飛行開始地点まわりのタイルの初期読込を待つ。
- * 完了したら建物の底面から地面の高さを推定して Flight へ進む。
+ * 飛行開始地点まわりのタイルと地形の初期読込を待ってから Flight へ進む。
  */
 export class LoadingScene implements GameScene {
   private el?: HTMLDivElement;
@@ -44,21 +43,22 @@ export class LoadingScene implements GameScene {
   }
 
   update(dt: number): void {
-    const { tiles } = this.ctx.world;
+    const { layers, terrain } = this.ctx.world;
     this.elapsed += dt;
-    this.settled = tiles.hasLoaded && !tiles.isLoading ? this.settled + dt : 0;
+    const idle = terrain.isLoaded && layers.every((l) => l.hasLoaded && !l.isLoading);
+    this.settled = idle ? this.settled + dt : 0;
 
     if (this.settled >= SETTLE_SEC || this.elapsed >= WORLD.loadTimeoutSec) {
       if (this.settled < SETTLE_SEC) console.warn('[Loading] timeout: 読込完了を待たずに開始します');
-      const ground = tiles.estimateGroundHeight();
-      if (ground !== null) this.ctx.world.groundY = ground;
       this.ctx.go.flight();
     }
   }
 
   render(): void {
     this.ctx.world.render();
-    const pct = Math.round(this.ctx.world.tiles.progress * 100);
+    const { layers, terrain } = this.ctx.world;
+    const all = [...layers.map((l) => l.progress), terrain.progress];
+    const pct = Math.round((all.reduce((a, b) => a + b, 0) / all.length) * 100);
     this.bar!.style.width = `${pct}%`;
     this.label!.textContent = `${pct}%`;
   }

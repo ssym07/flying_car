@@ -1,14 +1,19 @@
 import * as THREE from 'three';
 import { CAMERA, WORLD } from '../core/config';
+import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
 
 /**
- * シーン間で共有する描画まわり（Three.js のシーン・カメラ・タイル・地面）。
+ * シーン間で共有する描画まわり（Three.js のシーン・カメラ・タイル・地形）。
  */
 export class World {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
-  readonly tiles: Tiles;
+  readonly buildings: Tiles;
+  readonly roads: Tiles;
+  readonly terrain = new Terrain();
+  /** 当たり判定の対象 */
+  readonly colliders: THREE.Object3D[];
   private readonly ground: THREE.Group;
 
   constructor(readonly renderer: THREE.WebGLRenderer) {
@@ -31,8 +36,19 @@ export class World {
     this.ground = buildGround();
     this.scene.add(this.ground);
 
-    this.tiles = new Tiles(this.camera, renderer);
-    this.scene.add(this.tiles.group);
+    const { buildings, roads } = WORLD.layers;
+    this.buildings = new Tiles(buildings.url, buildings.errorTarget, buildings.color, this.camera, renderer);
+    this.roads = new Tiles(roads.url, roads.errorTarget, roads.color, this.camera, renderer);
+    this.scene.add(this.buildings.group, this.roads.group, this.terrain.group);
+    this.colliders = [this.buildings.group, this.roads.group, this.terrain.group];
+
+    // 地形はタイルと同じ座標変換で作るので、建物のルート tileset を待ってから読む
+    this.buildings.ready
+      .then((ecefToLocal) => this.terrain.load(ecefToLocal))
+      .then(() => {
+        // 地形の外側の平面は、地形の一番低い所より少し下に置く
+        if (this.terrain.group.children.length > 0) this.groundY = this.terrain.minHeight - 1;
+      });
 
     window.addEventListener('resize', () => this.resize());
   }
@@ -49,16 +65,20 @@ export class World {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.tiles.setResolution(this.camera, this.renderer);
+    for (const layer of this.layers) layer.setResolution(this.camera, this.renderer);
+  }
+
+  get layers(): Tiles[] {
+    return [this.buildings, this.roads];
   }
 
   render(): void {
-    this.tiles.update(this.camera);
+    for (const layer of this.layers) layer.update(this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 }
 
-/** 地形データの代わりの平面。速度感が出るようにグリッドを重ねる */
+/** 地形の外側に敷く平面。速度感が出るようにグリッドを重ねる */
 function buildGround(): THREE.Group {
   const group = new THREE.Group();
   const size = WORLD.groundSize;
