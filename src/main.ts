@@ -37,6 +37,9 @@ const ctx: GameContext = {
   },
 };
 
+// 開発時だけ、コンソールや自動テストから状態を覗けるようにする
+if (import.meta.env.DEV) Object.assign(window, { __ctx: ctx });
+
 ctx.go.title();
 new GameLoop(
   (dt) => scenes.update(dt),

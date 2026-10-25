@@ -96,22 +96,26 @@ export class Tiles {
    * PLATEAU の建物データには地形が含まれないため、地面は平面で代用している。
    */
   estimateGroundHeight(radius = 500): number | null {
-    const box = new THREE.Box3();
-    const center = new THREE.Vector3();
+    // タイルのメッシュは ECEF の向きのまま回転して置かれているので、
+    // バウンディングボックスで測ると大きく膨らむ。頂点を直接見る。
+    const v = new THREE.Vector3();
     const heights: number[] = [];
     this.group.updateMatrixWorld(true);
     this.group.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
-      const geo = obj.geometry as THREE.BufferGeometry;
-      if (!geo.boundingBox) geo.computeBoundingBox();
-      box.copy(geo.boundingBox!).applyMatrix4(obj.matrixWorld);
-      box.getCenter(center);
-      if (Math.hypot(center.x, center.z) < radius) heights.push(box.min.y);
+      const pos = (obj.geometry as THREE.BufferGeometry).getAttribute('position');
+      if (!pos) return;
+      // 全頂点は多いので間引く
+      const stride = Math.max(1, Math.floor(pos.count / 5000));
+      for (let i = 0; i < pos.count; i += stride) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld);
+        if (Math.hypot(v.x, v.z) < radius) heights.push(v.y);
+      }
     });
     if (heights.length === 0) return null;
-    // 外れ値（地下構造など）に引っ張られないよう、下位側の中央付近を採用
+    // 押し出しの箱なので頂点の約半分は建物の底面。下位側を地面の高さとみなす
     heights.sort((a, b) => a - b);
-    return heights[Math.floor(heights.length * 0.2)];
+    return heights[Math.floor(heights.length * 0.25)];
   }
 
   dispose(): void {
