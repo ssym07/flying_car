@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { CAMERA, TERRAIN, WORLD } from '../core/config';
 import { WARDS } from '../data/wards';
+import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
+import { Labels } from './Labels';
 import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
 
@@ -18,6 +20,8 @@ export class World {
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
   private readonly ground: THREE.Group;
+  private readonly atmosphere: Atmosphere;
+  private readonly labels: Labels;
 
   constructor(readonly renderer: THREE.WebGLRenderer) {
     this.camera = new THREE.PerspectiveCamera(
@@ -27,14 +31,7 @@ export class World {
       WORLD.viewDistance,
     );
 
-    const sky = new THREE.Color(0x9cc8ee);
-    this.scene.background = sky;
-    this.scene.fog = new THREE.Fog(sky, WORLD.fog.near, WORLD.fog.far);
-
-    this.scene.add(new THREE.HemisphereLight(0xdfefff, 0x6b6250, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-    sun.position.set(-0.5, 1, 0.3);
-    this.scene.add(sun);
+    this.atmosphere = new Atmosphere(this.scene, renderer);
 
     this.ground = buildGround();
     this.scene.add(this.ground);
@@ -58,8 +55,11 @@ export class World {
     // 地形の外側の平面は海面より少し下に置く（ローカル座標の y=0 は原点の楕円体高）
     this.groundY = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight - 5;
 
-    // 地形はタイルと同じ座標変換で作る
-    this.terrain.setFrame(computeEcefToLocal());
+    // 地形・ラベルはタイルと同じ座標変換で作る
+    const ecefToLocal = computeEcefToLocal();
+    this.terrain.setFrame(ecefToLocal);
+    this.labels = new Labels(ecefToLocal, [this.terrain.group, this.roads.group]);
+    this.scene.add(this.labels.group);
 
     window.addEventListener('resize', () => this.resize());
   }
@@ -88,9 +88,12 @@ export class World {
     return this.terrain.toLatLon(position);
   }
 
-  render(): void {
+  /** @param dt 前のフレームからの秒数（雲やラベルの更新に使う） */
+  render(dt: number): void {
     for (const layer of this.layers) layer.update(this.camera);
     this.terrain.update(this.camera.position);
+    this.atmosphere.update(this.camera, dt);
+    this.labels.update(this.camera, dt);
     this.renderer.render(this.scene, this.camera);
   }
 }

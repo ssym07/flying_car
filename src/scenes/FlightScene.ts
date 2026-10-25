@@ -5,7 +5,8 @@ import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Hud } from '../ui/hud';
 import { LocationLabel } from '../ui/locationLabel';
-import { step, speed, type ControlInput } from '../vehicle/physics';
+import { Minimap } from '../ui/minimap';
+import { forwardOf, step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
 import { Collision } from '../world/Collision';
 
@@ -15,6 +16,8 @@ export class FlightScene implements GameScene {
   private chase!: ChaseCamera;
   private hud!: Hud;
   private location!: LocationLabel;
+  private minimap!: Minimap;
+  private readonly ahead = new THREE.Vector3();
   private sinceLocation = Infinity;
   private groundHeight = 0;
   private readonly control: ControlInput = { throttle: 0, turn: 0, lift: 0 };
@@ -34,10 +37,17 @@ export class FlightScene implements GameScene {
       yaw: 0,
     });
     world.scene.add(this.vehicle.mesh);
+    // 駅名の看板（建物越しに見えるよう最後に重ねて描く）より、さらに後に自機を描く
+    this.vehicle.mesh.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      obj.material.transparent = true;
+      obj.renderOrder = 20;
+    });
 
     this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
     this.hud = new Hud(this.ctx.overlay);
     this.location = new LocationLabel(this.ctx.overlay);
+    this.minimap = new Minimap(this.ctx.overlay);
 
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });
@@ -50,6 +60,7 @@ export class FlightScene implements GameScene {
     });
     this.hud.dispose();
     this.location.dispose();
+    this.minimap.dispose();
   }
 
   update(dt: number): void {
@@ -81,16 +92,24 @@ export class FlightScene implements GameScene {
     const seaLevel = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight;
     this.hud.set(speed(s.velocity), bottom - seaLevel, bottom - this.groundHeight);
 
-    // 現在地表示は 0.5 秒ごとで十分
-    this.sinceLocation += frameDt;
-    if (this.sinceLocation >= 0.5) {
-      const latLon = world.toLatLon(this.vehicle.mesh.position);
-      if (latLon) {
+    const position = this.vehicle.mesh.position;
+    const latLon = world.toLatLon(position);
+    if (latLon) {
+      // 進行方向の方位：少し前の地点も緯度経度にして、北からの角度を出す
+      const fwd = forwardOf(this.vehicle.mesh.rotation.y);
+      const ahead = world.toLatLon(this.ahead.set(position.x + fwd.x * 20, position.y, position.z + fwd.z * 20))!;
+      const east = (ahead.lon - latLon.lon) * Math.cos(latLon.lat * THREE.MathUtils.DEG2RAD);
+      const north = ahead.lat - latLon.lat;
+      this.minimap.update(latLon.lat, latLon.lon, Math.atan2(east, north));
+
+      // 現在地の文字表示は 0.5 秒ごとで十分
+      this.sinceLocation += frameDt;
+      if (this.sinceLocation >= 0.5) {
         this.location.update(latLon.lat, latLon.lon);
         this.sinceLocation = 0;
       }
     }
 
-    world.render();
+    world.render(frameDt);
   }
 }

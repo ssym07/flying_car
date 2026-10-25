@@ -54,8 +54,8 @@ export class LoadingScene implements GameScene {
     }
   }
 
-  render(): void {
-    this.ctx.world.render();
+  render(_alpha: number, frameDt: number): void {
+    this.ctx.world.render(frameDt);
     const { layers, terrain } = this.ctx.world;
     const all = [...layers.map((l) => l.progress), terrain.progressWithin(TERRAIN.initialRadius)];
     const pct = Math.round((all.reduce((a, b) => a + b, 0) / all.length) * 100);

@@ -151,3 +151,82 @@ export const LOCATION = {
   /** 住所を問い合わせる最短間隔 (秒) */
   geocodeMinIntervalSec: 2,
 };
+
+export const MINIMAP = {
+  /** 画面上の大きさ (px) */
+  size: 250,
+  /** 地図タイルのズーム。15 で 1px ≒ 4m、250px で約1km 四方 */
+  zoom: 15,
+  /** 地図タイルの拡大率（1 で等倍） */
+  scale: 1,
+  /** 国土地理院 淡色地図 */
+  tileUrl: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
+  /** 手元に残しておくタイル数の上限 */
+  maxCachedTiles: 64,
+  /** 通り名の文字の大きさ (px) */
+  labelFontSize: 11,
+  /** 同じ通り名を同時に出す最大数 */
+  maxLabelsPerName: 1,
+};
+
+/** 空・太陽・雲 */
+export const ATMOSPHERE = {
+  /** 太陽の高さ（地平線からの角度） */
+  sunElevationDeg: 38,
+  /** 太陽の方位（北から時計回り）。200 で南南西 */
+  sunAzimuthDeg: 200,
+  /** 大気の濁り（大きいほど白っぽく霞む） */
+  turbidity: 6,
+  /** 空の青さ */
+  rayleigh: 1.6,
+  mieCoefficient: 0.004,
+  mieDirectionalG: 0.82,
+  /** 画面全体の明るさ（トーンマッピングの露出） */
+  exposure: 0.45,
+  sunIntensity: 2.6,
+  ambientIntensity: 1.0,
+  /** ガラスなどへの空の映り込みの強さ */
+  environmentIntensity: 0.3,
+  /** 霧の色。地平線付近の空の色に合わせる */
+  fogColor: 0xb4c9de,
+  clouds: {
+    /** 空のどれくらいを雲が覆うか (0..1) */
+    coverage: 0.45,
+    /** 雲の濃さ */
+    density: 0.5,
+    /** 雲の模様の細かさ */
+    scale: 0.0002,
+    /** 雲が流れる速さ */
+    speed: 0.00003,
+    /** 雲の高さの見え方（大きいほど低く・近く見える） */
+    elevation: 0.5,
+  },
+};
+
+/** 3D 空間に置く駅名・通り名 */
+export const LABELS = {
+  station: {
+    /** この距離 (m) 以内の駅に看板を出す */
+    radius: 2500,
+    /** 看板の地面からの高さ (m) */
+    height: 70,
+    /** 同時に出す看板の数（近い順）。多いと建物越しに重なって見づらい */
+    maxCount: 10,
+    /**
+     * 看板の画面上の縦の大きさ（画面の高さに対する割合）。近くは near、radius では far。
+     * 距離で実寸を変えて、近くの看板が巨大にならないようにする
+     */
+    screenSize: { near: 0.038, far: 0.022 },
+    /** この距離 (m) より近い看板は薄くする（自機に重ならないように） */
+    fadeNear: 250,
+  },
+  road: {
+    /** この距離 (m) 以内の通りに名前を描く */
+    radius: 1200,
+    /** 文字の高さ (m) */
+    textHeight: 14,
+    /** 地面から浮かせる高さ (m) */
+    lift: 0.5,
+    opacity: 0.85,
+  },
+};

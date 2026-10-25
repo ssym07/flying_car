@@ -140,10 +140,9 @@ body {
 
 .attribution {
   position: absolute;
-  right: 8px;
-  bottom: 6px;
+  left: 8px;
+  top: 6px;
   max-width: 45vw;
-  text-align: right;
   font-size: 11px;
   color: var(--fg-dim);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
@@ -173,4 +172,42 @@ body {
 
 .location-address:empty {
   display: none;
+}
+
+.minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  background: #1b2230;
+}
+
+.minimap canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 淡色地図を反転して、街の配色（黒・紺）に合う暗い地図にする */
+.minimap-map {
+  filter: invert(1) hue-rotate(190deg) brightness(0.85) contrast(0.9) saturate(0.7);
+}
+
+.minimap-north {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(10, 20, 35, 0.8);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }

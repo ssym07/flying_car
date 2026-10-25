@@ -203,6 +203,10 @@ MVP は **PLATEAU の1区画**で進める。
 | 建物 | PLATEAU 建築物モデル（2025） | 全区とも軽い LOD1（台東区のみテクスチャ無し LOD2）に、手続き的に描いた外壁テンプレート（`src/world/facade.ts`）を貼る。建物の高さで高層／中層／低層のテンプレートを選ぶ。URL は `src/data/wards.ts` |
 | 道路 | PLATEAU 交通（道路）モデル LOD3（2025, 千代田区のみ） | テクスチャが無いのでアスファルト色で塗る |
 | 地形 | 国土地理院 標高タイル（5mメッシュ）＋ 全国最新写真 | カメラの周り約3.5kmだけ読み、離れたら捨てる。標高にジオイド高を足して楕円体高に合わせる |
+| ミニマップ | 国土地理院 淡色地図（地理院タイル） | CSS フィルタで反転して暗い配色にしている |
+| 通り名 | OpenStreetMap（`src/data/roadLabels.json`） | 幹線道路に沿って約350mごとのラベル位置。`node scripts/fetch-roads.mjs` で作り直せる |
+| 3D の駅名・通り名 | 上の駅・通り名データ | 駅は上空の看板（近い10駅）、通り名は路面に描く文字。カメラの周りだけ作る（`src/world/Labels.ts`） |
+| 空・雲 | three.js の Sky（大気散乱） | 太陽の向き・雲の量などは `ATMOSPHERE`（`src/core/config.ts`） |
 | 現在地 | 駅：OpenStreetMap（`src/data/stations.json`）、住所：国土地理院 逆ジオコーダ | 駅一覧は `node scripts/fetch-stations.mjs` で作り直せる |
 
 配信 URL は PLATEAU のデータカタログ API（`https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets`）で探せる。
