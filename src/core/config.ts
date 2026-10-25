@@ -96,13 +96,6 @@ export const WORLD = {
     /** 外壁テンプレートの明るさの倍率（色味は保ったまま全体を明るく・暗くする） */
     facadeBrightness: 1.8,
   },
-  /** 道路（PLATEAU 交通モデル LOD3, 千代田区のみ） */
-  roads: {
-    url: 'https://assets.cms.plateau.reearth.io/assets/c6/9e8877-46d9-45a4-aebf-aa8d6105d698/13101_chiyoda-ku_pref_2025_citygml_1_op_tran_3dtiles_lod3/tileset.json',
-    errorTarget: 24,
-    /** 配信データは白一色なので、アスファルトの色で塗る */
-    color: 0x7a7e86,
-  },
   /**
    * タイルのキャッシュ（全レイヤー共有、GPU メモリ換算）。
    * テクスチャ付き建物は1タイルで数MB使うので、既定値（約400MB）では足りず読込が止まる。
@@ -301,4 +294,33 @@ export const LABELS = {
     lift: 0.5,
     opacity: 0.85,
   },
+};
+
+/** 道路（OpenStreetMap の中心線から、テンプレートで車道・歩道・横断歩道を作る） */
+export const ROADS = {
+  /** 道路データ（scripts/fetch-road-network.mjs で作る。地形チャンクと同じズーム15のタイル） */
+  tilePath: 'roads/15/{x}/{y}.json',
+  /** アスファルトの色（生活道路は shade 倍で明るくする） */
+  asphaltColor: 0x55585f,
+  /** 歩道のタイルに掛ける色 */
+  sidewalkColor: 0xffffff,
+  /**
+   * 種別ごとの寸法。[幹線, 2車線, 生活道路]
+   * lanes：車線数の既定値（データに無い時）、laneWidth：1車線の幅、shoulder：外側線の外の幅、
+   * width：生活道路の幅、sidewalk：片側の歩道の幅、lift：地面から浮かせる高さ（交差点で太い道を上に）、
+   * shade：アスファルトの明るさ
+   */
+  classes: [
+    { lanes: 4, laneWidth: 3.25, shoulder: 0.75, width: 0, sidewalk: 4, lift: 0.45, shade: 1.0 },
+    { lanes: 2, laneWidth: 3.0, shoulder: 0.5, width: 0, sidewalk: 2.5, lift: 0.35, shade: 1.08 },
+    { lanes: 0, laneWidth: 0, shoulder: 0, width: 4.5, sidewalk: 0, lift: 0.25, shade: 1.4 },
+  ],
+  /** 地形に沿わせるため、中心線をこの間隔 (m) で細かく区切る */
+  densifyStep: 8,
+  /** 交差点の中心から（道幅の半分＋この距離 m）までは、車線の線と歩道を出さない */
+  junctionClear: 4,
+  /** 歩道の高さ（車道より上, m） */
+  curbHeight: 0.15,
+  /** 横断歩道の長さ（道に沿った方向, m） */
+  crosswalkLength: 4,
 };

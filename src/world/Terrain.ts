@@ -12,8 +12,16 @@ interface Chunk {
   /** チャンク中心のローカル座標 */
   center: THREE.Vector3;
   mesh: THREE.Mesh | null;
+  /** 標高（ジオイド基準, m）。256×256、データなしは埋め済み */
+  heights: Float32Array | null;
   /** 読込中に範囲外になったら true（読み終わったら捨てる） */
   dead: boolean;
+}
+
+/** 地形チャンクの読込・破棄を知らせる相手（道路など、チャンクごとに作るもの） */
+export interface ChunkListener {
+  onChunkAdded(x: number, y: number): void;
+  onChunkRemoved(x: number, y: number): void;
 }
 
 /**
@@ -31,11 +39,35 @@ export class Terrain {
   /** 直近の update でカメラの読込範囲にあったチャンク */
   private wanted: Chunk[] = [];
   private readonly lastCamera = new THREE.Vector3();
+  private readonly listeners: ChunkListener[] = [];
   /** 写真が取れなかったチャンク用（[本体, 縁の壁]） */
   private readonly materials: THREE.Material[];
 
   constructor() {
     this.materials = createMaterials(null);
+  }
+
+  addListener(listener: ChunkListener): void {
+    this.listeners.push(listener);
+  }
+
+  /** 読込済みのチャンクから、緯度経度（度）の標高（ジオイド基準, m）を引く。無ければ null */
+  heightAt(latDeg: number, lonDeg: number): number | null {
+    const t = lonLatToTile(lonDeg, latDeg, TERRAIN.demZoom);
+    const chunk = this.chunks.get(`${Math.floor(t.x)}/${Math.floor(t.y)}`);
+    if (!chunk?.heights) return null;
+    return sampleHeight(chunk.heights, TILE_PX, (t.x - chunk.x) * TILE_PX, (t.y - chunk.y) * TILE_PX);
+  }
+
+  /** 緯度経度（度）と標高（ジオイド基準, m）→ ローカル座標 */
+  toLocal(latDeg: number, lonDeg: number, height: number, target = new THREE.Vector3()): THREE.Vector3 {
+    WGS84_ELLIPSOID.getCartographicToPosition(
+      latDeg * THREE.MathUtils.DEG2RAD,
+      lonDeg * THREE.MathUtils.DEG2RAD,
+      height + TERRAIN.geoidHeight,
+      target,
+    );
+    return target.applyMatrix4(this.ecefToLocal!);
   }
 
   /** タイルと同じ ECEF → ローカル座標 の変換を渡す。これ以降 update で読み始める */
@@ -128,7 +160,7 @@ export class Terrain {
     const center = new THREE.Vector3();
     WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, TERRAIN.geoidHeight, center);
     center.applyMatrix4(this.ecefToLocal!);
-    return { x, y, center, mesh: null, dead: false };
+    return { x, y, center, mesh: null, heights: null, dead: false };
   }
 
   private async loadChunk(chunk: Chunk): Promise<void> {
@@ -146,7 +178,9 @@ export class Terrain {
       }
       geometry.computeBoundsTree();
       chunk.mesh = new THREE.Mesh(geometry, map ? createMaterials(map) : this.materials);
+      chunk.heights = heights;
       this.group.add(chunk.mesh);
+      for (const l of this.listeners) l.onChunkAdded(chunk.x, chunk.y);
     } catch (e) {
       console.warn('[Terrain] チャンクの読込に失敗しました', chunk.x, chunk.y, e);
       this.chunks.delete(key(chunk));
@@ -164,7 +198,9 @@ export class Terrain {
       for (const m of materials) m.dispose();
     }
     chunk.mesh = null;
+    chunk.heights = null;
     this.chunks.delete(key(chunk));
+    for (const l of this.listeners) l.onChunkRemoved(chunk.x, chunk.y);
   }
 }
 

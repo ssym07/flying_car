@@ -4,6 +4,7 @@ import { WARDS } from '../data/wards';
 import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
 import { Labels } from './Labels';
+import { RoadNetwork } from './RoadNetwork';
 import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
 
@@ -15,7 +16,8 @@ export class World {
   readonly camera: THREE.PerspectiveCamera;
   /** 区ごとの建物 */
   readonly buildings: Tiles[];
-  readonly roads: Tiles;
+  /** 道路（OpenStreetMap の中心線からテンプレートで作る） */
+  readonly roads: RoadNetwork;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
@@ -47,9 +49,8 @@ export class World {
           renderer,
         ),
     );
-    const { roads } = WORLD;
-    this.roads = new Tiles(roads.url, roads.errorTarget, { color: roads.color }, this.camera, renderer);
-    this.scene.add(...this.layers.map((l) => l.group), this.terrain.group);
+    this.roads = new RoadNetwork(this.terrain);
+    this.scene.add(...this.layers.map((l) => l.group), this.terrain.group, this.roads.group);
     this.colliders = [...this.layers.map((l) => l.group), this.terrain.group];
 
     // 地形の外側の平面は海面より少し下に置く（ローカル座標の y=0 は原点の楕円体高）
@@ -80,7 +81,7 @@ export class World {
   }
 
   get layers(): Tiles[] {
-    return [...this.buildings, this.roads];
+    return this.buildings;
   }
 
   /** ローカル座標 → 緯度経度（度）。座標変換が決まる前は null */
