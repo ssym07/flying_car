@@ -3,6 +3,7 @@ import { CAMERA, TERRAIN, WORLD } from '../core/config';
 import { WARDS } from '../data/wards';
 import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
+import { ExpresswayNetwork } from './ExpresswayNetwork';
 import { Labels } from './Labels';
 import { RailNetwork } from './RailNetwork';
 import { RoadNetwork } from './RoadNetwork';
@@ -22,6 +23,8 @@ export class World {
   readonly roads: RoadNetwork;
   /** 線路 */
   readonly rails: RailNetwork;
+  /** 高速道路 */
+  readonly expressways: ExpresswayNetwork;
   /** 駅の屋根 */
   readonly stationRoofs: StationRoofs;
   readonly terrain = new Terrain();
@@ -57,6 +60,7 @@ export class World {
     );
     this.roads = new RoadNetwork(this.terrain);
     this.rails = new RailNetwork(this.terrain);
+    this.expressways = new ExpresswayNetwork(this.terrain);
     this.stationRoofs = new StationRoofs(this.terrain);
     this.scene.add(
       ...this.layers.map((l) => l.group),
@@ -64,9 +68,10 @@ export class World {
       this.terrain.trees,
       this.roads.group,
       this.rails.group,
+      this.expressways.group,
       this.stationRoofs.group,
     );
-    this.colliders = [...this.layers.map((l) => l.group), this.terrain.group, this.stationRoofs.group];
+    this.colliders = [...this.layers.map((l) => l.group), this.terrain.group, this.stationRoofs.group, this.expressways.group];
 
     // 地形の外側の平面（ローカル座標の y=0 は原点の楕円体高）。
     // ゼロメートル地帯（標高 -4m 前後）の地形より上に出ないよう、十分低くする

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RAILWAYS, WATER } from '../core/config';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
+import { cutFloor, smoothGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
 
 /**
@@ -98,61 +99,6 @@ export class RailNetwork implements ChunkListener {
    * 1本の線路。offsets は各点の地面からの高さ（0.1m 単位、スロープ込みで計算済み）。
    * 高架の所は、地形の細かい凹凸を均した地面を基準にして、上面をなだらかにする
    */
-  /** 掘割の底の高さ：各点の前後 cutFloorRadius m の細かい標高の最小を、さらに前後で均したもの */
-  private cutFloor(samples: Array<[number, number]>, s: number[]): Array<number | null> {
-    const dem = samples.map(([lat, lon]) => this.terrain.heightAt(lat, lon));
-    const r = RAILWAYS.cutFloorRadius;
-    const low = dem.map((_, i) => {
-      let m: number | null = null;
-      for (let j = 0; j < dem.length; j++) {
-        if (Math.abs(s[j] - s[i]) > r || dem[j] === null) continue;
-        m = m === null ? dem[j] : Math.min(m, dem[j]!);
-      }
-      return m;
-    });
-    return low.map((_, i) => {
-      let sum = 0;
-      let n = 0;
-      for (let j = 0; j < low.length; j++) {
-        if (Math.abs(s[j] - s[i]) > r || low[j] === null) continue;
-        sum += low[j]!;
-        n++;
-      }
-      return n > 0 ? sum / n : null;
-    });
-  }
-
-  /** (lat, lon) のまわり ±RAILWAYS.smoothRadius m の格子点（固定の格子に揃える）の地形の平均 */
-  private smoothGround(lat: number, lon: number): number | null {
-    const step = RAILWAYS.smoothRadius / 2;
-    const dLat = step / 111320;
-    const dLon = step / (111320 * Math.cos((lat * Math.PI) / 180));
-    // 格子を固定して、近くの点どうしは同じ格子点を使うようにする（その間は線形に補間）
-    const gy = lat / dLat;
-    const gx = lon / dLon;
-    const y0 = Math.floor(gy);
-    const x0 = Math.floor(gx);
-    const at = (iy: number, ix: number) => {
-      let sum = 0;
-      let n = 0;
-      for (let a = -2; a <= 2; a++) {
-        for (let b = -2; b <= 2; b++) {
-          const h = this.terrain.heightAt((iy + a) * dLat, (ix + b) * dLon);
-          if (h !== null) (sum += h), n++;
-        }
-      }
-      return n > 0 ? sum / n : null;
-    };
-    const c00 = at(y0, x0);
-    const c01 = at(y0, x0 + 1);
-    const c10 = at(y0 + 1, x0);
-    const c11 = at(y0 + 1, x0 + 1);
-    if (c00 === null || c01 === null || c10 === null || c11 === null) return null;
-    const fy = gy - y0;
-    const fx = gx - x0;
-    return (c00 * (1 - fx) + c01 * fx) * (1 - fy) + (c10 * (1 - fx) + c11 * fx) * fy;
-  }
-
   /** 1本の線路を作り、中心線の点（ローカル座標）を返す */
   private buildTrack(
     points: Array<[number, number]>,
@@ -191,12 +137,12 @@ export class RailNetwork implements ChunkListener {
     // 地上の線路は、描いている地形の面に合わせる（標高データそのものだと面に埋もれる）
     // 掘割は、細かい標高（5m メッシュ）の前後 cutFloorRadius m の一番低い所＝掘割の底に置く（あとで地形を削る）
     const raw = cut
-      ? this.cutFloor(samples, s)
+      ? cutFloor(this.terrain, samples, s, RAILWAYS.cutFloorRadius)
       : samples.map(([lat, lon]) => this.terrain.surfaceHeightAt(lat, lon));
     let last = raw.find((g) => g !== null) ?? 0;
     const ground = raw.map((g) => (last = g ?? last));
     // 均した地面：場所だけで決まる平均（周りの格子点の地形の平均）にして、隣を並んで走る線路と同じ高さにする
-    const smooth = samples.map(([lat, lon], i) => this.smoothGround(lat, lon) ?? ground[i]);
+    const smooth = samples.map(([lat, lon], i) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius) ?? ground[i]);
     const heights = ground.map((g, i) => {
       // 高架ほど均した地面に寄せる（地上の線路は地形に沿わせる）
       const base = THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1));

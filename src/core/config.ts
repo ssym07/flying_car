@@ -482,3 +482,49 @@ export const PARKS = {
   coniferColor: 0x2f6b3a,
   sakuraColor: 0xf3b6cc,
 };
+
+/** 高速道路（首都高・湾岸線・外環道など。scripts/fetch-expressways.mjs → build-expressways.mjs で作る） */
+export const EXPRESSWAYS = {
+  tilePath: 'expressways/15/{x}/{y}.json',
+  /** 車線幅・路肩の幅 (m) */
+  laneWidth: 3.5,
+  shoulder: 1.0,
+  /** 地面から浮かせる高さ (m) */
+  lift: 0.35,
+  /** 地面からこの高さ (m) を超えた所を高架とし、桁の裏側を付ける。この高さ (m) を超えた所に橋脚を立てる */
+  elevatedFrom: 2,
+  pierFrom: 4,
+  /** 中心線を区切る間隔 (m) */
+  densifyStep: 5,
+  /** 高架の上面をなだらかにするため、地面を均す範囲（±m） */
+  smoothRadius: 80,
+  /** 掘割：底を探す範囲（前後, m）、削る幅（底の平らな部分, m）、両側の斜面の傾き */
+  cutFloorRadius: 20,
+  cutWidth: 14,
+  cutSlope: 1.6,
+  /** 壁高欄：高さ・厚さ (m)、上の手すりの壁からの高さ (m) */
+  barrierHeight: 1.0,
+  barrierThickness: 0.45,
+  railHeight: 0.15,
+  /** 桁の厚さ (m) */
+  girderDepth: 2.2,
+  /** 橋脚：間隔・柱の半径・梁の厚さ (m) */
+  pierSpacing: 35,
+  pierRadius: 1.1,
+  beamDepth: 1.6,
+  /** カーブの外側のしましま：これより急なカーブ（半径 m）に、この幅 (m) で */
+  zebraRadius: 180,
+  zebraWidth: 2.4,
+  /** 街灯：間隔・高さ・腕の長さ (m) */
+  lampSpacing: 45,
+  lampHeight: 9,
+  lampArm: 2.2,
+  /** 路線名：間隔・文字の高さ (m) */
+  nameSpacing: 500,
+  nameHeight: 5,
+  concreteColor: 0xeceef0,
+  undersideColor: 0xb3b8bf,
+  railColor: 0xc8ccd2,
+  lampPoleColor: 0x9aa0a8,
+  lampColor: 0xffd9a0,
+};
