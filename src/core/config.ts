@@ -424,6 +424,11 @@ export const RAILWAYS = {
   lift: 0.3,
   /** 高架の上面をなだらかにするため、地面を均す範囲（±m） */
   smoothRadius: 60,
+  /** 掘割：底を探す範囲（前後, m）、削る幅（底の平らな部分, m）、両側の斜面の傾き（高さ/水平）、底を線路より下げる量 (m) */
+  cutFloorRadius: 20,
+  cutWidth: 10,
+  cutSlope: 1.6,
+  cutDepthBelow: 0.15,
   /** 川の上を渡る線路の、水面からの高さ (m) */
   waterClearance: 2.5,
   /** 地面からこの高さ (m) を超えた所に高架の桁・側壁を付ける */
@@ -450,4 +455,26 @@ export const SEARCH = {
   jumpAltitude: 100,
   /** 着いた所の地形がまだ読めていない間、待つ高さ（標高, m）。23区で一番高い所より十分上 */
   waitAltitude: 250,
+};
+
+/** 公園（OpenStreetMap の公園・林・グラウンド・園路。scripts/fetch-parks.mjs で作る） */
+export const PARKS = {
+  tilePath: 'parks/15/{x}/{y}.json',
+  /** 芝生の色（2色の間でむらを付ける）と、園路・グラウンドの土の色 */
+  grassColor: 0x6fae4a,
+  grassColor2: 0x8cc35a,
+  dirtColor: 0xc9ab84,
+  /** 木：格子の間隔 (m)、芝生の真ん中・縁（edgeWidth m 以内）・林での密度（0..1）、桜の割合 */
+  treeSpacing: 9,
+  edgeWidth: 14,
+  lawnDensity: 0.12,
+  edgeDensity: 0.75,
+  woodDensity: 0.85,
+  sakuraRatio: 0.12,
+  maxTreesPerChunk: 4000,
+  /** カメラからこの距離 (m) 以内のチャンクだけ木を描く */
+  treeRadius: 1600,
+  leafColor: 0x4f8f3c,
+  coniferColor: 0x2f6b3a,
+  sakuraColor: 0xf3b6cc,
 };

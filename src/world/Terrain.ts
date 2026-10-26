@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
-import { TERRAIN } from '../core/config';
+import { PARKS, TERRAIN } from '../core/config';
+import { addParks, buildTrees, fetchParks } from './parks';
 import { addWater, fetchWaterMask, flattenWater, waterTime } from './water';
 
 /** 標高タイルの「データなし」（水面など） */
@@ -13,6 +14,8 @@ interface Chunk {
   /** チャンク中心のローカル座標 */
   center: THREE.Vector3;
   mesh: THREE.Mesh | null;
+  /** 公園の木 */
+  trees: THREE.Group | null;
   /** 標高（ジオイド基準, m）。256×256、データなしは埋め済み */
   heights: Float32Array | null;
   /** 読込中に範囲外になったら true（読み終わったら捨てる） */
@@ -33,6 +36,8 @@ export interface ChunkListener {
  */
 export class Terrain {
   readonly group = new THREE.Group();
+  /** 公園の木（当たり判定の対象にしないよう、地形とは別のグループ） */
+  readonly trees = new THREE.Group();
   private ecefToLocal: THREE.Matrix4 | null = null;
   private localToEcef = new THREE.Matrix4();
   private readonly chunks = new Map<string, Chunk>();
@@ -41,11 +46,29 @@ export class Terrain {
   private wanted: Chunk[] = [];
   private readonly lastCamera = new THREE.Vector3();
   private readonly listeners: ChunkListener[] = [];
+  /** 地形を削る線（掘割の線路など）。キーごとに登録し、今あるチャンクとこれから作るチャンクに当てる */
+  private readonly carves = new Map<string, Carve>();
   /** 写真が取れなかったチャンク用（[本体, 縁の壁]） */
   private readonly materials: THREE.Material[];
 
   constructor() {
     this.materials = createMaterials(null);
+  }
+
+  /**
+   * 線に沿って地形を削る（掘割）。points はローカル座標で、y は削った底の高さ。
+   * 線から width/2 までは底の高さ、その外は slope の傾き（高さ/水平距離）で元の地面へ戻る
+   */
+  addCarve(key: string, lines: THREE.Vector3[][], width: number, slope: number): void {
+    const box = new THREE.Box3();
+    for (const line of lines) for (const p of line) box.expandByPoint(p);
+    const carve: Carve = { lines, half: width / 2, slope, box };
+    this.carves.set(key, carve);
+    for (const chunk of this.chunks.values()) if (chunk.mesh) applyCarves(chunk.mesh, [carve]);
+  }
+
+  removeCarve(key: string): void {
+    this.carves.delete(key);
   }
 
   addListener(listener: ChunkListener): void {
@@ -167,6 +190,11 @@ export class Terrain {
       void this.loadChunk(chunk).finally(() => this.loadingCount--);
     }
 
+    // 木は近くのチャンクだけ描く
+    for (const chunk of this.chunks.values()) {
+      if (chunk.trees) chunk.trees.visible = distanceTo(chunk) < PARKS.treeRadius;
+    }
+
     // 遠くなったチャンクを捨てる
     for (const chunk of this.chunks.values()) {
       if (distanceTo(chunk) <= TERRAIN.unloadRadius) continue;
@@ -189,7 +217,7 @@ export class Terrain {
     const center = new THREE.Vector3();
     WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, TERRAIN.geoidHeight, center);
     center.applyMatrix4(this.ecefToLocal!);
-    return { x, y, center, mesh: null, heights: null, dead: false };
+    return { x, y, center, mesh: null, trees: null, heights: null, dead: false };
   }
 
   private async loadChunk(chunk: Chunk): Promise<void> {
@@ -204,18 +232,34 @@ export class Terrain {
       fillNoData(heights, TILE_PX);
       if (waterData) flattenWater(heights, waterData.mask, waterData.size);
       const water = waterData?.texture ?? null;
+      const parks = await fetchParks(chunk.x, chunk.y, z, waterData?.mask ?? null);
       const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
       if (chunk.dead) {
         geometry.dispose();
         map?.dispose();
         water?.dispose();
+        parks?.texture.dispose();
         this.chunks.delete(key(chunk));
         return;
       }
+      chunk.mesh = new THREE.Mesh(
+        geometry,
+        map || water || parks ? createMaterials(map, water, parks?.texture ?? null) : this.materials,
+      );
+      applyCarves(chunk.mesh, [...this.carves.values()], false);
       geometry.computeBoundsTree();
-      chunk.mesh = new THREE.Mesh(geometry, map || water ? createMaterials(map, water) : this.materials);
       chunk.heights = heights;
       this.group.add(chunk.mesh);
+      if (parks && parks.trees.length > 0) {
+        chunk.trees = buildTrees(parks.trees, (u, v) => {
+          const lonLat = tileToLonLat(chunk.x + u, chunk.y + v, z);
+          const lat = lonLat.lat * THREE.MathUtils.RAD2DEG;
+          const lon = lonLat.lon * THREE.MathUtils.RAD2DEG;
+          const h = this.surfaceHeightAt(lat, lon);
+          return h === null ? null : this.toLocal(lat, lon, h - 0.2);
+        });
+        this.trees.add(chunk.trees);
+      }
       for (const l of this.listeners) l.onChunkAdded(chunk.x, chunk.y);
     } catch (e) {
       console.warn('[Terrain] チャンクの読込に失敗しました', chunk.x, chunk.y, e);
@@ -226,12 +270,18 @@ export class Terrain {
   private removeChunk(chunk: Chunk): void {
     const mesh = chunk.mesh!;
     this.group.remove(mesh);
+    if (chunk.trees) {
+      this.trees.remove(chunk.trees);
+      for (const m of chunk.trees.children) (m as THREE.InstancedMesh).dispose();
+      chunk.trees = null;
+    }
     mesh.geometry.disposeBoundsTree();
     mesh.geometry.dispose();
     if (mesh.material !== this.materials) {
       const materials = mesh.material as THREE.MeshStandardMaterial[];
       if (materials[0].map !== whitePixel) materials[0].map?.dispose();
       (materials[0].userData.waterMap as THREE.Texture | undefined)?.dispose();
+      (materials[0].userData.parkMap as THREE.Texture | undefined)?.dispose();
       for (const m of materials) m.dispose();
     }
     chunk.mesh = null;
@@ -239,6 +289,63 @@ export class Terrain {
     this.chunks.delete(key(chunk));
     for (const l of this.listeners) l.onChunkRemoved(chunk.x, chunk.y);
   }
+}
+
+interface Carve {
+  lines: THREE.Vector3[][];
+  half: number;
+  slope: number;
+  /** 線の範囲（ローカル座標） */
+  box: THREE.Box3;
+}
+
+/** 地形メッシュの頂点を、削る線の底の高さ（と、その外の斜面）より上に出ないよう下げる */
+function applyCarves(mesh: THREE.Mesh, carves: Carve[], refit = true): void {
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox!;
+  const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+  let changed = false;
+  for (const carve of carves) {
+    const reach = carve.half + 40;
+    if (
+      carve.box.max.x + reach < bounds.min.x ||
+      carve.box.min.x - reach > bounds.max.x ||
+      carve.box.max.z + reach < bounds.min.z ||
+      carve.box.min.z - reach > bounds.max.z
+    ) {
+      continue;
+    }
+    for (let i = 0; i < position.count; i++) {
+      const x = position.getX(i);
+      const z = position.getZ(i);
+      let limit = Infinity;
+      for (const line of carve.lines) {
+        for (let k = 1; k < line.length; k++) {
+          const a = line[k - 1];
+          const b = line[k];
+          const dx = b.x - a.x;
+          const dz = b.z - a.z;
+          const len2 = dx * dx + dz * dz || 1;
+          const t = THREE.MathUtils.clamp(((x - a.x) * dx + (z - a.z) * dz) / len2, 0, 1);
+          const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+          if (d > reach) continue;
+          const floor = a.y + (b.y - a.y) * t;
+          limit = Math.min(limit, floor + Math.max(0, d - carve.half) * carve.slope);
+        }
+      }
+      if (position.getY(i) > limit) {
+        position.setY(i, limit);
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return;
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  if (refit) geometry.boundsTree?.refit();
 }
 
 function key(chunk: { x: number; y: number }): string {
@@ -249,12 +356,16 @@ function key(chunk: { x: number; y: number }): string {
 const whitePixel = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 whitePixel.needsUpdate = true;
 
-function createMaterials(map: THREE.Texture | null, water: THREE.Texture | null = null): THREE.Material[] {
+function createMaterials(
+  map: THREE.Texture | null,
+  water: THREE.Texture | null = null,
+  park: THREE.Texture | null = null,
+): THREE.Material[] {
   const color = map ? 0xffffff : 0x7d8a72;
   // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
   const ground = new THREE.MeshStandardMaterial({
     // 写真が無くても水面は描けるよう、白1画素の画像を貼っておく（水面のシェーダーは写真と同じ uv を使う）
-    map: map ?? (water ? whitePixel : null),
+    map: map ?? (water || park ? whitePixel : null),
     color,
     roughness: 1,
     polygonOffset: true,
@@ -262,6 +373,8 @@ function createMaterials(map: THREE.Texture | null, water: THREE.Texture | null 
     polygonOffsetUnits: 2,
   });
   if (water) addWater(ground, water);
+  // 水面の処理より先に芝生を塗る（池の上は水面になる）。addParks は前の処理に続けてつなぐので、水面の後に呼ぶ
+  if (park) addParks(ground, park);
   return [
     ground,
     // 縁の壁はずらさない（垂直な面は大きく奥へずれて、隠したい隙間が見えてしまう）。

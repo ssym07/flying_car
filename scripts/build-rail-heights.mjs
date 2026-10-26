@@ -8,9 +8,10 @@
 // - 地上の線路が地上の道路と交わる所は、線路を持ち上げて高架にし、道路を下に通す
 // - 地上と高架の間は勾配 GRADE のスロープでつなぐ（線路のつながりをたどって高さを決める）
 // - 線路が地上のまま道路の橋と交わる所は、道路の橋を線路の上 ROAD_CLEARANCE m 以上に上げる
+// - 掘割（layer が負でトンネルでない）の線路は高さ 0 のまま（地形を削って底に置くのは描画側）。道路は上を通す
 //
 // 出力の形式（1タイル）:
-// { "t": [[軌間(mm), [緯度,経度,...（1e-6度、先頭以外は差分）], [各点の高さ（0.1m 単位）...]], ...],
+// { "t": [[軌間(mm), [緯度,経度,...（1e-6度、先頭以外は差分）], [各点の高さ（0.1m 単位）...], 掘割(0/1)], ...],
 //   "x": [[緯度, 経度（1e-6度）, 半径(m)], ...] }   // 道路と交わる所（橋脚を立てない）
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 
@@ -176,7 +177,7 @@ function crossings(fn) {
 // 地上の線路 × 地上の道路：線路を持ち上げる（交わる線分の両端を高架の高さに）
 let raised = 0;
 crossings((r, i, _t, road) => {
-  if (road.bridge) return;
+  if (road.bridge || r.layer < 0) return;
   const a = nodes.get(r.keys[i - 1]);
   const b = nodes.get(r.keys[i]);
   if (Math.max(a.base, b.base) >= VIADUCT) return;
@@ -264,11 +265,14 @@ while (heap.length > 0) {
   }
 }
 
+// 掘割の線路は持ち上げない（スロープで隣から高さが伝わっても 0 に戻す）
+for (const r of runs) if (r.layer < 0) for (const k of r.keys) nodes.get(k).offset = 0;
+
 // ---- 地上に残った線路 × 道路の橋：道路の橋を線路の上に上げる ----
 const raiseRoad = new Map(); // 橋の両端のキー → 必要な高さ（地面から）
 let overpasses = 0;
 crossings((r, i, t, road) => {
-  if (!road.bridge) return;
+  if (!road.bridge || r.layer < 0) return;
   const h = nodes.get(r.keys[i - 1]).offset * (1 - t) + nodes.get(r.keys[i]).offset * t;
   if (h > GROUND_MAX) return;
   const k = road.bridge.slice(0, 4).join(',');
@@ -299,7 +303,12 @@ await rm(OUT_DIR, { recursive: true, force: true });
 const out = new Map();
 for (const r of runs) {
   if (!out.has(r.tile)) out.set(r.tile, { t: [], x: noPier.get(r.tile) ?? [] });
-  out.get(r.tile).t.push([r.gauge, encode(r.pts), r.keys.map((k) => Math.round(nodes.get(k).offset * 10))]);
+  out.get(r.tile).t.push([
+    r.gauge,
+    encode(r.pts),
+    r.keys.map((k) => Math.round(nodes.get(k).offset * 10)),
+    r.layer < 0 && !r.bridge ? 1 : 0,
+  ]);
 }
 let bytes = 0;
 for (const [tile, data] of out) {

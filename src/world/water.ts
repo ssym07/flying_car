@@ -89,18 +89,57 @@ export async function fetchWaterMask(
 
 /**
  * 水域の地形を水面の高さまで下げる（標高データは水面が「データなし」で、岸の高さで穴埋めされて盛り上がるため）。
+ * 水面の高さは、つながった水域ごとに「まわりの岸の一番低い高さ」にする（海や川は海面の高さ、
+ * 高台の池・川はその岸の高さ。全部を海面にすると、高台の池が深い穴になる）。
  * heights は 256×256 の標高、mask は fetchWaterMask の水域（heights より細かくてよい）
  */
 export function flattenWater(heights: Float32Array, mask: Uint8Array, maskSize: number): void {
   const n = 256;
   const k = maskSize / n;
+  // この標高の画素に重なる水域の画素の半分以上が水なら、水の画素
+  const water = new Uint8Array(n * n);
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      // この標高の画素に重なる水域の画素の半分以上が水なら、水面にする
-      let water = 0;
-      for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) water += mask[(y * k + j) * maskSize + x * k + i];
-      if (water * 2 >= k * k) heights[y * n + x] = Math.min(heights[y * n + x], WATER.surfaceHeight);
+      let w = 0;
+      for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) w += mask[(y * k + j) * maskSize + x * k + i];
+      if (w * 2 >= k * k) water[y * n + x] = 1;
     }
+  }
+  // つながった水域ごとに、まわりの岸の一番低い高さを探して、そこまで下げる
+  const label = new Int32Array(n * n).fill(-1);
+  const stack: number[] = [];
+  let id = 0;
+  for (let start = 0; start < n * n; start++) {
+    if (!water[start] || label[start] >= 0) continue;
+    const members: number[] = [];
+    let shore = Infinity;
+    label[start] = id;
+    stack.push(start);
+    while (stack.length > 0) {
+      const p = stack.pop()!;
+      members.push(p);
+      const px = p % n;
+      const py = (p - px) / n;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const qx = px + dx;
+        const qy = py + dy;
+        if (qx < 0 || qy < 0 || qx >= n || qy >= n) continue;
+        const q = qy * n + qx;
+        if (water[q]) {
+          if (label[q] < 0) {
+            label[q] = id;
+            stack.push(q);
+          }
+        } else {
+          shore = Math.min(shore, heights[q]);
+        }
+      }
+    }
+    // 岸の無い水域（チャンク全体が海など）は海面の高さ。川がチャンクをまたぐ所は隣と多少ずれるが、
+    // 海面まで下げると高台の川が深い溝になるので、岸に合わせる方を選ぶ
+    const level = Number.isFinite(shore) ? Math.max(WATER.surfaceHeight, shore - 0.5) : WATER.surfaceHeight;
+    for (const p of members) heights[p] = Math.min(heights[p], level);
+    id++;
   }
 }
 

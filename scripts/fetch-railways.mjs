@@ -5,7 +5,7 @@
 // 使い方: node scripts/fetch-railways.mjs [南,西,北,東] [分割数]
 // データ: © OpenStreetMap contributors (ODbL)
 //
-// 出力の形式（1タイル）: [[高架(0/1), layer, 軌間(mm), [緯度,経度,...（1e-6度、先頭以外は前の点との差）]], ...]
+// 出力の形式（1タイル）: [[高架(0/1), layer（負なら掘割）, 軌間(mm), [緯度,経度,...（1e-6度、先頭以外は前の点との差）]], ...]
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 
 const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
@@ -63,9 +63,8 @@ const q = (v) => Math.round(v * 1e6);
 for (const way of ways.values()) {
   const t = way.tags;
   const bridge = t.bridge !== undefined && t.bridge !== 'no' ? 1 : 0;
+  // layer が負でトンネルでないものは掘割（切り通し）。地形を削って、その底に線路を置く
   const layer = parseInt(t.layer ?? '0', 10) || 0;
-  // 地上の線路が地面より下（掘割）なら、地面に置く
-  if (layer < 0 && !bridge) continue;
   const gauge = parseInt(t.gauge ?? '1067', 10) || 1067;
   const g = way.geometry;
   // 線分の中点が入るタイルごとに、ひと続きの区間に分ける
@@ -81,7 +80,7 @@ for (const way of ways.values()) {
       plon = q(p.lon);
     }
     if (!tiles.has(run.key)) tiles.set(run.key, []);
-    tiles.get(run.key).push([bridge, Math.max(0, layer), gauge, coords]);
+    tiles.get(run.key).push([bridge, layer, gauge, coords]);
   };
   for (let k = 1; k < g.length; k++) {
     const key = tileOf((g[k - 1].lat + g[k].lat) / 2, (g[k - 1].lon + g[k].lon) / 2);

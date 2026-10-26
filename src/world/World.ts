@@ -61,6 +61,7 @@ export class World {
     this.scene.add(
       ...this.layers.map((l) => l.group),
       this.terrain.group,
+      this.terrain.trees,
       this.roads.group,
       this.rails.group,
       this.stationRoofs.group,
