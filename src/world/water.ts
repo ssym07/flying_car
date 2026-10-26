@@ -12,10 +12,15 @@ import { WATER } from '../core/config';
 export const waterTime = { value: 0 };
 
 /**
- * 地形チャンク (x, y, z) の範囲の水域の画像を作る。R = 水域 (0/255)、G = 岸からの距離 (0..255)。
+ * 地形チャンク (x, y, z) の範囲の水域を作る。
+ * texture：R = 水域 (0..255)、G = 岸からの距離 (0..255) の画像。mask：水域かどうか（size×size、上の行から）。
  * 水域が無ければ null
  */
-export async function fetchWaterMask(x: number, y: number, z: number): Promise<THREE.DataTexture | null> {
+export async function fetchWaterMask(
+  x: number,
+  y: number,
+  z: number,
+): Promise<{ texture: THREE.DataTexture; mask: Uint8Array; size: number } | null> {
   const k = 1 << WATER.zoomOffset;
   const size = 256 * k;
   const canvas = new OffscreenCanvas(size, size);
@@ -79,7 +84,24 @@ export async function fetchWaterMask(x: number, y: number, z: number): Promise<T
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.needsUpdate = true;
-  return texture;
+  return { texture, mask, size };
+}
+
+/**
+ * 水域の地形を水面の高さまで下げる（標高データは水面が「データなし」で、岸の高さで穴埋めされて盛り上がるため）。
+ * heights は 256×256 の標高、mask は fetchWaterMask の水域（heights より細かくてよい）
+ */
+export function flattenWater(heights: Float32Array, mask: Uint8Array, maskSize: number): void {
+  const n = 256;
+  const k = maskSize / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // この標高の画素に重なる水域の画素の半分以上が水なら、水面にする
+      let water = 0;
+      for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) water += mask[(y * k + j) * maskSize + x * k + i];
+      if (water * 2 >= k * k) heights[y * n + x] = Math.min(heights[y * n + x], WATER.surfaceHeight);
+    }
+  }
 }
 
 /**

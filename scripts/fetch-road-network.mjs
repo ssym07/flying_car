@@ -6,7 +6,9 @@
 //
 // 出力の形式（1タイル）:
 // {
-//   "w": [[種別, 車線数, 一方通行(0/1), [緯度,経度,...（1e-6度の整数、先頭以外は前の点との差）], [交差点の点の番号...]], ...],
+//   "w": [[種別, 車線数, 一方通行(0/1), [緯度,経度,...（1e-6度の整数、先頭以外は前の点との差）], [交差点の点の番号...], 橋], ...],
+//        橋：橋でなければ 0。橋なら [始点の緯度, 経度, 終点の緯度, 経度（1e-6度）, 橋全体の長さ(m), この区間の始まりまでの長さ(m), 名前]
+//        （タイルの境目で分かれた橋の区間どうしが同じ高さでつながるよう、橋全体の両端を持たせる）
 //   "c": [[緯度, 経度, 道の方位(rad, 北から時計回り), 道の種別], ...]   // 横断歩道
 // }
 import { mkdir, rm, writeFile } from 'node:fs/promises';
@@ -47,6 +49,10 @@ async function overpass(query) {
 }
 
 const K = Math.PI / 180;
+function meters(a, b) {
+  const east = (b.lon - a.lon) * K * Math.cos(((a.lat + b.lat) / 2) * K);
+  return Math.hypot(east, (b.lat - a.lat) * K) * 6371000;
+}
 function bearing(a, b) {
   const east = (b.lon - a.lon) * Math.cos(((a.lat + b.lat) / 2) * K);
   return Math.atan2(east, b.lat - a.lat);
@@ -110,6 +116,9 @@ for (const way of unique) {
   const oneway = way.tags.oneway === 'yes' || way.tags.oneway === '1' || way.tags.junction === 'roundabout' ? 1 : 0;
   const lanes = Math.max(0, Math.min(8, parseInt(way.tags.lanes ?? '0', 10) || 0));
   const g = way.geometry;
+  const isBridge = way.tags.bridge !== undefined && way.tags.bridge !== 'no';
+  const along = [0];
+  for (let k = 1; k < g.length; k++) along.push(along[k - 1] + meters(g[k - 1], g[k]));
 
   // 線分の中点が入るタイルごとに、ひと続きの区間に分ける
   let run = null;
@@ -125,13 +134,17 @@ for (const way of unique) {
       plat = lat;
       plon = lon;
     }
-    tile(run.key).w.push([cls, lanes, oneway, coords, run.junctions]);
+    const bridge = isBridge
+      ? [q(g[0].lat), q(g[0].lon), q(g[g.length - 1].lat), q(g[g.length - 1].lon),
+         Math.round(along[g.length - 1]), Math.round(along[run.start]), way.tags['bridge:name'] ?? way.tags.name ?? '']
+      : 0;
+    tile(run.key).w.push([cls, lanes, oneway, coords, run.junctions, bridge]);
   };
   for (let k = 1; k < g.length; k++) {
     const key = tileOf((g[k - 1].lat + g[k].lat) / 2, (g[k - 1].lon + g[k].lon) / 2);
     if (!run || run.key !== key) {
       flush();
-      run = { key, points: [g[k - 1]], junctions: [] };
+      run = { key, points: [g[k - 1]], junctions: [], start: k - 1 };
       if ((usage.get(pointKey(g[k - 1])) ?? 0) > 1) run.junctions.push(0);
     }
     run.points.push(g[k]);

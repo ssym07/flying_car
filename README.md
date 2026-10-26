@@ -204,6 +204,9 @@ MVP は **PLATEAU の1区画**で進める。
 | 道路 | OpenStreetMap の道路中心線（`public/roads/15/{x}/{y}.json`） | 種別・車線数からテンプレート（路面標示・歩道・横断歩道）で作り、地形に沿わせる（`src/world/RoadNetwork.ts`、`roadTemplates.ts`）。`node scripts/fetch-road-network.mjs` で作り直せる（23区全体で約2時間） |
 | 地形 | 国土地理院 標高タイル（5mメッシュ）＋ 全国最新写真 | カメラの周り約3.5kmだけ読み、離れたら捨てる。標高にジオイド高を足して楕円体高に合わせる |
 | 海・川 | 国土地理院 淡色地図（水域は #bed2ff の1色） | 水色の画素を水域とし、岸からの距離で浅い青緑〜深い青に塗り分け、さざ波と空の映り込みを付ける（`src/world/water.ts`、設定は `WATER`） |
+| 橋 | OpenStreetMap の道路データの橋の区間 | 地形に沿わせず両岸を結ぶ橋桁にし、桁・欄干・橋脚を付ける。「〜橋」や長い橋で水の上のものには鋼のアーチ（`RoadNetwork.ts`、設定は `BRIDGES`）。水域の地形は水面の高さまで下げている |
+| 駅の屋根 | OpenStreetMap の駅舎・上屋（`public/station-roofs/15/{x}/{y}.json`） | 駅から300m以内の屋根を、白・銀・薄緑・青緑の金属の波板屋根で描く（`StationRoofs.ts`、設定は `STATION_ROOFS`）。`node scripts/fetch-station-roofs.mjs` で作り直せる |
+| 線路 | OpenStreetMap の線路（`public/railways/15/{x}/{y}.json`、地下・トンネルは除く） | 茶色い砂利の道床・枕木・2本のレールの画像を中心線に沿って貼る。高架はコンクリートの桁・低い側壁・橋脚（`RailNetwork.ts`、設定は `RAILWAYS`）。`node scripts/fetch-railways.mjs` で作り直せる |
 | ミニマップ | 国土地理院 淡色地図（地理院タイル） | CSS フィルタで反転して暗い配色にしている |
 | 通り名 | OpenStreetMap（`src/data/roadLabels.json`） | 幹線道路に沿って約350mごとのラベル位置。`node scripts/fetch-roads.mjs` で作り直せる |
 | 3D の駅名・通り名 | 上の駅・通り名データ | 駅は上空の看板（近い10駅）、通り名は路面に描く文字。カメラの周りだけ作る（`src/world/Labels.ts`） |

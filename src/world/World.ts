@@ -4,7 +4,9 @@ import { WARDS } from '../data/wards';
 import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
 import { Labels } from './Labels';
+import { RailNetwork } from './RailNetwork';
 import { RoadNetwork } from './RoadNetwork';
+import { StationRoofs } from './StationRoofs';
 import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
 
@@ -18,6 +20,10 @@ export class World {
   readonly buildings: Tiles[];
   /** 道路（OpenStreetMap の中心線からテンプレートで作る） */
   readonly roads: RoadNetwork;
+  /** 線路 */
+  readonly rails: RailNetwork;
+  /** 駅の屋根 */
+  readonly stationRoofs: StationRoofs;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
@@ -50,11 +56,20 @@ export class World {
         ),
     );
     this.roads = new RoadNetwork(this.terrain);
-    this.scene.add(...this.layers.map((l) => l.group), this.terrain.group, this.roads.group);
-    this.colliders = [...this.layers.map((l) => l.group), this.terrain.group];
+    this.rails = new RailNetwork(this.terrain);
+    this.stationRoofs = new StationRoofs(this.terrain);
+    this.scene.add(
+      ...this.layers.map((l) => l.group),
+      this.terrain.group,
+      this.roads.group,
+      this.rails.group,
+      this.stationRoofs.group,
+    );
+    this.colliders = [...this.layers.map((l) => l.group), this.terrain.group, this.stationRoofs.group];
 
-    // 地形の外側の平面は海面より少し下に置く（ローカル座標の y=0 は原点の楕円体高）
-    this.groundY = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight - 5;
+    // 地形の外側の平面（ローカル座標の y=0 は原点の楕円体高）。
+    // ゼロメートル地帯（標高 -4m 前後）の地形より上に出ないよう、十分低くする
+    this.groundY = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight - 30;
 
     // 地形・ラベルはタイルと同じ座標変換で作る
     const ecefToLocal = computeEcefToLocal();

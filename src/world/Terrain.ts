@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { TERRAIN } from '../core/config';
-import { addWater, fetchWaterMask, waterTime } from './water';
+import { addWater, fetchWaterMask, flattenWater, waterTime } from './water';
 
 /** 標高タイルの「データなし」（水面など） */
 const NO_DATA = Number.NaN;
@@ -168,13 +168,16 @@ export class Terrain {
   private async loadChunk(chunk: Chunk): Promise<void> {
     const z = TERRAIN.demZoom;
     try {
-      const heights = (await fetchDem(chunk.x, chunk.y, z)) ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
-      fillNoData(heights, TILE_PX);
-      const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
-      const [map, water] = await Promise.all([
+      const [dem, map, waterData] = await Promise.all([
+        fetchDem(chunk.x, chunk.y, z),
         fetchPhoto(chunk.x, chunk.y, z, TERRAIN.photoZoomOffset),
         fetchWaterMask(chunk.x, chunk.y, z),
       ]);
+      const heights = dem ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
+      fillNoData(heights, TILE_PX);
+      if (waterData) flattenWater(heights, waterData.mask, waterData.size);
+      const water = waterData?.texture ?? null;
+      const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
       if (chunk.dead) {
         geometry.dispose();
         map?.dispose();
@@ -200,7 +203,7 @@ export class Terrain {
     mesh.geometry.dispose();
     if (mesh.material !== this.materials) {
       const materials = mesh.material as THREE.MeshStandardMaterial[];
-      materials[0].map?.dispose();
+      if (materials[0].map !== whitePixel) materials[0].map?.dispose();
       (materials[0].userData.waterMap as THREE.Texture | undefined)?.dispose();
       for (const m of materials) m.dispose();
     }
@@ -216,11 +219,15 @@ function key(chunk: { x: number; y: number }): string {
 }
 
 /** [本体, 縁の壁] のマテリアル */
+const whitePixel = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+whitePixel.needsUpdate = true;
+
 function createMaterials(map: THREE.Texture | null, water: THREE.Texture | null = null): THREE.Material[] {
   const color = map ? 0xffffff : 0x7d8a72;
   // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
   const ground = new THREE.MeshStandardMaterial({
-    map,
+    // 写真が無くても水面は描けるよう、白1画素の画像を貼っておく（水面のシェーダーは写真と同じ uv を使う）
+    map: map ?? (water ? whitePixel : null),
     color,
     roughness: 1,
     polygonOffset: true,

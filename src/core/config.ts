@@ -333,6 +333,8 @@ export const WATER = {
   zoomOffset: 1,
   /** 文字ラベルなどの小さな穴を埋める大きさ（画素） */
   closeRadius: 3,
+  /** 水面の標高 (m)。都内の川は海とつながっていて、ほぼ海面の高さ */
+  surfaceHeight: 0.8,
   /** 岸の線をなめらかにするぼかしの半径（画素） */
   edgeBlur: 3,
   /** 岸からこの距離（画素）で一番深い色になる。約2m/画素なので 120 ≒ 240m */
@@ -345,4 +347,75 @@ export const WATER = {
   roughness: 0.12,
   /** さざ波の強さ */
   waveStrength: 0.09,
+};
+
+/** 橋（道路データの橋の区間を、地形に沿わせず橋桁として作る） */
+export const BRIDGES = {
+  /** これより長い橋 (m) は「大きな橋」として、水面から高く・桁を厚くする */
+  longBridge: 60,
+  /** 大きな橋の、水面から橋桁までの高さ (m) */
+  waterClearance: 7,
+  /** 橋の反り：長さに対する割合と、最大の高さ (m) */
+  camberRatio: 0.03,
+  maxCamber: 5,
+  /** 桁の厚さ (m) */
+  girderDepth: 1.8,
+  /** 欄干の高さ (m) */
+  railingHeight: 1.1,
+  /** 橋脚の間隔と厚さ (m) */
+  pierSpacing: 40,
+  pierThickness: 2.4,
+  /** 名前のある、これより長い橋 (m) にはアーチを付ける（OSM では大きな橋も数本に分かれていることが多い） */
+  archMinLength: 70,
+  /** 名前が「〜橋」でない橋は、これより長い (m) ものだけにアーチを付ける */
+  archMinLengthUnnamed: 150,
+  /** アーチの高さ：長さに対する割合と最大 (m)、帯の幅 (m) */
+  archRatio: 0.12,
+  archMaxHeight: 22,
+  archWidth: 1.4,
+  /** 吊り材の間隔 (m) */
+  hangerSpacing: 8,
+  concreteColor: 0xb9bcc2,
+  railingColor: 0xe6e8ec,
+  archColor: 0x9fb0c2,
+};
+
+/** 駅の屋根（OpenStreetMap の駅舎・上屋の形。scripts/fetch-station-roofs.mjs で作る） */
+export const STATION_ROOFS = {
+  tilePath: 'station-roofs/15/{x}/{y}.json',
+  /**
+   * 屋根の色（駅ごとにこの中から選ぶ。駅舎は最初の2色＝白・銀から）。
+   * 航空写真の主要駅（東京・秋葉原・新橋・原宿）を参考に、白・銀・薄い緑・青緑
+   */
+  colors: [0xf2f4f6, 0xcfd5db, 0xa9cbbd, 0x6fa79a, 0xe3e8e4],
+  /** 波板の山の間隔 (m) */
+  ribSpacing: 0.9,
+  /** 縁の帯の高さ (m) */
+  fasciaDepth: 0.8,
+  fasciaColor: 0xd9dde2,
+};
+
+/** 線路（OpenStreetMap の線路の中心線。scripts/fetch-railways.mjs で作る） */
+export const RAILWAYS = {
+  tilePath: 'railways/15/{x}/{y}.json',
+  /** 道床（砂利を敷いた部分）の幅 (m) */
+  ballastWidth: 3.4,
+  /** 地面から浮かせる高さ (m) */
+  lift: 0.3,
+  /** 高架の1層あたりの高さ (m) */
+  layerHeight: 8,
+  /** 高架で layer の指定が無い時の高さ (m) */
+  bridgeHeight: 7,
+  /** 高架の桁の厚さ (m) と、側面の壁の高さ (m) */
+  viaductDepth: 1.6,
+  /** 側壁は低めに（並んだ線路それぞれに壁が立つので、高いと線路の間がごちゃつく） */
+  parapetHeight: 0.45,
+  /** 道床の外側の、高架の平らな部分の幅 (m)。隣の線路の高架とつながって1枚の高架に見える */
+  viaductShoulder: 1.0,
+  /** 高架の橋脚の間隔 (m) と太さ (m) */
+  pierSpacing: 45,
+  pierThickness: 1.6,
+  /** 中心線を区切る間隔 (m) */
+  densifyStep: 8,
+  concreteColor: 0xb4b6ba,
 };
