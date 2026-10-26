@@ -99,9 +99,9 @@ export class StationRoofs implements ChunkListener {
         axis = d.normalize();
       }
     }
-    // 駅ごとに色を選ぶ（同じ駅の屋根は同じ色）。駅舎は白・銀に寄せる
+    // 駅ごとに色を選ぶ（同じ駅の屋根は同じ色）
     const palette = STATION_ROOFS.colors;
-    const pick = kind === 0 ? hash(station) * 2 : hash(station) * palette.length;
+    const pick = hash(station) * palette.length;
     const color = new THREE.Color(palette[Math.floor(pick) % palette.length]);
 
     // 上面：多角形を三角形に分ける

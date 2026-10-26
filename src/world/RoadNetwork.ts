@@ -20,8 +20,11 @@ interface RoadTile {
   c: Array<[number, number, number, RoadClass]>;
 }
 
-/** 橋：[始点の緯度, 経度, 終点の緯度, 経度（1e-6度）, 橋全体の長さ(m), この区間の始まりまでの長さ(m), 名前] */
-type BridgeInfo = [number, number, number, number, number, number, string];
+/**
+ * 橋：[始点の緯度, 経度, 終点の緯度, 経度（1e-6度）, 橋全体の長さ(m), この区間の始まりまでの長さ(m), 名前,
+ *      （跨線橋なら）地面から必要な高さ(m)]。最後の値は scripts/build-rail-heights.mjs が付ける
+ */
+type BridgeInfo = [number, number, number, number, number, number, string, number?];
 
 /** 頂点を溜めて最後に BufferGeometry にする */
 export class MeshBuilder {
@@ -248,7 +251,7 @@ export class RoadNetwork implements ChunkListener {
     samples: Array<[number, number]>,
     s: number[],
   ): (localS: number) => number {
-    const [aLat, aLon, bLat, bLon, total, offset] = bridge;
+    const [aLat, aLon, bLat, bLon, total, offset, , overRail = 0] = bridge;
     // 橋全体の両端の高さ。まだ地形が無ければ、この区間の端の高さで代用する
     const first = samples[0];
     const last = samples[samples.length - 1];
@@ -263,8 +266,11 @@ export class RoadNetwork implements ChunkListener {
       const u = THREE.MathUtils.clamp((localS + offset) / length, 0, 1);
       const arc = Math.sin(Math.PI * u);
       const base = THREE.MathUtils.lerp(hA, hB, u) + rise * arc;
-      // 両端は岸の高さに合わせ、中ほどは水面から clearance 以上の高さにする
-      return Math.max(base, WATER.surfaceHeight + clearance * Math.pow(arc, 0.35));
+      // 両端は岸の高さに合わせ、中ほどは水面から clearance 以上の高さにする。
+      // 跨線橋は、下の線路の上 overRail m 以上（両端の低い方の地面から測る）
+      const overWater = WATER.surfaceHeight + clearance * Math.pow(arc, 0.35);
+      const overTracks = Math.min(hA, hB) + overRail * Math.pow(arc, 0.35);
+      return Math.max(base, overWater, overRail > 0 ? overTracks : -Infinity);
     };
   }
 

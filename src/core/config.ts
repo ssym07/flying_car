@@ -384,7 +384,7 @@ export const BRIDGES = {
 export const STATION_ROOFS = {
   tilePath: 'station-roofs/15/{x}/{y}.json',
   /**
-   * 屋根の色（駅ごとにこの中から選ぶ。駅舎は最初の2色＝白・銀から）。
+   * 屋根の色（駅ごとにこの中から選ぶ）。
    * 航空写真の主要駅（東京・秋葉原・新橋・原宿）を参考に、白・銀・薄い緑・青緑
    */
   colors: [0xf2f4f6, 0xcfd5db, 0xa9cbbd, 0x6fa79a, 0xe3e8e4],
@@ -395,21 +395,23 @@ export const STATION_ROOFS = {
   fasciaColor: 0xd9dde2,
 };
 
-/** 線路（OpenStreetMap の線路の中心線。scripts/fetch-railways.mjs で作る） */
+/** 線路（OpenStreetMap の線路。scripts/fetch-railways.mjs → build-rail-heights.mjs で作る） */
 export const RAILWAYS = {
-  tilePath: 'railways/15/{x}/{y}.json',
+  tilePath: 'rail-tracks/15/{x}/{y}.json',
   /** 道床（砂利を敷いた部分）の幅 (m) */
   ballastWidth: 3.4,
   /** 地面から浮かせる高さ (m) */
   lift: 0.3,
-  /** 高架の1層あたりの高さ (m) */
-  layerHeight: 8,
-  /** 高架で layer の指定が無い時の高さ (m) */
-  bridgeHeight: 7,
+  /** 高架の上面をなだらかにするため、地面を均す範囲（±m） */
+  smoothRadius: 60,
+  /** 川の上を渡る線路の、水面からの高さ (m) */
+  waterClearance: 2.5,
+  /** 地面からこの高さ (m) を超えた所に高架の桁・側壁を付ける */
+  elevatedFrom: 1.5,
+  /** 地面からこの高さ (m) を超えた所に橋脚を立てる */
+  pierFrom: 3,
   /** 高架の桁の厚さ (m) と、側面の壁の高さ (m) */
   viaductDepth: 1.6,
-  /** 側壁は低めに（並んだ線路それぞれに壁が立つので、高いと線路の間がごちゃつく） */
-  parapetHeight: 0.45,
   /** 道床の外側の、高架の平らな部分の幅 (m)。隣の線路の高架とつながって1枚の高架に見える */
   viaductShoulder: 1.0,
   /** 高架の橋脚の間隔 (m) と太さ (m) */

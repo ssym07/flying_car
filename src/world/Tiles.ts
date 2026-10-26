@@ -5,6 +5,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { WORLD } from '../core/config';
 import { assignFacadeAttributes, createFacadeMaterial } from './facade';
+import { loadStationFootprints } from './stationFootprints';
 
 // 当たり判定のレイキャストを BVH で高速化する
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -166,7 +167,11 @@ class TileModelPlugin {
   }
 
   async processTileModel(scene: THREE.Object3D): Promise<void> {
-    if (this.appearance === 'facade') assignFacadeAttributes(scene);
+    if (this.appearance === 'facade') {
+      // 駅の建物を見分けるため、駅の形を先に読んでおく
+      await loadStationFootprints();
+      assignFacadeAttributes(scene);
+    }
     const textures = new Set<THREE.Texture>();
     scene.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;

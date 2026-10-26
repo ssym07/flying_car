@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { WORLD } from '../core/config';
+import { isInStation } from './stationFootprints';
 
 /**
  * テクスチャの無い建物（LOD1 など）に貼る、手続き的に描いた外壁テンプレート。
@@ -44,7 +46,10 @@ const WALLS: Record<'tower' | 'mid' | 'low', Painter[]> = {
     houseWall('#c9cac7', '#26303b'),
   ],
 };
-const ROOFS: Painter[] = [roof('#4e5257'), roof('#64686d'), roof('#3e4247')];
+const NORMAL_ROOFS: Painter[] = [roof('#4e5257'), roof('#64686d'), roof('#3e4247')];
+/** 駅の建物の屋上：金属の波板（しましま） */
+const ROOFS: Painter[] = [...NORMAL_ROOFS, stripedRoof('#9ea4aa')];
+const STATION_ROOF_ROW = WALLS.tower.length + WALLS.mid.length + WALLS.low.length + NORMAL_ROOFS.length;
 
 const WALL_LIST = [...WALLS.tower, ...WALLS.mid, ...WALLS.low];
 const ROWS = WALL_LIST.length + ROOFS.length;
@@ -124,9 +129,11 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
           vec3 n = normalize(vFacadeWorldNormal);
           float row;
           vec2 cont;
+          // 明るさのゆらぎが負の建物は駅（屋上をしましまにする）
+          bool station = vFacade.z < 0.0;
           if (abs(n.y) > 0.6) {
             // 屋上：真上から見た座標で貼る
-            row = ${ROOF_OFFSET.toFixed(1)} + mod(vFacade.x, ${ROOFS.length.toFixed(1)});
+            row = station ? ${STATION_ROOF_ROW.toFixed(1)} : ${ROOF_OFFSET.toFixed(1)} + mod(vFacade.x, ${NORMAL_ROOFS.length.toFixed(1)});
             cont = vFacadeWorldPos.xz / 12.0;
           } else {
             // 壁：壁に沿った水平距離と、建物の底からの高さで貼る
@@ -138,7 +145,7 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
           float v = (row + PAD + fract(cont.y) * (1.0 - 2.0 * PAD)) / ROWS;
           vec2 g = vec2(1.0, 1.0 / ROWS);
           vec4 facadeColor = textureGrad(facadeMap, vec2(cont.x, v), dFdx(cont) * g, dFdy(cont) * g);
-          diffuseColor.rgb *= facadeColor.rgb * vFacade.z * facadeBrightness;
+          diffuseColor.rgb *= facadeColor.rgb * abs(vFacade.z) * facadeBrightness;
         }`,
       );
   };
@@ -149,6 +156,7 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
 
 /**
  * タイルのメッシュに、建物ごとの「テンプレート番号・底からの高さ・明るさのゆらぎ」を頂点属性として付ける。
+ * 駅の形（OpenStreetMap の駅舎・上屋）の中にある建物は、明るさのゆらぎを負にして「駅」の印にする。
  * scene の行列はタイルの ECEF 変換を含んでいる前提（processTileModel の時点）
  */
 export function assignFacadeAttributes(scene: THREE.Object3D): void {
@@ -165,16 +173,21 @@ export function assignFacadeAttributes(scene: THREE.Object3D): void {
     // 上方向：地球中心からの向き（タイル内なら1つで十分）
     up.fromBufferAttribute(position, 0).applyMatrix4(obj.matrixWorld).normalize();
     const heights = new Float32Array(position.count);
-    const range = new Map<number, { min: number; max: number }>();
+    const range = new Map<number, { min: number; max: number; footprint: Array<[number, number]> }>();
+    const carto = { lat: 0, lon: 0, height: 0 };
     for (let i = 0; i < position.count; i++) {
-      const h = v.fromBufferAttribute(position, i).applyMatrix4(obj.matrixWorld).dot(up);
+      v.fromBufferAttribute(position, i).applyMatrix4(obj.matrixWorld);
+      const h = v.dot(up);
       heights[i] = h;
       const id = batch ? batch.getX(i) : 0;
-      const r = range.get(id);
-      if (!r) range.set(id, { min: h, max: h });
-      else {
-        r.min = Math.min(r.min, h);
-        r.max = Math.max(r.max, h);
+      let r = range.get(id);
+      if (!r) range.set(id, (r = { min: h, max: h, footprint: [] }));
+      r.min = Math.min(r.min, h);
+      r.max = Math.max(r.max, h);
+      // 平面の形（緯度経度, 度）。頂点の多い建物は間引く
+      if (r.footprint.length < 64) {
+        WGS84_ELLIPSOID.getPositionToCartographic(v, carto);
+        r.footprint.push([carto.lat * THREE.MathUtils.RAD2DEG, carto.lon * THREE.MathUtils.RAD2DEG]);
       }
     }
 
@@ -186,7 +199,8 @@ export function assignFacadeAttributes(scene: THREE.Object3D): void {
       const height = r.max - r.min;
       const group = height >= TOWER_MIN ? 'tower' : height >= MID_MIN ? 'mid' : 'low';
       const style = STYLE_OFFSET[group] + Math.floor(rnd * WALLS[group].length);
-      styles.set(id, { style, tint: 0.85 + hash(id * 31 + tileSeed * 17) * 0.25 });
+      const tint = 0.85 + hash(id * 31 + tileSeed * 17) * 0.25;
+      styles.set(id, { style, tint: isStationBuilding(r.footprint) ? -tint : tint });
     }
 
     const facade = new Float32Array(position.count * 3);
@@ -199,6 +213,68 @@ export function assignFacadeAttributes(scene: THREE.Object3D): void {
     }
     geometry.setAttribute('facade', new THREE.BufferAttribute(facade, 3));
   });
+}
+
+/**
+ * 建物の平面の形（頂点の緯度経度）が、駅の形（駅舎・ホーム・上屋）にどれだけ重なるかで駅かどうか決める。
+ * 形を囲む凸包の中に格子状に点を打ち、そのうち STATION_OVERLAP 以上が駅の形の中なら駅。
+ * 線路をまたぐ大きな駅舎は、中心が線路の上でホームの形から外れるので、中心だけでは判定できない
+ */
+const STATION_OVERLAP = 0.15;
+const SAMPLES = 8;
+
+function isStationBuilding(points: Array<[number, number]>): boolean {
+  if (points.length < 3) return false;
+  const hull = convexHull(points);
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  for (const [lat, lon] of hull) {
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+  }
+  let inside = 0;
+  let hit = 0;
+  for (let j = 0; j < SAMPLES; j++) {
+    for (let i = 0; i < SAMPLES; i++) {
+      const lat = minLat + ((maxLat - minLat) * (j + 0.5)) / SAMPLES;
+      const lon = minLon + ((maxLon - minLon) * (i + 0.5)) / SAMPLES;
+      if (!insideConvex(hull, lat, lon)) continue;
+      inside++;
+      if (isInStation(lat, lon)) hit++;
+    }
+  }
+  return inside > 0 && hit / inside >= STATION_OVERLAP;
+}
+
+/** 凸包（反時計回り）。点は [緯度, 経度] */
+function convexHull(points: Array<[number, number]>): Array<[number, number]> {
+  const pts = [...points].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[1] - o[1]) * (b[0] - o[0]) - (a[0] - o[0]) * (b[1] - o[1]);
+  const lower: Array<[number, number]> = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Array<[number, number]> = [];
+  for (const p of pts.reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+function insideConvex(hull: Array<[number, number]>, lat: number, lon: number): boolean {
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
+    if ((b[1] - a[1]) * (lat - a[0]) - (b[0] - a[0]) * (lon - a[1]) < 0) return false;
+  }
+  return true;
 }
 
 /** 0..1 の擬似乱数 */
@@ -326,6 +402,22 @@ function roof(base: string): Painter {
     g.fillStyle = shade(base, 0.8);
     g.fillRect(40, 30, 36, 28);
     g.fillRect(170, 60, 24, 24);
+  };
+}
+
+/** 駅の屋根：金属の波板。細い明暗の筋を繰り返す */
+function stripedRoof(base: string): Painter {
+  return (g) => {
+    g.fillStyle = base;
+    g.fillRect(0, 0, CELL_W, CELL_H);
+    // 1m ≒ 32px。0.9m 間隔の山と谷
+    for (let x = 0; x < CELL_W; x++) {
+      const k = 0.5 + 0.5 * Math.cos((x / 29) * Math.PI * 2);
+      g.fillStyle = `rgba(255,255,255,${0.22 * k})`;
+      g.fillRect(x, 0, 1, CELL_H);
+      g.fillStyle = `rgba(0,0,0,${0.18 * (1 - k)})`;
+      g.fillRect(x, 0, 1, CELL_H);
+    }
   };
 }
 
