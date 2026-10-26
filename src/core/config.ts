@@ -340,8 +340,12 @@ export const WATER = {
   closeRadius: 3,
   /** 水面の標高 (m)。都内の川は海とつながっていて、ほぼ海面の高さ */
   surfaceHeight: 0.8,
-  /** 岸の線をなめらかにするぼかしの半径（画素） */
-  edgeBlur: 3,
+  /** 岸の線をなめらかにするぼかしの半径（画素）。護岸の帯・波打ち際の線の太さにもなる */
+  edgeBlur: 4,
+  /** 護岸（陸側の縁）の色と、波打ち際の泡の色・強さ */
+  bankColor: 0xd9d4c8,
+  foamColor: 0xf2f8ff,
+  foamStrength: 0.75,
   /** 岸からこの距離（画素）で一番深い色になる。約2m/画素なので 120 ≒ 240m */
   deepDistancePx: 120,
   /** 岸辺・浅い所の色（川） */

@@ -154,6 +154,8 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
     shader.uniforms.waterTime = waterTime;
     shader.uniforms.shallowColor = { value: new THREE.Color(WATER.shallowColor) };
     shader.uniforms.deepColor = { value: new THREE.Color(WATER.deepColor) };
+    shader.uniforms.foamColor = { value: new THREE.Color(WATER.foamColor) };
+    shader.uniforms.bankColor = { value: new THREE.Color(WATER.bankColor) };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vWaterWorld;`)
       .replace(
@@ -168,18 +170,28 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         uniform float waterTime;
         uniform vec3 shallowColor;
         uniform vec3 deepColor;
+        uniform vec3 foamColor;
+        uniform vec3 bankColor;
         varying vec3 vWaterWorld;`,
       )
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
         vec4 waterSample = texture2D(waterMap, vMapUv);
-        float isWater = smoothstep(0.35, 0.65, waterSample.r);
+        float isWater = smoothstep(0.45, 0.55, waterSample.r);
         float waterDepth = waterSample.g;
-        // 岸辺は明るい青緑、沖は深い青。岸のきわは写真の色を少し残して浅瀬らしく
+        // 岸辺は明るい青緑、沖は深い青
         vec3 waterColor = mix(shallowColor, deepColor, smoothstep(0.0, 1.0, waterDepth));
-        waterColor = mix(mix(diffuseColor.rgb, waterColor, 0.6), waterColor, smoothstep(0.0, 0.08, waterDepth));
-        diffuseColor.rgb = mix(diffuseColor.rgb, waterColor, isWater);`,
+        // 波打ち際：水側の縁に白い泡の線（ゆっくり揺らぐ）
+        float foam = smoothstep(0.5, 0.6, waterSample.r) * (1.0 - smoothstep(0.6, 0.82, waterSample.r));
+        foam *= 0.65 + 0.35 * sin(waterTime * 1.6 + (vWaterWorld.x + vWaterWorld.z) * 0.35);
+        waterColor = mix(waterColor, foamColor, foam * ${WATER.foamStrength.toFixed(2)});
+        // 護岸：陸側の縁に明るいコンクリートの帯と、水際の濃い影の線
+        float bank = smoothstep(0.12, 0.25, waterSample.r) * (1.0 - isWater);
+        float lip = smoothstep(0.32, 0.45, waterSample.r) * (1.0 - isWater);
+        vec3 land = mix(diffuseColor.rgb, bankColor, bank);
+        land = mix(land, bankColor * 0.55, lip);
+        diffuseColor.rgb = mix(land, waterColor, isWater);`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
