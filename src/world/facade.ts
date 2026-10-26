@@ -167,7 +167,8 @@ export function assignFacadeAttributes(scene: THREE.Object3D): void {
     if (!(obj instanceof THREE.Mesh)) return;
     const geometry = obj.geometry as THREE.BufferGeometry;
     const position = geometry.getAttribute('position');
-    const batch = geometry.getAttribute('_batchid');
+    // 建物の番号：b3dm（3D Tiles 1.0）は _batchid、glb（3D Tiles 1.1）は _feature_id_0
+    const batch = geometry.getAttribute('_batchid') ?? geometry.getAttribute('_feature_id_0');
     if (!position) return;
 
     // 上方向：地球中心からの向き（タイル内なら1つで十分）

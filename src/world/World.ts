@@ -34,7 +34,14 @@ export class World {
   private readonly atmosphere: Atmosphere;
   private readonly labels: Labels;
 
-  constructor(readonly renderer: THREE.WebGLRenderer) {
+  /**
+   * @param localWards 手元に加工済みの建物データがある区のコード（scripts/build-local-buildings.mjs で作る）。
+   *   その区は public/plateau から読み、無い区は PLATEAU の配信サーバーから読む
+   */
+  constructor(
+    readonly renderer: THREE.WebGLRenderer,
+    localWards: ReadonlySet<string> = new Set(),
+  ) {
     this.camera = new THREE.PerspectiveCamera(
       CAMERA.fov,
       window.innerWidth / window.innerHeight,
@@ -50,7 +57,7 @@ export class World {
     this.buildings = WARDS.map(
       (ward) =>
         new Tiles(
-          ward.url,
+          localWards.has(ward.code) ? `${import.meta.env.BASE_URL}plateau/${ward.code}/tileset.json` : ward.url,
           ward.kind === 'lod2-texture' ? WORLD.buildings.errorTarget : WORLD.buildings.plainErrorTarget,
           // テクスチャの無い区には、手続き的に描いた外壁テンプレートを貼る
           ward.kind === 'lod2-texture' ? 'original' : 'facade',

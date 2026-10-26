@@ -22,11 +22,23 @@ attribution.textContent =
   '出典：国土交通省 Project PLATEAU（3D都市モデル）／国土地理院（地理院タイル・標高タイル・全国最新写真・逆ジオコーダ）／駅：© OpenStreetMap contributors';
 overlay.appendChild(attribution);
 
+/** 手元に加工済みの建物データがある区（public/plateau/wards.json。無ければ空） */
+async function loadLocalWards(): Promise<Set<string>> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}plateau/wards.json`);
+    // ファイルが無いと開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける
+    if (!res.ok || !res.headers.get('content-type')?.includes('json')) return new Set();
+    return new Set((await res.json()) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
 const scenes = new SceneManager();
 const input = new Input();
 input.attachPointer(renderer.domElement);
 const ctx: GameContext = {
-  world: new World(renderer),
+  world: new World(renderer, await loadLocalWards()),
   input,
   scenes,
   overlay,

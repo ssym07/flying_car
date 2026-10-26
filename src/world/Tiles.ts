@@ -1,16 +1,22 @@
 import * as THREE from 'three';
-import { TilesRenderer } from '3d-tiles-renderer';
+import { DEFAULT_DOWNLOAD_QUEUE, DEFAULT_PARSE_QUEUE, TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, ReorientationPlugin } from '3d-tiles-renderer/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { WORLD } from '../core/config';
 import { assignFacadeAttributes, createFacadeMaterial } from './facade';
 import { loadStationFootprints } from './stationFootprints';
+import { TileCachePlugin } from './tileCache';
 
 // 当たり判定のレイキャストを BVH で高速化する
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+// 全区のタイルセットで共有する、ダウンロードと解析の同時実行数。多いと回線とCPUを使い切って、
+// ゲームの操作や他のアプリ（動画など）まで重くなる
+DEFAULT_DOWNLOAD_QUEUE.maxJobsPerOrigin = WORLD.downloadConcurrency;
+DEFAULT_PARSE_QUEUE.maxJobs = WORLD.parseConcurrency;
 
 // PLATEAU のタイルは Draco 圧縮 + CESIUM_RTC 拡張を使っている。デコーダは全レイヤーで共有する
 const draco = new DRACOLoader().setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
@@ -26,6 +32,8 @@ export class Tiles {
   private readonly baseErrorTarget: number;
   /** タイルセット全体を囲む球（ローカル座標）。ルートを読むまでは null */
   private bounds: THREE.Sphere | null = null;
+  /** 描画距離の外にあって、読込・描画を止めているか */
+  private dormant = false;
 
   /**
    * @param appearance 見た目。データのまま / 外壁テンプレートを貼る / 単色で塗る
@@ -39,6 +47,8 @@ export class Tiles {
   ) {
     const tiles = new TilesRenderer(url);
     const { latDeg, lonDeg, ellipsoidHeight } = WORLD.origin;
+    // 取得したタイルをブラウザに長く残す（次に起動した時にダウンロードし直さない）
+    tiles.registerPlugin(new TileCachePlugin());
     tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: draco, rtc: true }));
     tiles.registerPlugin(
       new ReorientationPlugin({
@@ -101,6 +111,8 @@ export class Tiles {
   get isIdle(): boolean {
     // stats は実装にはあるが型定義に無い
     const { downloading, parsing, queued } = (this.renderer as unknown as { stats: TileStats }).stats;
+    // 遠くて休んでいるタイルセットは、待たなくてよい
+    if (this.dormant) return true;
     return this.rootLoaded && downloading === 0 && parsing === 0 && queued === 0;
   }
 
@@ -108,7 +120,16 @@ export class Tiles {
   update(camera: THREE.Camera): void {
     camera.updateMatrixWorld();
     this.adjustErrorTarget(camera.position);
-    this.renderer.update();
+    // 描画距離の外のタイルセット（遠くの区）は、読込も描画もしない。手前の読込に回線を回す
+    this.dormant = this.bounds !== null && this.distanceTo(camera.position) > WORLD.viewDistance;
+    this.renderer.group.visible = !this.dormant;
+    if (!this.dormant) this.renderer.update();
+  }
+
+  /** タイルセットを囲む球の表面までの距離（中なら 0）。囲む球が分かる前は 0 */
+  private distanceTo(position: THREE.Vector3): number {
+    if (!this.bounds) return 0;
+    return Math.max(0, position.distanceTo(this.bounds.center) - this.bounds.radius);
   }
 
   /**
@@ -123,7 +144,7 @@ export class Tiles {
       this.bounds = sphere.applyMatrix4(this.renderer.group.matrixWorld);
     }
     const { near, maxScale } = WORLD.distantLod;
-    const distance = Math.max(0, cameraPosition.distanceTo(this.bounds.center) - this.bounds.radius);
+    const distance = this.distanceTo(cameraPosition);
     this.renderer.errorTarget = this.baseErrorTarget * THREE.MathUtils.clamp(distance / near, 1, maxScale);
   }
 

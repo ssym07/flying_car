@@ -89,10 +89,11 @@ export const WORLD = {
     errorTarget: 20,
     /**
      * テクスチャの無い区（LOD1）の詳細度。配信データは粗い階層からいきなり最も細かい階層に切り替わるので、
-     * 20 だと半径約6.5kmの細かいタイルを全部読んでしまう。30 で約4.3km（≒霧の終わり）。
-     * 粗い階層の建物は大きく簡略化されていて「くさび形」に崩れるので、霧より手前に出さないようにする
+     * 20 だと半径約6.5km、30 で約4.3km、50 で約2.6km の細かいタイルを全部読む。
+     * 粗い階層の建物は大きく簡略化されていて「くさび形」に崩れるので、霧の終わり（ATMOSPHERE の fog.far）と
+     * 同じくらいにして、くさび形を霧に隠す。広げるほど読み込む量が増える（半径の2乗に比例）
      */
-    plainErrorTarget: 30,
+    plainErrorTarget: 50,
     /** 外壁テンプレートの明るさの倍率（色味は保ったまま全体を明るく・暗くする） */
     facadeBrightness: 1.8,
   },
@@ -109,6 +110,9 @@ export const WORLD = {
   maxTextureSize: 512,
   /** 飛行開始地点（東京駅 丸の内側）。ここがローカル原点になる */
   origin: { latDeg: 35.6812, lonDeg: 139.7671, ellipsoidHeight: 40 },
+  /** 建物タイルの同時ダウンロード数・同時解析数（3d-tiles-renderer の既定は 25・5） */
+  downloadConcurrency: 6,
+  parseConcurrency: 2,
   /** 初期読込を諦めて先に進むまでの秒数 */
   loadTimeoutSec: 30,
   /** 地形の外側に敷く平面の一辺 (m)。23区がすっぽり入る大きさ */
@@ -117,7 +121,7 @@ export const WORLD = {
    * 描画距離 (m)。霧で見えなくなる距離より少し先まで。
    * これより先のタイルは読まないので、広げると遠くの区の読込に回線を取られて手前が遅くなる
    */
-  viewDistance: 5000,
+  viewDistance: 3200,
   /**
    * 遠くのタイルセットほど詳細度を下げる。
    * タイルセットを囲む球までの距離が near を超えたら、errorTarget を距離に比例して最大 maxScale 倍まで上げる
@@ -139,11 +143,11 @@ export const TERRAIN = {
   /** 標高タイル1枚あたり 2^photoZoomOffset 枚四方の写真を貼る */
   photoZoomOffset: 1,
   /** カメラからこの距離 (m) 以内のチャンクを読む */
-  loadRadius: 3500,
+  loadRadius: 2800,
   /** ロード画面ではこの距離 (m) 以内が揃うまで待つ（残りは飛びながら読む） */
   initialRadius: 1500,
   /** この距離 (m) より離れたチャンクは捨てる（読込と破棄を繰り返さないよう少し大きく） */
-  unloadRadius: 4800,
+  unloadRadius: 3600,
   /** 同時に作るチャンク数 */
   concurrentChunks: 4,
   /** 標高タイル1枚あたりのメッシュ分割数 */
@@ -235,7 +239,7 @@ export const ATMOSPHERE = {
     /** 霧の色。空の地平線の色（colors.horizon）と同じにして、遠くの街を空に溶け込ませる */
     fogColor: 0xf2aac0,
     /** 霧のかかり始めと、完全に霞む距離 (m) */
-    fog: { near: 700, far: 4200 },
+    fog: { near: 500, far: 2600 },
   },
 
   /** 物理ベースの昼の空（three.js の Sky） */
@@ -257,7 +261,7 @@ export const ATMOSPHERE = {
     ambientIntensity: 1.0,
     environmentIntensity: 0.3,
     fogColor: 0xb4c9de,
-    fog: { near: 1200, far: 4500 },
+    fog: { near: 800, far: 2600 },
     clouds: {
       /** 空のどれくらいを雲が覆うか (0..1) */
       coverage: 0.45,
@@ -527,4 +531,12 @@ export const EXPRESSWAYS = {
   railColor: 0xc8ccd2,
   lampPoleColor: 0x9aa0a8,
   lampColor: 0xffd9a0,
+};
+
+/** 建物タイルのブラウザ内キャッシュ（Cache Storage） */
+export const TILE_CACHE = {
+  /** キャッシュの名前。中身の形式を変えた時は名前を変える（古いものは自動で消える） */
+  name: 'sky-drive-tiles-v1',
+  /** この日数より古いものは取り直す */
+  maxAgeDays: 30,
 };
