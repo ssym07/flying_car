@@ -157,7 +157,8 @@ export class RailNetwork implements ChunkListener {
     }
     if (samples.length < 2) return;
 
-    const raw = samples.map(([lat, lon]) => this.terrain.heightAt(lat, lon));
+    // 地上の線路は、描いている地形の面に合わせる（標高データそのものだと面に埋もれる）
+    const raw = samples.map(([lat, lon]) => this.terrain.surfaceHeightAt(lat, lon));
     let last = raw.find((g) => g !== null) ?? 0;
     const ground = raw.map((g) => (last = g ?? last));
     // 均した地面：場所だけで決まる平均（周りの格子点の地形の平均）にして、隣を並んで走る線路と同じ高さにする

@@ -184,7 +184,7 @@ export class RoadNetwork implements ChunkListener {
     let lastHeight = 0;
     const pts = samples.map(([lat, lon], i) => {
       if (deck) return this.terrain.toLocal(lat, lon, deck(s[i]));
-      lastHeight = this.terrain.heightAt(lat, lon) ?? lastHeight;
+      lastHeight = this.terrain.surfaceHeightAt(lat, lon) ?? lastHeight;
       return this.terrain.toLocal(lat, lon, lastHeight);
     });
     if (pts.length < 2) return;

@@ -60,6 +60,33 @@ export class Terrain {
     return sampleHeight(chunk.heights, TILE_PX, (t.x - chunk.x) * TILE_PX, (t.y - chunk.y) * TILE_PX);
   }
 
+  /**
+   * 画面に描いている地形の面の標高（ジオイド基準, m）。heightAt は5mメッシュの標高そのものだが、
+   * 地形のメッシュはそれより粗い三角形なので、線路や道路をその上に置く時はこちらを使う
+   * （heightAt に置くと、掘割や斜面でメッシュの面に埋もれる）。読込前なら null
+   */
+  surfaceHeightAt(latDeg: number, lonDeg: number): number | null {
+    const t = lonLatToTile(lonDeg, latDeg, TERRAIN.demZoom);
+    const chunk = this.chunks.get(`${Math.floor(t.x)}/${Math.floor(t.y)}`);
+    if (!chunk?.heights) return null;
+    const seg = TERRAIN.segments;
+    const gx = (t.x - chunk.x) * seg;
+    const gy = (t.y - chunk.y) * seg;
+    const col = Math.min(Math.floor(gx), seg - 1);
+    const row = Math.min(Math.floor(gy), seg - 1);
+    const fu = gx - col;
+    const fv = gy - row;
+    // buildGeometry と同じ頂点の高さ
+    const h = (c: number, r: number) => sampleHeight(chunk.heights!, TILE_PX, (c / seg) * TILE_PX, (r / seg) * TILE_PX);
+    // buildGeometry と同じ三角形の分け方：(左上, 左下, 右上) と (右上, 左下, 右下)
+    if (fu + fv <= 1) return h(col, row) + (h(col + 1, row) - h(col, row)) * fu + (h(col, row + 1) - h(col, row)) * fv;
+    return (
+      h(col + 1, row + 1) +
+      (h(col, row + 1) - h(col + 1, row + 1)) * (1 - fu) +
+      (h(col + 1, row) - h(col + 1, row + 1)) * (1 - fv)
+    );
+  }
+
   /** 緯度経度（度）と標高（ジオイド基準, m）→ ローカル座標 */
   toLocal(latDeg: number, lonDeg: number, height: number, target = new THREE.Vector3()): THREE.Vector3 {
     WGS84_ELLIPSOID.getCartographicToPosition(

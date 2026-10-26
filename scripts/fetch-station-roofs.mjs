@@ -5,7 +5,8 @@
 // データ: © OpenStreetMap contributors (ODbL)
 //
 // 出力の形式（1タイル）: [[種類, 地面からの高さ(m), 駅の番号, [緯度,経度,...（1e-6度、先頭以外は前の点との差）]], ...]
-//   種類：0 = 駅舎、1 = 上屋・ホーム
+//   種類：0 = 駅舎、1 = 上屋（屋根）、2 = ホーム（床）
+//   上屋・ホームの高さは仮の値。scripts/build-platforms.mjs が線路の高さに合わせて書き換える
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
@@ -102,7 +103,7 @@ for (const way of ways.values()) {
   if (distance > NEAR_STATION) continue;
 
   const t = way.tags;
-  const kind = t.building === 'train_station' ? 0 : 1;
+  const kind = t.building === 'train_station' ? 0 : t.building === 'roof' ? 1 : 2;
   const layer = Math.max(0, parseInt(t.layer ?? '0', 10) || 0);
   let height = parseFloat(t.height ?? '');
   if (!Number.isFinite(height)) {
@@ -110,7 +111,7 @@ for (const way of ways.values()) {
     height = Number.isFinite(levels) ? levels * 4 : kind === 0 ? 10 : CANOPY_HEIGHT;
   }
   // 高架（layer 1 以上）の上屋は、高架の上に載せる
-  if (kind === 1) height += layer * LAYER_HEIGHT;
+  if (kind !== 0) height += layer * LAYER_HEIGHT;
 
   const coords = [];
   let plat = 0;
@@ -123,6 +124,8 @@ for (const way of ways.values()) {
   const key = tileOf(center.lat, center.lon);
   if (!tiles.has(key)) tiles.set(key, []);
   tiles.get(key).push([kind, Math.round(height * 10) / 10, station, coords]);
+  // 屋根付きのホーム（covered=yes）は、同じ形の上屋も置く
+  if (kind === 2 && t.covered === 'yes') tiles.get(key).push([1, Math.round(height * 10) / 10, station, coords]);
   kept++;
 }
 

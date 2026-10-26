@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { KEYS, PHYSICS, TERRAIN, VEHICLE, WORLD } from '../core/config';
+import { KEYS, PHYSICS, SEARCH, TERRAIN, VEHICLE, WORLD } from '../core/config';
 import type { GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Hud } from '../ui/hud';
 import { LocationLabel } from '../ui/locationLabel';
 import { Minimap } from '../ui/minimap';
+import { StationSearch } from '../ui/stationSearch';
 import { forwardOf, step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
 import { Collision } from '../world/Collision';
@@ -17,6 +18,7 @@ export class FlightScene implements GameScene {
   private hud!: Hud;
   private location!: LocationLabel;
   private minimap!: Minimap;
+  private search!: StationSearch;
   private readonly ahead = new THREE.Vector3();
   private sinceLocation = Infinity;
   private groundHeight = 0;
@@ -48,6 +50,11 @@ export class FlightScene implements GameScene {
     this.hud = new Hud(this.ctx.overlay);
     this.location = new LocationLabel(this.ctx.overlay);
     this.minimap = new Minimap(this.ctx.overlay);
+    this.search = new StationSearch(
+      this.ctx.overlay,
+      (station) => this.jumpTo(station.lat, station.lon),
+      () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
+    );
 
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });
@@ -61,6 +68,21 @@ export class FlightScene implements GameScene {
     this.hud.dispose();
     this.location.dispose();
     this.minimap.dispose();
+    this.search.dispose();
+  }
+
+  /** (lat, lon)（度）の上空へジャンプする。向きはそのまま、止まった状態にする */
+  private jumpTo(lat: number, lon: number): void {
+    const terrain = this.ctx.world.terrain;
+    // まだ地形を読んでいない場所なら標高 0m（海面）とみなす。着いてから地形が読まれれば当たり判定で押し上がる
+    const ground = terrain.surfaceHeightAt(lat, lon) ?? 0;
+    const p = terrain.toLocal(lat, lon, ground + SEARCH.jumpAltitude);
+    this.vehicle.reset({
+      position: { x: p.x, y: p.y, z: p.z },
+      velocity: { x: 0, y: 0, z: 0 },
+      yaw: this.vehicle.state.yaw,
+    });
+    this.chase.snap();
   }
 
   update(dt: number): void {

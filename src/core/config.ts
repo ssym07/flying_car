@@ -316,7 +316,7 @@ export const ROADS = {
     { lanes: 0, laneWidth: 0, shoulder: 0, width: 4.5, sidewalk: 0, lift: 0.25, shade: 1.4 },
   ],
   /** 地形に沿わせるため、中心線をこの間隔 (m) で細かく区切る */
-  densifyStep: 8,
+  densifyStep: 5,
   /** 交差点の中心から（道幅の半分＋この距離 m）までは、車線の線と歩道を出さない */
   junctionClear: 4,
   /** 歩道の高さ（車道より上, m） */
@@ -393,6 +393,21 @@ export const STATION_ROOFS = {
   /** 縁の帯の高さ (m) */
   fasciaDepth: 0.8,
   fasciaColor: 0xd9dde2,
+  /** 上屋の屋根の、ホームの床からの高さ (m)。scripts/build-platforms.mjs と同じ値 */
+  canopyHeight: 4.5,
+  /** 上屋の柱の間隔・太さ (m)。幅がこれ (m) より広い屋根には柱を立てない */
+  pillarSpacing: 10,
+  pillarSize: 0.35,
+  pillarMaxRoofWidth: 16,
+  pillarColor: 0xd5d8dc,
+  /** ホームの側面の高さ（床からレール面まで, m）と色 */
+  platformDepth: 1.1,
+  platformSideColor: 0x9c9fa4,
+  /** 点字ブロック：縁からの距離・幅 (m)、色。この長さ (m) より短い辺には付けない */
+  tactileInset: 0.8,
+  tactileWidth: 0.3,
+  tactileColor: 0xe8c02a,
+  tactileMinEdge: 15,
 };
 
 /** 線路（OpenStreetMap の線路。scripts/fetch-railways.mjs → build-rail-heights.mjs で作る） */
@@ -417,7 +432,15 @@ export const RAILWAYS = {
   /** 高架の橋脚の間隔 (m) と太さ (m) */
   pierSpacing: 45,
   pierThickness: 1.6,
-  /** 中心線を区切る間隔 (m) */
-  densifyStep: 8,
+  /** 中心線を区切る間隔 (m)。地形のメッシュ（約19m）の折れ目に沿えるよう細かめ */
+  densifyStep: 4,
   concreteColor: 0xb4b6ba,
+};
+
+/** 駅検索 */
+export const SEARCH = {
+  /** 候補の最大数 */
+  maxResults: 8,
+  /** ジャンプした時の、地面からの高さ (m)。駅前の高層ビルより上 */
+  jumpAltitude: 100,
 };

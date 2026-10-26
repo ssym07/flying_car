@@ -19,6 +19,8 @@ export class Input {
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
+      // 検索欄などに入力している間は、操作のキーとして扱わない
+      if (isTyping(e.target)) return;
       if (!e.repeat) this.pressed.add(e.code);
       this.down.add(e.code);
       // Space でのページスクロールなどを防ぐ
@@ -95,4 +97,8 @@ export class Input {
   axis(negative: readonly string[], positive: readonly string[]): number {
     return (this.isDown(positive) ? 1 : 0) - (this.isDown(negative) ? 1 : 0);
   }
+}
+
+function isTyping(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
