@@ -205,7 +205,7 @@ MVP は **PLATEAU の1区画**で進める。
 | 地形 | 国土地理院 標高タイル（5mメッシュ）＋ 全国最新写真 | カメラの周り約3.5kmだけ読み、離れたら捨てる。標高にジオイド高を足して楕円体高に合わせる |
 | 海・川 | 国土地理院 淡色地図（水域は #bed2ff の1色） | 水色の画素を水域とし、岸からの距離で浅い青緑〜深い青に塗り分け、さざ波と空の映り込みを付ける（`src/world/water.ts`、設定は `WATER`） |
 | 橋 | OpenStreetMap の道路データの橋の区間 | 地形に沿わせず両岸を結ぶ橋桁にし、桁・欄干・橋脚を付ける。「〜橋」や長い橋で水の上のものには鋼のアーチ（`RoadNetwork.ts`、設定は `BRIDGES`）。水域の地形は水面の高さまで下げている |
-| 駅の屋根 | OpenStreetMap の駅舎・上屋（`public/station-roofs/15/{x}/{y}.json`） | 駅から300m以内の屋根を、白・銀・薄緑・青緑の金属の波板（しましま）で描く（`StationRoofs.ts`、設定は `STATION_ROOFS`）。駅の形の中にある PLATEAU の建物も屋上をしましまにする（形は `public/station-footprints.json`）。`node scripts/fetch-station-roofs.mjs` → `node scripts/build-station-footprints.mjs` で作り直せる |
+| 駅の屋根・ホーム | OpenStreetMap の駅舎・上屋・ホーム（`public/station-roofs/15/{x}/{y}.json`） | 屋根は白・銀・薄緑・青緑の金属の波板（しましま）。ホームは床・側面・黄色い点字ブロック、上屋は10mごとの柱で支える。ホームと上屋の高さはそばの線路に合わせる。駅の形の中にある PLATEAU の建物も屋上をしましまにする（`StationRoofs.ts`、設定は `STATION_ROOFS`）。作り直しは `node scripts/fetch-station-roofs.mjs` → `node scripts/build-platforms.mjs` → `node scripts/build-station-footprints.mjs`（線路の高さを作り直した時も build-platforms を再実行） |
 | 線路 | OpenStreetMap の線路（元データ `data/osm/railways/`、地下・トンネルは除く） | `node scripts/fetch-railways.mjs` で取得し、`node scripts/build-rail-heights.mjs` で各点の高さを付けて `public/rail-tracks/` に出す。高架は地面から8m（重なる線路は+5mずつ）、地上の道路と交わる所は線路を持ち上げて高架にし、地上との間は3%のスロープ。地上の線路をまたぐ道路の橋は線路の上6.5m以上に上げる（`public/roads/` に印を書き込むので、道路を取り直したら再実行）。描画は `RailNetwork.ts` |
 | ミニマップ | 国土地理院 淡色地図（地理院タイル） | CSS フィルタで反転して暗い配色にしている |
 | 通り名 | OpenStreetMap（`src/data/roadLabels.json`） | 幹線道路に沿って約350mごとのラベル位置。`node scripts/fetch-roads.mjs` で作り直せる |

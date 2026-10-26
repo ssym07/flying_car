@@ -4,7 +4,7 @@ import { lonLatToTile } from '../world/Terrain';
 
 const TILE_PX = 256;
 
-/** 通り名ラベル：地図全体での px 座標と、文字を置く角度（キャンバス上、右向きが 0） */
+/** 通り名ラベル：ズーム 0 の地図全体での px 座標と、文字を置く角度（キャンバス上、右向きが 0） */
 interface RoadLabel {
   name: string;
   x: number;
@@ -12,10 +12,22 @@ interface RoadLabel {
   angle: number;
 }
 
+/** 今の拡大率での地図の描き方 */
+interface View {
+  /** 読む地図タイルのズーム */
+  tileZoom: number;
+  /** 現在地の、タイルズームでの地図全体の px 座標 */
+  cx: number;
+  cy: number;
+  /** 地図 1px をキャンバスの何 px で描くか */
+  scale: number;
+}
+
 /**
  * 画面右下のミニマップ。北が上で、中心が現在地。自機の向きを矢印で示す。
  * 地図は国土地理院の淡色地図を CSS フィルタで暗くして、街の配色に合わせる。
- * 地図と、通り名・矢印は別のキャンバスに描く（フィルタが文字や矢印にかからないように）
+ * 地図と、通り名・矢印は別のキャンバスに描く（フィルタが文字や矢印にかからないように）。
+ * 右上の ＋/− ボタンか、ミニマップの上でのホイールで拡大率を変えられる
  */
 export class Minimap {
   private readonly root: HTMLDivElement;
@@ -26,6 +38,9 @@ export class Minimap {
   private readonly pixelRatio = Math.min(window.devicePixelRatio, 2);
   private readonly labels: RoadLabel[];
   private readonly textWidths = new Map<string, number>();
+  private readonly scaleLabel: HTMLDivElement;
+  /** 表示の拡大率（地図タイルのズームと同じ尺度。小数も可） */
+  private zoom = MINIMAP.zoom;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -39,7 +54,26 @@ export class Minimap {
     const north = document.createElement('div');
     north.className = 'minimap-north';
     north.textContent = 'N';
-    this.root.append(map, marker, north);
+    const controls = document.createElement('div');
+    controls.className = 'minimap-zoom';
+    controls.innerHTML = `<button type="button" data-zoom="1" aria-label="拡大">＋</button><button type="button" data-zoom="-1" aria-label="縮小">−</button>`;
+    controls.addEventListener('click', (e) => {
+      const button = (e.target as HTMLElement).closest('button');
+      if (button) this.changeZoom(Number(button.dataset.zoom) * MINIMAP.zoomStep);
+    });
+    this.scaleLabel = document.createElement('div');
+    this.scaleLabel.className = 'minimap-scale';
+    this.root.append(map, marker, north, controls, this.scaleLabel);
+    // ミニマップの上のホイールは拡大率に使う（カメラの距離は変えない）
+    this.root.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.changeZoom((-e.deltaY / 100) * MINIMAP.zoomStep);
+      },
+      { passive: false },
+    );
     parent.appendChild(this.root);
     this.labels = prepareLabels();
   }
@@ -50,15 +84,32 @@ export class Minimap {
    * @param bearing 進行方向（北から時計回り、ラジアン）
    */
   update(lat: number, lon: number, bearing: number): void {
-    const z = MINIMAP.zoom;
-    const center = lonLatToTile(lon, lat, z);
-    // 現在地を「ズーム z の地図全体での px 座標」にする
-    const cx = center.x * TILE_PX;
-    const cy = center.y * TILE_PX;
-    this.drawMap(cx, cy);
+    // 拡大率に近い（少し細かい）ズームのタイルを読み、縮めて描く
+    const tileZoom = Math.min(MINIMAP.maxTileZoom, Math.ceil(this.zoom - 1e-6));
+    const center = lonLatToTile(lon, lat, tileZoom);
+    const view: View = {
+      tileZoom,
+      cx: center.x * TILE_PX,
+      cy: center.y * TILE_PX,
+      scale: this.pixelRatio * 2 ** (this.zoom - tileZoom),
+    };
+    this.drawMap(view);
     this.markerCtx.clearRect(0, 0, this.markerCtx.canvas.width, this.markerCtx.canvas.height);
-    this.drawLabels(cx, cy);
+    this.drawLabels(view);
     this.drawMarker(bearing);
+    this.updateScaleLabel(lat);
+  }
+
+  private changeZoom(delta: number): void {
+    this.zoom = Math.min(MINIMAP.maxZoom, Math.max(MINIMAP.minZoom, this.zoom + delta));
+  }
+
+  /** 左下の「幅 ○km」：ミニマップの横幅が表す距離 */
+  private updateScaleLabel(lat: number): void {
+    const metersPerPx = (40075016 * Math.cos((lat * Math.PI) / 180)) / (TILE_PX * 2 ** this.zoom);
+    const width = metersPerPx * MINIMAP.size;
+    const text = width >= 1000 ? `幅 ${(width / 1000).toFixed(1)}km` : `幅 ${Math.round(width / 10) * 10}m`;
+    if (this.scaleLabel.textContent !== text) this.scaleLabel.textContent = text;
   }
 
   dispose(): void {
@@ -74,12 +125,9 @@ export class Minimap {
     return canvas;
   }
 
-  private drawMap(cx: number, cy: number): void {
+  private drawMap({ tileZoom: z, cx, cy, scale }: View): void {
     const ctx = this.mapCtx;
     const size = ctx.canvas.width;
-    const z = MINIMAP.zoom;
-    // キャンバス1px が地図の何 px か（MINIMAP.scale > 1 で地図を拡大して表示）
-    const scale = this.pixelRatio * MINIMAP.scale;
     const half = size / 2 / scale;
 
     ctx.fillStyle = '#e8e8e8';
@@ -100,11 +148,11 @@ export class Minimap {
   }
 
   /** 範囲内の通り名を、道に沿った向きで、重ならないように描く */
-  private drawLabels(cx: number, cy: number): void {
+  private drawLabels({ tileZoom, cx, cy, scale }: View): void {
     const ctx = this.markerCtx;
     const size = ctx.canvas.width;
     const r = this.pixelRatio;
-    const scale = r * MINIMAP.scale;
+    const world = 2 ** tileZoom;
     const fontSize = MINIMAP.labelFontSize * r;
     ctx.font = `700 ${fontSize}px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
     ctx.textAlign = 'center';
@@ -118,8 +166,8 @@ export class Minimap {
     const margin = 4 * r;
     const visible: Array<{ label: RoadLabel; sx: number; sy: number; d: number }> = [];
     for (const label of this.labels) {
-      const sx = (label.x - cx) * scale + size / 2;
-      const sy = (label.y - cy) * scale + size / 2;
+      const sx = (label.x * world - cx) * scale + size / 2;
+      const sy = (label.y * world - cy) * scale + size / 2;
       if (sx < margin || sy < margin || sx > size - margin || sy > size - margin) continue;
       visible.push({ label, sx, sy, d: Math.hypot(sx - size / 2, sy - size / 2) });
     }
@@ -209,27 +257,28 @@ export class Minimap {
         .then((blob) => createImageBitmap(blob))
         .then((image) => this.tiles.set(key, image))
         .catch(() => this.tiles.set(key, null));
-      this.evictFarTiles(x, y);
+      this.evictFarTiles(x, y, z);
     }
     return null;
   }
 
   /** 遠くのタイルを捨てて、メモリを使い続けないようにする */
-  private evictFarTiles(x: number, y: number): void {
+  private evictFarTiles(x: number, y: number, z: number): void {
     if (this.tiles.size <= MINIMAP.maxCachedTiles) return;
     for (const [key, tile] of this.tiles) {
-      const [, tx, ty] = key.split('/').map(Number);
-      if (Math.max(Math.abs(tx - x), Math.abs(ty - y)) <= 3) continue;
+      const [tz, tx, ty] = key.split('/').map(Number);
+      // 今のズームで近いタイルは残す（拡大率を変えたら、前のズームのタイルは捨てる）
+      if (tz === z && Math.max(Math.abs(tx - x), Math.abs(ty - y)) <= 3) continue;
       if (tile instanceof ImageBitmap) tile.close();
       this.tiles.delete(key);
     }
   }
 }
 
-/** 同梱の通り名データを、ミニマップのズームでの px 座標と文字の角度にしておく */
+/** 同梱の通り名データを、ズーム 0 での px 座標と文字の角度にしておく */
 function prepareLabels(): RoadLabel[] {
   return (roadLabels as Array<{ name: string; lat: number; lon: number; b: number }>).map((l) => {
-    const t = lonLatToTile(l.lon, l.lat, MINIMAP.zoom);
+    const t = lonLatToTile(l.lon, l.lat, 0);
     // 方位（北から時計回り）→ キャンバス上の角度（右向きが 0、下向きが +）。文字が逆さにならないよう ±90° に収める
     let angle = l.b - Math.PI / 2;
     if (angle > Math.PI / 2) angle -= Math.PI;

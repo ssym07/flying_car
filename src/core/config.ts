@@ -168,10 +168,15 @@ export const LOCATION = {
 export const MINIMAP = {
   /** 画面上の大きさ (px) */
   size: 250,
-  /** 地図タイルのズーム。15 で 1px ≒ 4m、250px で約1km 四方 */
+  /** 表示の拡大率（地図タイルのズームレベルと同じ尺度）。15 で 1px ≒ 4m、250px で約1km 四方。小数も可 */
   zoom: 15,
-  /** 地図タイルの拡大率（1 で等倍） */
-  scale: 1,
+  /** 拡大率を変えられる範囲（13 で約4km 四方、17.5 で約180m 四方） */
+  minZoom: 12,
+  maxZoom: 17.5,
+  /** ボタン1回・ホイール1目盛り（deltaY 100）で変わる量 */
+  zoomStep: 0.5,
+  /** 地図タイルの最大ズーム（淡色地図は 18 まで） */
+  maxTileZoom: 18,
   /** 国土地理院 淡色地図 */
   tileUrl: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
   /** 手元に残しておくタイル数の上限 */
@@ -443,4 +448,6 @@ export const SEARCH = {
   maxResults: 8,
   /** ジャンプした時の、地面からの高さ (m)。駅前の高層ビルより上 */
   jumpAltitude: 100,
+  /** 着いた所の地形がまだ読めていない間、待つ高さ（標高, m）。23区で一番高い所より十分上 */
+  waitAltitude: 250,
 };

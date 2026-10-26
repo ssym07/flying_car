@@ -19,6 +19,8 @@ export class FlightScene implements GameScene {
   private location!: LocationLabel;
   private minimap!: Minimap;
   private search!: StationSearch;
+  /** 地形の読込を待っているジャンプ先 */
+  private pendingJump: { lat: number; lon: number } | null = null;
   private readonly ahead = new THREE.Vector3();
   private sinceLocation = Infinity;
   private groundHeight = 0;
@@ -71,18 +73,26 @@ export class FlightScene implements GameScene {
     this.search.dispose();
   }
 
-  /** (lat, lon)（度）の上空へジャンプする。向きはそのまま、止まった状態にする */
+  /**
+   * (lat, lon)（度）の上空へジャンプする。向きはそのまま、止まった状態にする。
+   * まだ地形を読んでいない場所なら、いったん十分高い所で待ち、地形が読めたら地面から jumpAltitude の高さに置き直す
+   * （地面の高さが分からないまま置くと、高台で地形の下に入ってしまう）
+   */
   private jumpTo(lat: number, lon: number): void {
-    const terrain = this.ctx.world.terrain;
-    // まだ地形を読んでいない場所なら標高 0m（海面）とみなす。着いてから地形が読まれれば当たり判定で押し上がる
-    const ground = terrain.surfaceHeightAt(lat, lon) ?? 0;
-    const p = terrain.toLocal(lat, lon, ground + SEARCH.jumpAltitude);
+    this.pendingJump = { lat, lon };
+    this.place(lat, lon, this.ctx.world.terrain.surfaceHeightAt(lat, lon));
+  }
+
+  private place(lat: number, lon: number, ground: number | null): void {
+    const height = ground === null ? SEARCH.waitAltitude : ground + SEARCH.jumpAltitude;
+    const p = this.ctx.world.terrain.toLocal(lat, lon, height);
     this.vehicle.reset({
       position: { x: p.x, y: p.y, z: p.z },
       velocity: { x: 0, y: 0, z: 0 },
       yaw: this.vehicle.state.yaw,
     });
     this.chase.snap();
+    if (ground !== null) this.pendingJump = null;
   }
 
   update(dt: number): void {
@@ -90,6 +100,14 @@ export class FlightScene implements GameScene {
     if (input.consumePress(KEYS.pause)) {
       this.ctx.go.pause();
       return;
+    }
+
+    if (this.pendingJump) {
+      const { lat, lon } = this.pendingJump;
+      const ground = this.ctx.world.terrain.surfaceHeightAt(lat, lon);
+      if (ground !== null) this.place(lat, lon, ground);
+      // 地形が読めるまでは、待つ高さに止めておく
+      else return;
     }
 
     this.control.throttle = input.axis(KEYS.back, KEYS.forward);
