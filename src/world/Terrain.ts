@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { TERRAIN } from '../core/config';
+import { addWater, fetchWaterMask, waterTime } from './water';
 
 /** 標高タイルの「データなし」（水面など） */
 const NO_DATA = Number.NaN;
@@ -107,6 +108,7 @@ export class Terrain {
     const latLon = this.toLatLon(cameraPosition);
     if (!latLon) return;
     this.lastCamera.copy(cameraPosition);
+    waterTime.value = performance.now() / 1000;
     const z = TERRAIN.demZoom;
     const tile = lonLatToTile(latLon.lon, latLon.lat, z);
     const tileMeters = (40075016 * Math.cos(latLon.lat * THREE.MathUtils.DEG2RAD)) / 2 ** z;
@@ -169,15 +171,19 @@ export class Terrain {
       const heights = (await fetchDem(chunk.x, chunk.y, z)) ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
       fillNoData(heights, TILE_PX);
       const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
-      const map = await fetchPhoto(chunk.x, chunk.y, z, TERRAIN.photoZoomOffset);
+      const [map, water] = await Promise.all([
+        fetchPhoto(chunk.x, chunk.y, z, TERRAIN.photoZoomOffset),
+        fetchWaterMask(chunk.x, chunk.y, z),
+      ]);
       if (chunk.dead) {
         geometry.dispose();
         map?.dispose();
+        water?.dispose();
         this.chunks.delete(key(chunk));
         return;
       }
       geometry.computeBoundsTree();
-      chunk.mesh = new THREE.Mesh(geometry, map ? createMaterials(map) : this.materials);
+      chunk.mesh = new THREE.Mesh(geometry, map || water ? createMaterials(map, water) : this.materials);
       chunk.heights = heights;
       this.group.add(chunk.mesh);
       for (const l of this.listeners) l.onChunkAdded(chunk.x, chunk.y);
@@ -195,6 +201,7 @@ export class Terrain {
     if (mesh.material !== this.materials) {
       const materials = mesh.material as THREE.MeshStandardMaterial[];
       materials[0].map?.dispose();
+      (materials[0].userData.waterMap as THREE.Texture | undefined)?.dispose();
       for (const m of materials) m.dispose();
     }
     chunk.mesh = null;
@@ -209,18 +216,20 @@ function key(chunk: { x: number; y: number }): string {
 }
 
 /** [本体, 縁の壁] のマテリアル */
-function createMaterials(map: THREE.Texture | null): THREE.Material[] {
+function createMaterials(map: THREE.Texture | null, water: THREE.Texture | null = null): THREE.Material[] {
   const color = map ? 0xffffff : 0x7d8a72;
+  // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
+  const ground = new THREE.MeshStandardMaterial({
+    map,
+    color,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: 2,
+    polygonOffsetUnits: 2,
+  });
+  if (water) addWater(ground, water);
   return [
-    // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
-    new THREE.MeshStandardMaterial({
-      map,
-      color,
-      roughness: 1,
-      polygonOffset: true,
-      polygonOffsetFactor: 2,
-      polygonOffsetUnits: 2,
-    }),
+    ground,
     // 縁の壁はずらさない（垂直な面は大きく奥へずれて、隠したい隙間が見えてしまう）。
     // 裏から見ても消えないよう両面にし、裏面が暗く照らされて黒い線に見えないようライティングもしない
     new THREE.MeshBasicMaterial({ map, color, side: THREE.DoubleSide }),

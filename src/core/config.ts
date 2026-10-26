@@ -324,3 +324,25 @@ export const ROADS = {
   /** 横断歩道の長さ（道に沿った方向, m） */
   crosswalkLength: 4,
 };
+
+/** 海・川（国土地理院 淡色地図の水色の画素から水域を作り、地形の上で水面として描く） */
+export const WATER = {
+  /** 水域を判定する地図（淡色地図は水域を #bed2ff の1色で塗っている） */
+  mapUrl: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
+  /** 地形チャンクより何段細かいズームで判定するか（1 で約2m/画素） */
+  zoomOffset: 1,
+  /** 文字ラベルなどの小さな穴を埋める大きさ（画素） */
+  closeRadius: 3,
+  /** 岸の線をなめらかにするぼかしの半径（画素） */
+  edgeBlur: 3,
+  /** 岸からこの距離（画素）で一番深い色になる。約2m/画素なので 120 ≒ 240m */
+  deepDistancePx: 120,
+  /** 岸辺・浅い所の色（川） */
+  shallowColor: 0x4fb3d9,
+  /** 沖・深い所の色（海） */
+  deepColor: 0x1f5fa8,
+  /** 水面のなめらかさ（小さいほど空がくっきり映る） */
+  roughness: 0.12,
+  /** さざ波の強さ */
+  waveStrength: 0.09,
+};

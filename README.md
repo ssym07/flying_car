@@ -203,6 +203,7 @@ MVP は **PLATEAU の1区画**で進める。
 | 建物 | PLATEAU 建築物モデル（2025） | 全区とも軽い LOD1（台東区のみテクスチャ無し LOD2）に、手続き的に描いた外壁テンプレート（`src/world/facade.ts`）を貼る。建物の高さで高層／中層／低層のテンプレートを選ぶ。URL は `src/data/wards.ts` |
 | 道路 | OpenStreetMap の道路中心線（`public/roads/15/{x}/{y}.json`） | 種別・車線数からテンプレート（路面標示・歩道・横断歩道）で作り、地形に沿わせる（`src/world/RoadNetwork.ts`、`roadTemplates.ts`）。`node scripts/fetch-road-network.mjs` で作り直せる（23区全体で約2時間） |
 | 地形 | 国土地理院 標高タイル（5mメッシュ）＋ 全国最新写真 | カメラの周り約3.5kmだけ読み、離れたら捨てる。標高にジオイド高を足して楕円体高に合わせる |
+| 海・川 | 国土地理院 淡色地図（水域は #bed2ff の1色） | 水色の画素を水域とし、岸からの距離で浅い青緑〜深い青に塗り分け、さざ波と空の映り込みを付ける（`src/world/water.ts`、設定は `WATER`） |
 | ミニマップ | 国土地理院 淡色地図（地理院タイル） | CSS フィルタで反転して暗い配色にしている |
 | 通り名 | OpenStreetMap（`src/data/roadLabels.json`） | 幹線道路に沿って約350mごとのラベル位置。`node scripts/fetch-roads.mjs` で作り直せる |
 | 3D の駅名・通り名 | 上の駅・通り名データ | 駅は上空の看板（近い10駅）、通り名は路面に描く文字。カメラの周りだけ作る（`src/world/Labels.ts`） |
