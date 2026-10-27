@@ -65,3 +65,28 @@ export function smoothGround(terrain: Terrain, lat: number, lon: number, radius:
   const fx = gx - x0;
   return (c00 * (1 - fx) + c01 * fx) * (1 - fy) + (c10 * (1 - fx) + c11 * fx) * fy;
 }
+
+/**
+ * 駅の地面の高さ：駅の基準点 (lat, lon) で決まる1つの値。駅の線路とホームはどちらもこれを基準にして、高さをそろえる。
+ * 掘割の駅は、基準点のまわり ±radius m の細かい標高の一番低い所（掘割の底）
+ */
+export function stationGround(
+  terrain: Terrain,
+  lat: number,
+  lon: number,
+  cut: boolean,
+  smoothRadius: number,
+  cutRadius: number,
+): number | null {
+  if (!cut) return smoothGround(terrain, lat, lon, smoothRadius);
+  const dLat = cutRadius / 2 / 111320;
+  const dLon = cutRadius / 2 / (111320 * Math.cos((lat * Math.PI) / 180));
+  let low: number | null = null;
+  for (let a = -2; a <= 2; a++) {
+    for (let b = -2; b <= 2; b++) {
+      const h = terrain.heightAt(lat + a * dLat, lon + b * dLon);
+      if (h !== null) low = low === null ? h : Math.min(low, h);
+    }
+  }
+  return low;
+}

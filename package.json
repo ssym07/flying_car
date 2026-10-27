@@ -16,6 +16,8 @@
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
+    "draco3dgltf": "1.5.7",
+    "three-bvh-csg": "0.0.18",
     "typescript": "~5.9",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

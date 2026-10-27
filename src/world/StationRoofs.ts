@@ -1,16 +1,19 @@
 import * as THREE from 'three';
-import { STATION_ROOFS } from '../core/config';
+import { RAILWAYS, STATION_ROOFS } from '../core/config';
+import { stationGround } from './groundProfile';
 import { createSidewalkMaterial } from './roadTemplates';
 import type { ChunkListener, Terrain } from './Terrain';
 
 /**
- * 屋根データ1件：[種類（0=駅舎, 1=上屋, 2=ホーム）, 地面からの高さ(m), 駅の番号, 座標（1e-6度、先頭以外は差分）]。
- * 高さは駅舎・上屋なら屋根の高さ、ホームなら床の高さ（scripts/build-platforms.mjs が線路に合わせて決める）
+ * 屋根データ1件：[種類（0=駅舎, 1=上屋, 2=ホーム）, 地面からの高さ(m), 駅の番号, 座標（1e-6度、先頭以外は差分）,
+ * 駅の基準点の緯度, 経度（1e-6度）, 掘割(0/1)]。
+ * 高さは上屋なら屋根の高さ、ホームなら床の高さ（scripts/build-platforms.mjs が線路に合わせて決める。-1 は描かない）。
+ * 基準点は駅にまとまったものだけにあり、線路と同じく駅の地面を基準にする
  */
-type RoofRecord = [0 | 1 | 2, number, number, number[]];
+type RoofRecord = [0 | 1 | 2, number, number, number[], number?, number?, (0 | 1)?];
 
 /**
- * 駅の屋根（駅舎・ホームの上屋）とホーム。屋根は写真を参考に、白・銀・薄い緑・青緑の金属の波板屋根にして、
+ * 駅のホームの上屋とホーム（駅舎は PLATEAU の建物に任せて描かない）。屋根は写真を参考に、白・銀・薄い緑・青緑の金属の波板屋根にして、
  * 周りの建物（黒・紺）と見分けがつくようにする。上屋は柱で支え、ホームは床・側面・点字ブロックで作る。
  * 地形チャンクが読まれたら同じ範囲の屋根データを読み、形どおりの屋根の板を作る。
  */
@@ -90,17 +93,33 @@ export class StationRoofs implements ChunkListener {
     const side = new Builder();
     const tactile = new Builder();
     const pillar = new Builder();
-    for (const [kind, height, station, coords] of records) {
+    for (const [kind, height, station, coords, refLat, refLon, cut] of records) {
+      // 駅舎は描かない（形は PLATEAU の建物に任せる。屋根の板だけ置くと、建物と合わない所で宙に浮く）
+      if (kind === 0 || height < 0) continue;
       const latLon = decode(coords);
-      // 地面の高さ：形の頂点での地形の面の平均（線路の高さの基準と揃える）
-      let sum = 0;
-      let n = 0;
-      for (const [lat, lon] of latLon) {
-        const h = this.terrain.surfaceHeightAt(lat, lon);
-        if (h !== null) (sum += h), n++;
+      // 地面の高さ：駅にまとまったものは駅の地面（線路と同じ基準）、それ以外は形の頂点での地形の面の平均
+      let ground =
+        refLat !== undefined && refLon !== undefined
+          ? stationGround(
+              this.terrain,
+              refLat / 1e6,
+              refLon / 1e6,
+              cut === 1,
+              RAILWAYS.smoothRadius,
+              RAILWAYS.cutFloorRadius,
+            )
+          : null;
+      if (ground === null) {
+        let sum = 0;
+        let n = 0;
+        for (const [lat, lon] of latLon) {
+          const h = this.terrain.surfaceHeightAt(lat, lon);
+          if (h !== null) (sum += h), n++;
+        }
+        if (n === 0) continue;
+        ground = sum / n;
       }
-      if (n === 0) continue;
-      const top = sum / n + height;
+      const top = ground + height;
       const points = latLon.map(([lat, lon]) => this.terrain.toLocal(lat, lon, top));
       if (kind === 2) this.addPlatform(points, floor, side, tactile);
       else {
