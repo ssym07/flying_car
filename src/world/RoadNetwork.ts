@@ -128,9 +128,22 @@ export class RoadNetwork implements ChunkListener {
     const sidewalk = new MeshBuilder();
     const crosswalk = new MeshBuilder();
     const bridge: BridgeParts = { body: new MeshBuilder(), railing: new MeshBuilder(), steel: new MeshBuilder() };
-    for (const [cls, lanes, oneway, coords, junctions, bridgeInfo] of data.w) {
-      this.buildWay(roadLayout(cls, lanes, oneway === 1), decode(coords), junctions, bridgeInfo || null, road, sidewalk, bridge);
+    const ways = data.w.map(([cls, lanes, oneway, coords, junctions, bridgeInfo]) => ({
+      layout: roadLayout(cls, lanes, oneway === 1),
+      points: decode(coords),
+      junctions,
+      bridge: bridgeInfo || null,
+    }));
+    const intersections = findIntersections(ways);
+    for (const way of ways) {
+      // この道の上の交差点（点の番号と、交差点の半径）
+      const stops = way.junctions.flatMap((i) => {
+        const j = intersections.get(pointKey(way.points[i]));
+        return j ? [{ index: i, radius: j.radius }] : [];
+      });
+      this.buildWay(way.layout, way.points, stops, way.bridge, road, sidewalk, bridge);
     }
+    for (const j of intersections.values()) this.buildIntersection(j, road, sidewalk);
     for (const [lat, lon, bearing, cls] of data.c) {
       this.buildCrosswalk(lat / 1e6, lon / 1e6, bearing, roadLayout(cls, 0, false), crosswalk);
     }
@@ -151,7 +164,7 @@ export class RoadNetwork implements ChunkListener {
   private buildWay(
     layout: RoadLayout,
     points: Array<[number, number]>,
-    junctions: number[],
+    junctions: Array<{ index: number; radius: number }>,
     bridge: BridgeInfo | null,
     road: MeshBuilder,
     sidewalk: MeshBuilder,
@@ -160,7 +173,7 @@ export class RoadNetwork implements ChunkListener {
     // 細かく区切った点の緯度経度と、中心線に沿った距離 s
     const samples: Array<[number, number]> = [];
     const s: number[] = [];
-    const junctionS: number[] = [];
+    const junctionS: Array<{ s: number; radius: number }> = [];
     for (let i = 0; i < points.length; i++) {
       const [lat, lon] = points[i];
       if (i > 0) {
@@ -176,7 +189,7 @@ export class RoadNetwork implements ChunkListener {
         samples.push([lat, lon]);
         s.push(0);
       }
-      if (junctions.includes(i)) junctionS.push(s[s.length - 1]);
+      for (const j of junctions) if (j.index === i) junctionS.push({ s: s[s.length - 1], radius: j.radius });
     }
 
     // 高さ：ふつうの道は地形に沿わせ、橋は両岸の高さを結んだ橋桁にする
@@ -190,8 +203,8 @@ export class RoadNetwork implements ChunkListener {
     if (pts.length < 2) return;
 
     const half = layout.width / 2;
-    const clear = Math.max(half, 5) + ROADS.junctionClear;
-    const distToJunction = (si: number) => junctionS.reduce((d, j) => Math.min(d, Math.abs(si - j)), Infinity);
+    /** 交差点の面の外側までの距離（交差点の中なら負） */
+    const outside = (si: number) => junctionS.reduce((d, j) => Math.min(d, Math.abs(si - j.s) - j.radius), Infinity);
     const side = new THREE.Vector3();
     const tangent = new THREE.Vector3();
     const tmp = new THREE.Vector3();
@@ -208,7 +221,8 @@ export class RoadNetwork implements ChunkListener {
     const u1 = columnU(layout.column, 1);
     let prev: [number, number] | null = null;
     for (let i = 0; i < pts.length; i++) {
-      const mark = THREE.MathUtils.smoothstep(distToJunction(s[i]), clear - 3, clear);
+      // 車線の線は、交差点の面に入る手前で消す
+      const mark = THREE.MathUtils.smoothstep(outside(s[i]), 0, 3);
       side.copy(sides[i]);
       const center = tmp.copy(pts[i]).setY(pts[i].y + layout.lift);
       const v = s[i] / TEMPLATE_LENGTH_M;
@@ -225,7 +239,7 @@ export class RoadNetwork implements ChunkListener {
     for (const dir of [1, -1]) {
       let prevSw: [number, number] | null = null;
       for (let i = 0; i < pts.length; i++) {
-        if (distToJunction(s[i]) < clear) {
+        if (outside(s[i]) < 0) {
           prevSw = null;
           continue;
         }
@@ -354,12 +368,46 @@ export class RoadNetwork implements ChunkListener {
     }
   }
 
+  /**
+   * 交差点の面：集まる道の歩道の外側の角を結んだ面を歩道で塗り、その内側を車道（線なし）で塗る。
+   * 上から見ると、歩道が交差点の角を回り込んでつながり、車道は交差点の中で一続きになる
+   */
+  private buildIntersection(j: Intersection, road: MeshBuilder, sidewalk: MeshBuilder): void {
+    const ground = this.terrain.surfaceHeightAt(j.lat, j.lon);
+    if (ground === null) return;
+    const center = this.terrain.toLocal(j.lat, j.lon, ground);
+    const up = new THREE.Vector3(0, 1, 0);
+    const outer: THREE.Vector3[] = [];
+    const inner: THREE.Vector3[] = [];
+    let lift = 0;
+    for (const arm of j.arms) {
+      const dir = this.terrain.toLocal(arm.toward[0], arm.toward[1], ground).sub(center).setY(0);
+      if (dir.lengthSq() < 1e-6) continue;
+      dir.normalize();
+      const side = new THREE.Vector3().crossVectors(up, dir);
+      const half = arm.layout.width / 2;
+      const end = center.clone().addScaledVector(dir, j.radius);
+      inner.push(end.clone().addScaledVector(side, half), end.clone().addScaledVector(side, -half));
+      const sw = half + arm.layout.sidewalk;
+      outer.push(end.clone().addScaledVector(side, sw), end.clone().addScaledVector(side, -sw));
+      lift = Math.max(lift, arm.layout.lift);
+    }
+    if (inner.length < 6) return;
+    const walkY = center.y + lift + ROADS.curbHeight;
+    fan(sidewalk, center, outer, walkY, (p) => [p.x / 2.4, p.z / 2.4]);
+    // アスファルトの明るさは、集まる道のうち一番広い道に合わせる（細い道どうしの交差点が暗く浮かないように）
+    const widest = j.arms.reduce((a, b) => (b.layout.width > a.layout.width ? b : a)).layout;
+    const roadMark: [number, number] = [0, widest.shade];
+    fan(road, center, inner, walkY + 0.03, () => [0.5, 0], roadMark);
+  }
+
   /** 横断歩道：道の向きに沿った縞を、道幅いっぱいに置く */
   private buildCrosswalk(lat: number, lon: number, bearing: number, layout: RoadLayout, out: MeshBuilder): void {
     const height = this.terrain.heightAt(lat, lon);
     if (height === null) return;
     const center = this.terrain.toLocal(lat, lon, height);
-    center.y += layout.lift + 0.02;
+    // 交差点の面より上に（交差点の面は、集まる道で一番高い道の歩道の高さ＋α）
+    center.y += ROADS.classes[0].lift + ROADS.curbHeight + 0.06;
     // 方位（北から時計回り）→ ローカル座標（+x=西, +z=北）
     const along = new THREE.Vector3(-Math.sin(bearing), 0, Math.cos(bearing));
     const across = new THREE.Vector3(-along.z, 0, along.x);
@@ -373,6 +421,74 @@ export class RoadNetwork implements ChunkListener {
     const c = out.vertex(corner(-half, len), 0, 1);
     const d = out.vertex(corner(half, len), uMax, 1);
     out.quad(a, b, c, d);
+  }
+}
+
+/** 交差点（3方向以上に道が分かれる点） */
+interface Intersection {
+  lat: number;
+  lon: number;
+  /** 交差点の面の半径：集まる道で一番広い「車道の半分＋歩道」＋余白 (m) */
+  radius: number;
+  /** 交差点から出る道：その道と、向かう先の点（緯度経度） */
+  arms: Array<{ layout: RoadLayout; toward: [number, number] }>;
+}
+
+function pointKey([lat, lon]: [number, number]): string {
+  return `${Math.round(lat * 1e6)},${Math.round(lon * 1e6)}`;
+}
+
+/** タイルの中の交差点を探す。2本の道がつながっているだけの点（データの区切り目）は交差点にしない */
+function findIntersections(
+  ways: Array<{ layout: RoadLayout; points: Array<[number, number]>; junctions: number[]; bridge: BridgeInfo | null }>,
+): Map<string, Intersection> {
+  const all = new Map<string, Intersection & { bridge: boolean }>();
+  for (const way of ways) {
+    for (const i of way.junctions) {
+      const p = way.points[i];
+      const key = pointKey(p);
+      let j = all.get(key);
+      if (!j) all.set(key, (j = { lat: p[0], lon: p[1], radius: 0, arms: [], bridge: false }));
+      if (way.bridge) j.bridge = true;
+      if (i > 0) j.arms.push({ layout: way.layout, toward: way.points[i - 1] });
+      if (i < way.points.length - 1) j.arms.push({ layout: way.layout, toward: way.points[i + 1] });
+    }
+  }
+  const out = new Map<string, Intersection>();
+  for (const [key, j] of all) {
+    // 橋の上の交差点は高さが合わないので作らない
+    if (j.arms.length < 3 || j.bridge) continue;
+    j.radius = Math.max(...j.arms.map((a) => a.layout.width / 2 + a.layout.sidewalk)) + ROADS.junctionMargin;
+    out.set(key, j);
+  }
+  return out;
+}
+
+/** 中心のまわりの点を角度順に並べ、中心から扇形に三角形を張る（上向きの面にする） */
+function fan(
+  out: MeshBuilder,
+  center: THREE.Vector3,
+  points: THREE.Vector3[],
+  y: number,
+  uv: (p: THREE.Vector3) => [number, number],
+  attr?: [number, number],
+): void {
+  const sorted = [...points].sort(
+    (a, b) => Math.atan2(a.z - center.z, a.x - center.x) - Math.atan2(b.z - center.z, b.x - center.x),
+  );
+  const c = center.clone().setY(y);
+  const ci = out.vertex(c, ...uv(c), attr);
+  const idx = sorted.map((p) => {
+    const q = p.clone().setY(y);
+    return out.vertex(q, ...uv(q), attr);
+  });
+  for (let k = 0; k < idx.length; k++) {
+    const a = sorted[k];
+    const b = sorted[(k + 1) % sorted.length];
+    // 上から見て反時計回りなら上向き。逆なら入れ替える
+    const ccw = (a.x - c.x) * (b.z - c.z) - (a.z - c.z) * (b.x - c.x) < 0;
+    if (ccw) out.indices.push(ci, idx[k], idx[(k + 1) % idx.length]);
+    else out.indices.push(ci, idx[(k + 1) % idx.length], idx[k]);
   }
 }
 

@@ -7,6 +7,8 @@
 // - 短い橋（川をまたぐだけの地上区間の橋）は地上扱い
 // - 掘割（cutting、または layer が負）は高さ 0（地形を削って底に置くのは描画側）
 // - 地上・掘割と高架の間は勾配 GRADE の坂でつなぐ（つながりをたどって高さを決める）
+// - 出入口（連絡路）の行き止まりと、一般道の点につながる行き止まりは地上（0m）に固定し、
+//   そこから勾配 GRADE で上がるよう高さを抑える（高架のまま空中で途切れないように）
 // - 一般道・線路と交わる所は橋脚を立てない（x）
 //
 // 出力の形式（1タイル）:
@@ -112,6 +114,35 @@ for (const [i, w] of ways.entries()) {
   }
 }
 
+// ---- 一般道（地上へのつながりを調べるのと、橋脚を立てない所に使う） ----
+async function readTiles(dir) {
+  const out = [];
+  for (const x of await readdir(dir).catch(() => [])) {
+    for (const f of await readdir(new URL(`${x}/`, dir))) out.push(JSON.parse(await readFile(new URL(`${x}/${f}`, dir), 'utf8')));
+  }
+  return out;
+}
+const roadLines = [];
+const roadPoints = new Set();
+for (const t of await readTiles(ROAD_DIR)) {
+  for (const w of t.w) {
+    const pts = decode(w[3]);
+    roadLines.push([pts, ROAD_HALF[w[0]] ?? 3]);
+    // 橋の上の一般道は地上ではないので除く
+    if (!w[5]) for (const p of pts) roadPoints.add(key(p));
+  }
+}
+
+// 地上に固定する点：行き止まり（1本の道にしか使われない端）のうち、連絡路のものか、一般道の点と一致するもの
+const usage = new Map();
+for (const w of ways) for (const k of w.keys) usage.set(k, (usage.get(k) ?? 0) + 1);
+const pinned = new Set();
+for (const w of ways) {
+  for (const k of [w.keys[0], w.keys[w.keys.length - 1]]) {
+    if (usage.get(k) === 1 && (w.link || roadPoints.has(k))) pinned.add(k);
+  }
+}
+
 // 坂：高い所から、つながった点へ「勾配ぶん下げた高さ」を広げる
 const heap = [];
 const push = (k, v) => {
@@ -160,16 +191,30 @@ while (heap.length > 0) {
   }
 }
 
-// ---- 一般道・線路と交わる所（橋脚を立てない） ----
-async function readTiles(dir) {
-  const out = [];
-  for (const x of await readdir(dir).catch(() => [])) {
-    for (const f of await readdir(new URL(`${x}/`, dir))) out.push(JSON.parse(await readFile(new URL(`${x}/${f}`, dir), 'utf8')));
+// 上限：地上に固定した点から、つながりをたどって「勾配 × 距離」より高くしない（地上からの坂）
+{
+  const ceil = new Map();
+  const queue = [...pinned].map((k) => [0, k]);
+  for (const k of pinned) ceil.set(k, 0);
+  // 距離の短い順に広げる（点の数が少ないので単純な並べ替えで足りる）
+  while (queue.length > 0) {
+    queue.sort((a, b) => b[0] - a[0]);
+    const [v, k] = queue.pop();
+    if (v > (ceil.get(k) ?? Infinity)) continue;
+    for (const [nk, d] of nodes.get(k).edges) {
+      const h = v + GRADE * d;
+      if (h < (ceil.get(nk) ?? Infinity)) {
+        ceil.set(nk, h);
+        queue.push([h, nk]);
+      }
+    }
   }
-  return out;
+  for (const [k, n] of nodes) if (ceil.has(k)) n.offset = Math.min(n.offset, ceil.get(k));
 }
+
+// ---- 一般道・線路と交わる所（橋脚を立てない） ----
 const lines = []; // [[pts], 半径]
-for (const t of await readTiles(ROAD_DIR)) for (const w of t.w) lines.push([decode(w[3]), ROAD_HALF[w[0]] ?? 3]);
+for (const pts of roadLines) lines.push(pts);
 for (const t of await readTiles(RAIL_DIR)) for (const r of t.t) lines.push([decode(r[1]), 3]);
 const CELL = 0.002;
 const grid = new Map();
@@ -255,4 +300,6 @@ for (const [k, data] of tiles) {
   await writeFile(new URL(`${x}/${y}.json`, OUT_DIR), json);
 }
 const elevatedPts = [...nodes.values()].filter((n) => n.offset > 3).length;
-console.log(`${ways.length} ways, ${nodes.size} points (${elevatedPts} elevated) → ${tiles.size} tiles, ${(bytes / 1e6).toFixed(2)} MB`);
+console.log(
+  `${ways.length} ways, ${nodes.size} points (${elevatedPts} elevated), ${pinned.size} ends pinned to the ground → ${tiles.size} tiles, ${(bytes / 1e6).toFixed(2)} MB`,
+);
