@@ -39,6 +39,11 @@ function halfWidth(h: number): number {
   return PROFILE[PROFILE.length - 1][1];
 }
 
+/** 高さ h (m) での脚の断面の一辺 (m)。下の 45m だけ */
+function legSize(h: number): number {
+  return THREE.MathUtils.lerp(10, 4, Math.min(1, h / 45));
+}
+
 /** 高さ h (m) の色：メインデッキの下はオレンジ、上は約 12m ごとにオレンジと白を交互に */
 function paint(h: number): THREE.Color {
   if (h < 150) return ORANGE;
@@ -82,7 +87,7 @@ export function buildTokyoTower(cx: number): TowerParts {
   for (const [sx, sz] of corners) {
     // 脚の断面：外側の角は塔の輪郭、内側へ s(h) の四角
     const section = (h: number) => {
-      const s = THREE.MathUtils.lerp(10, 4, h / LEG_TOP);
+      const s = legSize(h);
       const o = corner(h, sx, sz);
       return [
         o,
@@ -102,31 +107,38 @@ export function buildTokyoTower(cx: number): TowerParts {
       }
     }
   }
-  // 脚の間のアーチ（各面）：脚の内側から、塔の面の中央の高さ LEG_TOP へ
-  for (let k = 0; k < 4; k++) {
+  // 脚の間のアーチ（各面）：両側の脚の内側の柱（角から legSize ぶん内側）から立ち上がり、面の中央で LEG_TOP の水平材に届く。
+  // 面の上の点：面の向きに固定した座標は塔の輪郭（halfWidth）、面に沿った座標 u は角から角へ
+  const SPRING = 8;
+  const onFace = (k: number, u: number, h: number) => {
     const [ax, az] = corners[k];
-    const [bx, bz] = corners[(k + 1) % 4];
+    const [bx] = corners[(k + 1) % 4];
+    const w = halfWidth(h);
+    // a と b で同じ側の座標が面の向き。もう一方が面に沿った向き（a の側が +u）
+    return ax === bx
+      ? new THREE.Vector3(cx + ax * w, h, az * u)
+      : new THREE.Vector3(cx + ax * u, h, az * w);
+  };
+  for (let k = 0; k < 4; k++) {
     const pts: THREE.Vector3[] = [];
+    const us: number[] = [];
     for (let i = 0; i <= 16; i++) {
       const t = i / 16;
-      const h = 6 + (LEG_TOP - 6) * Math.sin(t * Math.PI);
-      const w = halfWidth(h);
-      const x = THREE.MathUtils.lerp(ax, bx, t);
-      const z = THREE.MathUtils.lerp(az, bz, t);
-      // 角から角へ、面の上をたどる
-      const p = new THREE.Vector3(cx + x * w, h, z * w);
-      pts.push(p);
+      const h = SPRING + (LEG_TOP - SPRING) * Math.sin(t * Math.PI);
+      const u = (halfWidth(h) - legSize(h)) * (1 - 2 * t);
+      pts.push(onFace(k, u, h));
+      us.push(u);
     }
     for (let i = 1; i < pts.length; i++) {
       beam(pts[i - 1], pts[i], 1.1);
-      // アーチと面の上の水平材をつなぐ縦の材
-      if (i % 2 === 0 && i < pts.length - 1) {
-        const top = pts[i].clone();
-        const w = halfWidth(LEG_TOP);
-        top.set(cx + THREE.MathUtils.lerp(ax, bx, i / 16) * w, LEG_TOP, THREE.MathUtils.lerp(az, bz, i / 16) * w);
-        beam(pts[i], top, 0.3);
+      // アーチと LEG_TOP の水平材をつなぐ縦の材（水平材の範囲の中だけ）
+      if (i < pts.length - 1 && i % 2 === 0 && Math.abs(us[i]) < halfWidth(LEG_TOP) - 1.5 && pts[i].y < LEG_TOP - 1.5) {
+        beam(pts[i], onFace(k, us[i], LEG_TOP), 0.35);
       }
     }
+    // アーチの足元を、脚の内側の柱に沿って地面まで下ろす
+    beam(onFace(k, halfWidth(0) - legSize(0), 0), pts[0], 1.1);
+    beam(onFace(k, -(halfWidth(0) - legSize(0)), 0), pts[pts.length - 1], 1.1);
   }
 
   // ---- 45m から上：四隅の柱・水平材・X 形の斜材 ----
