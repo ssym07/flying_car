@@ -132,36 +132,88 @@ export function buildTokyoTower(cx: number): TowerParts {
   /** 高さ h での、面の両端（主柱の内側の柱）の u */
   const inner = (h: number) => halfWidth(h) - legSize(h);
 
-  // 下の 45m：脚の間のアーチ。両側の主柱の内側の柱から立ち上がり、面の中央で LEG_TOP に届く。
-  // アーチの上は縦の材と X 形の斜材で、LEG_TOP の水平材とつなぐ
+  // 下の 45m：脚の間のアーチ。外と内の2本の弧（間 ARCH_DEPTH m）を三角形の腹材でつないだトラスにし、
+  // 両側の主柱の内側の柱から立ち上がって、面の中央で LEG_TOP の水平材に届く。
+  // アーチと LEG_TOP の水平材の間は、縦の材と斜材（N 形）で埋める。アーチの足元近くは主柱へ方杖でつなぐ
   const SPRING = 8;
-  const ARCH = 16;
+  const ARCH = 20;
+  const ARCH_DEPTH = 2.6;
   for (let k = 0; k < 4; k++) {
-    const pts: THREE.Vector3[] = [];
+    const outer: THREE.Vector3[] = [];
+    const innerArc: THREE.Vector3[] = [];
     const us: number[] = [];
     for (let i = 0; i <= ARCH; i++) {
       const t = i / ARCH;
       const h = SPRING + (LEG_TOP - SPRING) * Math.sin(t * Math.PI);
       const u = inner(h) * (1 - 2 * t);
-      pts.push(onFace(k, u, h));
+      outer.push(onFace(k, u, h));
+      const hi = Math.max(SPRING - ARCH_DEPTH, h - ARCH_DEPTH);
+      innerArc.push(onFace(k, inner(hi) * (1 - 2 * t) * 0.97, hi));
       us.push(u);
     }
-    beam(onFace(k, inner(0), 0), pts[0], 1.0);
-    beam(onFace(k, -inner(0), 0), pts[ARCH], 1.0);
-    let prevPost: [THREE.Vector3, THREE.Vector3] | null = null;
+    beam(onFace(k, inner(0), 0), outer[0], 1.0);
+    beam(onFace(k, -inner(0), 0), outer[ARCH], 1.0);
+    beam(onFace(k, inner(0), 0), innerArc[0], 0.8);
+    beam(onFace(k, -inner(0), 0), innerArc[ARCH], 0.8);
+    let prevTop: THREE.Vector3 | null = null;
     for (let i = 1; i <= ARCH; i++) {
-      beam(pts[i - 1], pts[i], 1.0);
-      if (i === ARCH || Math.abs(us[i]) >= inner(LEG_TOP) - 0.5) {
-        prevPost = null;
+      beam(outer[i - 1], outer[i], 1.0);
+      beam(innerArc[i - 1], innerArc[i], 0.8);
+      // 2本の弧の間の腹材（三角形）
+      beam(i % 2 === 0 ? outer[i - 1] : innerArc[i - 1], i % 2 === 0 ? innerArc[i] : outer[i], 0.35);
+      beam(outer[i], innerArc[i], 0.3);
+      // アーチの上：LEG_TOP の水平材まで縦の材と斜材
+      if (i === ARCH || Math.abs(us[i]) >= inner(LEG_TOP) - 0.5 || outer[i].y > LEG_TOP - 1) {
+        prevTop = null;
         continue;
       }
       const top = onFace(k, us[i], LEG_TOP);
-      if (i % 2 === 0 && pts[i].y < LEG_TOP - 1) {
-        beam(pts[i], top, 0.4);
-        if (prevPost) beam(prevPost[0], top, 0.3);
-        prevPost = [pts[i], top];
+      beam(outer[i], top, 0.4);
+      if (prevTop) beam(i * 2 < ARCH ? outer[i - 1] : outer[i], i * 2 < ARCH ? top : prevTop, 0.3);
+      prevTop = top;
+    }
+    // 方杖：アーチの足元近くから、主柱の内側の柱の少し上へ
+    for (const [i, side] of [
+      [3, 1],
+      [ARCH - 3, -1],
+    ] as const) {
+      beam(outer[i], onFace(k, side * inner(30), 30), 0.6);
+      beam(innerArc[i - side * 1], onFace(k, side * inner(16), 16), 0.5);
+    }
+  }
+  // LEG_TOP の高さで、塔の内側を四角い水平のトラスでつなぐ（4つの面の水平材と、上から見た X）
+  {
+    const w = halfWidth(LEG_TOP) - legSize(LEG_TOP);
+    const ring = corners.map(([sx, sz]) => new THREE.Vector3(cx + sx * w, LEG_TOP, sz * w));
+    for (let k = 0; k < 4; k++) beam(ring[k], ring[(k + 1) % 4], 0.8);
+    beam(ring[0], ring[2], 0.5);
+    beam(ring[1], ring[3], 0.5);
+  }
+
+  // ---- 中心のエレベーターの柱：地面からメインデッキまでの四角い骨組み（灰色）と、中のガラスの箱 ----
+  {
+    const S = 4;
+    const top = 144;
+    const gray = new THREE.Color(0xb7babd);
+    const at = (h: number, sx: number, sz: number) => new THREE.Vector3(cx + sx * S, h, sz * S);
+    for (let h = 0; h < top; h += 6) {
+      const h1 = Math.min(top, h + 6);
+      for (let k = 0; k < 4; k++) {
+        const [ax, az] = corners[k];
+        const [bx, bz] = corners[(k + 1) % 4];
+        beam(at(h, ax, az), at(h1, ax, az), 0.5, gray);
+        beam(at(h1, ax, az), at(h1, bx, bz), 0.3, gray);
+        beam((h / 6) % 2 === 0 ? at(h, ax, az) : at(h, bx, bz), (h / 6) % 2 === 0 ? at(h1, bx, bz) : at(h1, ax, az), 0.2, gray);
+      }
+      // 塔の骨組みへつなぐ水平の梁（30m ごと）
+      if (h % 30 === 0 && h > 0) {
+        for (const [sx, sz] of corners) {
+          const w = halfWidth(h) - legSize(h);
+          beam(at(h, sx, sz), new THREE.Vector3(cx + sx * w, h, sz * w), 0.4, paint(h));
+        }
       }
     }
+    glass.push(new THREE.BoxGeometry(S * 2 - 1, top, S * 2 - 1).translate(cx, top / 2, 0));
   }
 
   // 45m から上：面ごとに、主柱の間を幅 8m ほどの小さな区画に分け、縦の材と X 形の斜材を入れる（2段ごと）
