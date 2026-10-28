@@ -225,7 +225,7 @@ function loft(
 }
 
 /** 角を丸めた長方形（中心が原点、x・y の平面） */
-function roundedRect(w: number, d: number, r: number): THREE.Shape {
+export function roundedRect(w: number, d: number, r: number): THREE.Shape {
   const s = new THREE.Shape();
   const x = -w / 2;
   const y = -d / 2;
@@ -242,7 +242,7 @@ function roundedRect(w: number, d: number, r: number): THREE.Shape {
 }
 
 /** 形の外壁（高さ y0〜y1、中心 (x, z)）。u = 周に沿った長さ / 3m、v = 高さ / FLOOR */
-function extrudeWalls(shape: THREE.Shape, x: number, y0: number, y1: number, z = 0): THREE.BufferGeometry {
+export function extrudeWalls(shape: THREE.Shape, x: number, y0: number, y1: number, z = 0): THREE.BufferGeometry {
   const pts = shape.getPoints(6);
   const pos: number[] = [];
   const uv: number[] = [];
@@ -265,7 +265,7 @@ function extrudeWalls(shape: THREE.Shape, x: number, y0: number, y1: number, z =
 }
 
 /** 屋上のふた（形の上面、厚み 1.5m） */
-function cap(shape: THREE.Shape, x: number, y: number, z = 0): THREE.BufferGeometry {
+export function cap(shape: THREE.Shape, x: number, y: number, z = 0): THREE.BufferGeometry {
   return new THREE.ExtrudeGeometry(shape, { depth: 1.5, bevelEnabled: false, curveSegments: 6 })
     .rotateX(Math.PI / 2)
     .translate(x, y + 1.5, z);
@@ -335,7 +335,7 @@ export function createLightGlassMaterial(): THREE.MeshStandardMaterial {
   }, 0.15, 0.5);
 }
 
-function facadeMaterial(
+export function facadeMaterial(
   draw: (g: CanvasRenderingContext2D, W: number, H: number) => void,
   roughness: number,
   metalness: number,

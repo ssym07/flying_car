@@ -14,6 +14,16 @@ import {
   createResidenceMaterial,
 } from './azabudaiHills';
 import { buildSkytree } from './tokyoSkytree';
+import {
+  type ToranomonParts,
+  buildToranomonBusiness,
+  buildToranomonMori,
+  buildToranomonResidential,
+  buildToranomonStation,
+  createBlueGlassMaterial,
+  createDarkFacadeMaterial,
+  createMoriGlassMaterial,
+} from './toranomonHills';
 import { buildTokyoTower } from './tokyoTower';
 
 /**
@@ -32,7 +42,48 @@ interface Landmark {
   build: (length: number) => THREE.Group;
 }
 
+/**
+ * 中心 (lat, lon) を通る長い向き（東から北へ deg 度）の両端（±25m）。建物の座標の x がこの向き、中心が x = 25
+ */
+function around(lat: number, lon: number, deg: number): { from: [number, number]; to: [number, number] } {
+  const a = (deg * Math.PI) / 180;
+  const dLat = (Math.sin(a) * 25) / 111320;
+  const dLon = (Math.cos(a) * 25) / (111320 * Math.cos((lat * Math.PI) / 180));
+  return { from: [lat - dLat, lon - dLon], to: [lat + dLat, lon + dLon] };
+}
+
+/** 虎ノ門ヒルズの街区の向き（長い向きは北北西） */
+const TORANOMON_DEG = 109;
+
 const LANDMARKS: Landmark[] = [
+  {
+    // 虎ノ門ヒルズ森タワー（PLATEAU には塔が無く、広場の平らな板だけなので、それを消して置く）
+    gmlId: 'bldg_96c9d242-0fc6-4364-aeae-c21102718c35',
+    ...around(35.6669, 139.74935, TORANOMON_DEG),
+    front: -1,
+    build: (length) => toranomonGroup(buildToranomonMori(length / 2)),
+  },
+  {
+    // 虎ノ門ヒルズ ビジネスタワー
+    gmlId: 'bldg_b292bc75-5708-4a3b-a7ba-7166c829d25a',
+    ...around(35.66775, 139.75002, TORANOMON_DEG),
+    front: -1,
+    build: (length) => toranomonGroup(buildToranomonBusiness(length / 2)),
+  },
+  {
+    // 虎ノ門ヒルズ レジデンシャルタワー
+    gmlId: 'bldg_70d240ff-cce9-408b-99c4-51c90077e09f',
+    ...around(35.66604, 139.7485, TORANOMON_DEG),
+    front: -1,
+    build: (length) => toranomonGroup(buildToranomonResidential(length / 2)),
+  },
+  {
+    // 虎ノ門ヒルズ ステーションタワー（PLATEAU には建設中の平らな板しか無い）
+    gmlId: 'bldg_fbf728df-a130-4f36-88e4-7267715cbf34',
+    ...around(35.66754, 139.74691, TORANOMON_DEG),
+    front: -1,
+    build: (length) => toranomonGroup(buildToranomonStation(length / 2)),
+  },
   {
     // 麻布台ヒルズ森JPタワー（PLATEAU の建設中の高さの箱を消して置く）。箱の長い向きの両端で置く
     gmlId: 'bldg_433bc5b3-db73-4644-ac24-a28d51b7ecd5',
@@ -118,6 +169,23 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'uv') g.deleteAttribute(name);
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
+}
+
+let toranomonShared: Record<keyof ToranomonParts, THREE.Material> | null = null;
+function toranomonGroup(parts: ToranomonParts): THREE.Group {
+  toranomonShared ??= {
+    mori: createMoriGlassMaterial(),
+    glass: createBlueGlassMaterial(),
+    dark: createDarkFacadeMaterial(),
+    white: new THREE.MeshStandardMaterial({ color: 0xe3e6e9, roughness: 0.5 }),
+    podium: new THREE.MeshStandardMaterial({ color: 0x9a9890, roughness: 0.8 }),
+    green: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
+  };
+  const group = new THREE.Group();
+  for (const key of Object.keys(parts) as Array<keyof ToranomonParts>) {
+    if (parts[key].getAttribute('position').count > 0) group.add(new THREE.Mesh(parts[key], toranomonShared[key]));
+  }
+  return group;
 }
 
 let azabudaiShared: Record<keyof AzabudaiParts, THREE.Material> | null = null;
