@@ -103,7 +103,10 @@ for (const el of tunnelElements) {
   const t = el.tags ?? {};
   const g = el.geometry;
   if (!g || g.length < 2) continue;
-  const roofed = (t.tunnel === 'covered' || t.tunnel === 'building_passage') && t.location !== 'underground';
+  // 屋根付き：tunnel=covered・building_passage のほか、tunnel=yes に covered=yes が付いたもの（新宿駅の南口の下など）
+  const roofed =
+    (t.tunnel === 'covered' || t.tunnel === 'building_passage' || (t.tunnel === 'yes' && t.covered === 'yes')) &&
+    t.location !== 'underground';
   if (roofed && t.railway !== 'subway' && !((parseInt(t.layer ?? '0', 10) || 0) < 0)) {
     ways.set(el.id, el);
     covered++;
