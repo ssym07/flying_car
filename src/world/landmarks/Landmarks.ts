@@ -4,6 +4,13 @@ import type { ChunkListener, Terrain } from '../Terrain';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildMarunouchiPlaza, createStoneMaterial, type PlazaParts } from './marunouchiPlaza';
 import { buildTokyoStation, createBrickMaterial } from './tokyoStation';
+import {
+  type AzabudaiParts,
+  buildAzabudaiResidences,
+  buildMoriJpTower,
+  createGlassMaterial,
+  createResidenceMaterial,
+} from './azabudaiHills';
 import { buildSkytree } from './tokyoSkytree';
 import { buildTokyoTower } from './tokyoTower';
 
@@ -24,6 +31,22 @@ interface Landmark {
 }
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 麻布台ヒルズ森JPタワー（PLATEAU の建設中の高さの箱を消して置く）。箱の長い向きの両端で置く
+    gmlId: 'bldg_433bc5b3-db73-4644-ac24-a28d51b7ecd5',
+    from: [35.660641, 139.739771],
+    to: [35.661265, 139.741083],
+    front: -1,
+    build: (length) => azabudaiGroup(buildMoriJpTower(length / 2)),
+  },
+  {
+    // 麻布台ヒルズ レジデンスA・B（PLATEAU には建設中の高さの平らな板しか無いので、それを消して置く）
+    gmlId: 'bldg_af7335da-7542-44dd-964d-8cccd2b046ff',
+    from: [35.662195, 139.740951],
+    to: [35.662593, 139.739796],
+    front: -1,
+    build: (length) => azabudaiGroup(buildAzabudaiResidences(length / 2)),
+  },
   {
     // 東京スカイツリーとスカイツリータウン（PLATEAU にはソラマチの平らな箱しか無いので、それを消して置く）。
     // タウンの長い向き（東西）にそろえ、塔の中心から ±50m の2点で置く。イーストタワーの箱は別に消す
@@ -93,6 +116,22 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'uv') g.deleteAttribute(name);
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
+}
+
+let azabudaiShared: Record<keyof AzabudaiParts, THREE.Material> | null = null;
+function azabudaiGroup(parts: AzabudaiParts): THREE.Group {
+  azabudaiShared ??= {
+    glass: createGlassMaterial(),
+    residence: createResidenceMaterial(),
+    white: new THREE.MeshStandardMaterial({ color: 0xe6e9ec, roughness: 0.5 }),
+    podium: new THREE.MeshStandardMaterial({ color: 0x8c9096, roughness: 0.7 }),
+    green: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
+  };
+  const group = new THREE.Group();
+  for (const key of Object.keys(parts) as Array<keyof AzabudaiParts>) {
+    if (parts[key].getAttribute('position').count > 0) group.add(new THREE.Mesh(parts[key], azabudaiShared[key]));
+  }
+  return group;
 }
 
 let skytreeShared: Record<'steel' | 'glass' | 'white' | 'podium' | 'green', THREE.Material> | null = null;
