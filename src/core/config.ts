@@ -416,14 +416,22 @@ export const STATION_ROOFS = {
   pillarSize: 0.35,
   pillarMaxRoofWidth: 16,
   pillarColor: 0xd5d8dc,
-  /** ホームの側面の高さ（床からレール面まで, m）と色 */
+  /** ホームの側面の高さ（床からレール面まで, m）と、引っ込んだ壁の色 */
   platformDepth: 1.1,
-  platformSideColor: 0x9c9fa4,
-  /** 点字ブロック：縁からの距離・幅 (m)、色。この長さ (m) より短い辺には付けない */
+  platformSideColor: 0x4a4d52,
+  /** 線路側の縁：白い縁石の色・前面の高さ (m)・床の上の帯の幅 (m)、その下の壁の引っ込み (m) */
+  platformEdgeColor: 0xe4e4df,
+  edgeDepth: 0.25,
+  edgeWidth: 0.3,
+  recess: 0.5,
+  /** 点字ブロック：縁からの距離・幅 (m)、模様1枚の長さ (m) */
   tactileInset: 0.8,
   tactileWidth: 0.3,
-  tactileColor: 0xe8c02a,
-  tactileMinEdge: 15,
+  tactileTile: 0.3,
+  /** 高架のホームの下の柱：側面の下端が地面からこの高さ (m) 以上なら立てる。間隔・太さ (m) */
+  platformPillarFrom: 2,
+  platformPillarSpacing: 15,
+  platformPillarSize: 1.2,
 };
 
 /** 線路（OpenStreetMap の線路。scripts/fetch-railways.mjs → build-rail-heights.mjs で作る） */
@@ -456,6 +464,40 @@ export const RAILWAYS = {
   /** 中心線を区切る間隔 (m)。地形のメッシュ（約19m）の折れ目に沿えるよう細かめ */
   densifyStep: 4,
   concreteColor: 0xb4b6ba,
+  /** トンネルの奥へ描く長さ (m)、入口の壁の上端を決める時に見る入口から奥への距離 (m)、
+   * トンネルの内壁の入口近くの色と、奥の暗がりの色 */
+  portalDepth: 25,
+  portalCover: 8,
+  tunnelLiningColor: 0x6a6c70,
+  tunnelColor: 0x0d0e12,
+  /** トンネルの入口（坑口）と、入口へ下りる掘割の擁壁 (m) */
+  portal: {
+    /** 開口部：線路1本ぶんの幅、レール面からの高さ、開口部の上に残す梁の高さ、開口部の間の柱の最小の幅 */
+    openingWidth: 4.6,
+    height: 6.3,
+    beam: 1.2,
+    minPier: 0.8,
+    /** 地下鉄の複線を1つの開口部にまとめる線路の間隔の上限 */
+    subwayMerge: 5.5,
+    /** 外側の開口部と正面の壁の端の間、正面の壁の厚み、袖の壁の長さ、壁の上端の地面からの高さ（笠石・柵の代わり） */
+    side: 1.4,
+    thickness: 1.2,
+    wing: 8,
+    parapet: 0.9,
+    /** 擁壁：線路の中心から内側の面まで、厚み、柵の代わりに上端を地面より高くする深さ（地面からこれ以上低い所） */
+    retainOffset: 3.1,
+    retainThickness: 0.6,
+    minDepth: 0.8,
+    /** 掘割の地形を削るのを、入口の手前で止める距離（地形が開口部の中へ垂れ下がらないように） */
+    carveStop: 12,
+    /** 掘割の底の、レール面からの深さ */
+    floorDepth: 0.35,
+    /** 掘割の内側の地形を描かないための画像：1辺の画素数、中心線からの距離を入れる範囲 */
+    maskSize: 1024,
+    maskRange: 8,
+    /** 内壁が入口から奥へ暗くなる長さ */
+    fade: 12,
+  },
 };
 
 /** 駅検索 */
@@ -488,6 +530,44 @@ export const PARKS = {
   leafColor: 0x4f8f3c,
   coniferColor: 0x2f6b3a,
   sakuraColor: 0xf3b6cc,
+};
+
+/** 道路・公園・水以外の地面（scripts/fetch-landuse.mjs で作る）。種類ごとのテンプレートの色 */
+export const LANDUSE = {
+  tilePath: 'landuse/15/{x}/{y}.json',
+  /** 航空写真の色を混ぜる割合（種類の分かる所・データの無い住宅地の敷地） */
+  photoMix: 0.15,
+  defaultPhotoMix: 0.3,
+  colors: {
+    /** 住宅地の敷地（データの無い所）：明るい舗装と土のむら */
+    lot: 0xa8a49c,
+    lot2: 0x9c958a,
+    /** 駐車場のアスファルトと白線 */
+    parking: 0x4b4d52,
+    marking: 0xe8e8e2,
+    /** 線路の敷地の砂利 */
+    ballast: 0x8c857c,
+    /** 墓地の石畳と墓石 */
+    stone: 0xb9b5ad,
+    grave: 0x6f6e6c,
+    /** 寺社の境内の白い玉砂利 */
+    gravel: 0xd8d3c6,
+    /** 学校の校庭の土 */
+    schoolyard: 0xc4a47c,
+    /** 工事現場・空き地の土（2色のむら） */
+    bare: 0x9a7d5c,
+    bare2: 0x7f6a52,
+    /** 工場・倉庫・港のコンクリート */
+    concrete: 0xa4a49e,
+    /** 草地（2色のむら） */
+    grass: 0x78a556,
+    grass2: 0x93b863,
+    /** 畑の土と作物 */
+    soil: 0x86684a,
+    crop: 0x6f9a45,
+    /** 広場・商業地のタイル舗装 */
+    paving: 0xc9c3b8,
+  },
 };
 
 /** 高速道路（首都高・湾岸線・外環道など。scripts/fetch-expressways.mjs → build-expressways.mjs で作る） */

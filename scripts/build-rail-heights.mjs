@@ -3,9 +3,12 @@
 // 使い方: node scripts/build-rail-heights.mjs（fetch-railways.mjs・fetch-road-network.mjs の後に実行）
 //
 // 方針：
-// - 高架は地面から 8m で揃える。線路どうしが立体交差する所だけ、上を通る線路を 5m 上げる
-//   （並んで走る線路の高さがずれて段差にならないように）。短い橋（川をまたぐ築堤の橋など）は地上扱い
-// - 地上の線路が地上の道路と交わる所は、線路を持ち上げて高架にし、道路を下に通す
+// - 高架は地面から 8m で揃える。短い橋（川をまたぐ築堤の橋など）は地上扱い
+// - 線路どうしが平面で交わる所は、layer・橋の印・今の高さ・路面電車寄りの線かで上下を決め、上の線路を下の線路より
+//   RAIL_CLEAR m（下が駅なら STATION_STACK m）高くする。下が掘割なら上は地面から CUT_OVER m
+// - トンネルで途切れて別の線路の下をくぐる短い区間は、掘割の線路としてつなぐ（元データはトンネルを除いている）
+// - それ以外のトンネルの入口（坑口）へは、地面の下 PORTAL_DEPTH m まで勾配 PORTAL_GRADE の坂で下りる
+// - 地上の線路が地上の道路と交わる所は、線路を持ち上げて高架にし、道路を下に通す（路面電車寄りの線は踏切のまま）
 // - 地上と高架の間は勾配 GRADE のスロープでつなぐ（線路のつながりをたどって高さを決める）
 // - 線路が地上のまま道路の橋と交わる所は、道路の橋を線路の上 ROAD_CLEARANCE m 以上に上げる
 // - 掘割（layer が負でトンネルでない）の線路は高さ 0 のまま（地形を削って底に置くのは描画側）。道路は上を通す
@@ -17,19 +20,53 @@
 // { "t": [[軌間(mm), [緯度,経度,...（1e-6度、先頭以外は差分）], [各点の高さ（0.1m 単位）...], 掘割(0/1),
 //          [各点の駅（s の番号、駅の外は -1）...], [各点の駅の地面に合わせる割合（0〜10）...]], ...],  // 駅の2つは駅の近くの線路だけ
 //   "x": [[緯度, 経度（1e-6度）, 半径(m)], ...],   // 道路と交わる所（橋脚を立てない）
-//   "s": [[基準点の緯度, 経度（1e-6度）, 掘割(0/1)], ...] }   // 駅の地面の基準点
+//   "s": [[基準点の緯度, 経度（1e-6度）, 掘割(0/1)], ...],   // 駅の地面の基準点
+//   "p": [[緯度, 経度（1e-6度）, 向き（0.1度）, レール面の高さ（0.1m）, 地下鉄(0/1), [各線路の左右の位置（0.1m）...]], ...] }
+//        // トンネルの入口（坑口）
+// 高さは負にもなる（トンネルの入口へ下りる坂。描画側は地形を削って掘割にする）
 // あわせて data/stations/structure.json に、駅ごとのホーム・高さ・基準点を書き出す（scripts/build-platforms.mjs が使う）
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { heightAt, prepareDem } from './lib/dem.mjs';
 
 const RAW_DIR = new URL('../data/osm/railways/15/', import.meta.url);
 const ROAD_DIR = new URL('../public/roads/15/', import.meta.url);
 const ROOF_DIR = new URL('../public/station-roofs/15/', import.meta.url);
 const OUT_DIR = new URL('../public/rail-tracks/15/', import.meta.url);
 const STRUCTURE = new URL('../data/stations/structure.json', import.meta.url);
+/** 高架の印の付いたホーム（scripts/fetch-station-roofs.mjs が書く） */
+const elevatedPlatforms = new Set(
+  JSON.parse(await readFile(new URL('../data/stations/elevated-platforms.json', import.meta.url), 'utf8')),
+);
 
 /** 高架の高さ (m) と、上に重なる線路の1段あたりの追加 (m) */
 const VIADUCT = 8;
 const STACK = 5;
+/** 向きがこの角度より違うホーム・線路は、交差する別の路線とみなす（ラジアン） */
+const CROSSING_ANGLE = (30 * Math.PI) / 180;
+/** ホームに面した線路とみなす、線路とホームの辺の向きの違いの上限（ラジアン） */
+const TRACK_ALONG_ANGLE = (20 * Math.PI) / 180;
+/** 同じく、ホーム全体の向きとの違いの上限（曲がったホームも入るよう、ゆるめ） */
+const PLATFORM_ALONG_ANGLE = (40 * Math.PI) / 180;
+/** 立体交差の駅の、上の駅と下の駅の高さの差 (m)：ホームの床 1.4 + 上屋 4.5 + 余裕 1.5 + 高架の桁 1.6 */
+const STATION_STACK = 9;
+/** 線路どうしの立体交差：上の線路を下の線路より高くする高さ (m)（車両と架線 5m + 桁 1.6m）、下が掘割の時の上の線路の高さ (m)、
+ * 交差とみなす向きの違い（これより小さいのは分岐・合流） */
+const RAIL_CLEAR = 6.5;
+const CUT_OVER = 2;
+const MIN_CROSSING_ANGLE = (20 * Math.PI) / 180;
+/** 路面電車寄りの線（世田谷線・都電）の軌間 (mm)：踏切で道路と交わるので持ち上げない */
+const TRAM_GAUGE = 1372;
+/** トンネルで途切れた線路をつなぐ：行き止まりどうしの距離の上限 (m)、向きのそろい（cos） */
+const GAP_MAX = 150;
+const GAP_ALIGN = 0.94;
+/** トンネルの入口：トンネルの端と同じ点とみなす距離 (m)、入口でのレール面の深さ（地面から, m：車両と架線 6m + かぶり 1m）、
+ * 入口へ下りる坂の勾配、並んだ線路の入口を1つにまとめる距離 (m) */
+const PORTAL_MATCH = 1.5;
+const PORTAL_DEPTH = 7;
+const PORTAL_GRADE = 0.04;
+const PORTAL_GROUP = 15;
+/** 立体交差の駅で、上の路線の橋脚を立てない範囲（下の駅の線路の点からの距離, m） */
+const CROSSING_NO_PIER = 7;
 /** この長さ (m) より短い橋のつながりは地上扱い（築堤の上の小さな橋） */
 const MIN_VIADUCT_LENGTH = 150;
 /** スロープの勾配 */
@@ -95,6 +132,64 @@ async function readTiles(dir) {
 const MX = 111320 * Math.cos(35.68 * K);
 const MY = 111320;
 const xy = (p) => [p[1] * MX, p[0] * MY];
+/** 平面の点の並びの一番広がった向き（角度, ラジアン, 0〜π） */
+function principalAxis(pts) {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  let xx = 0;
+  let xy2 = 0;
+  let yy = 0;
+  for (const [x, y] of pts) {
+    xx += (x - cx) ** 2;
+    xy2 += (x - cx) * (y - cy);
+    yy += (y - cy) ** 2;
+  }
+  return (Math.atan2(2 * xy2, xx - yy) / 2 + Math.PI) % Math.PI;
+}
+/** 2つの向き（角度）が CROSSING_ANGLE より近い（並んでいる）か */
+function parallel(a, b) {
+  const d = Math.abs(a - b) % Math.PI;
+  return Math.min(d, Math.PI - d) < CROSSING_ANGLE;
+}
+/** 平面の線分 p1-p2 と q1-q2 が交わるか */
+function intersectXY(p1, p2, q1, q2) {
+  const d = (p2[0] - p1[0]) * (q2[1] - q1[1]) - (p2[1] - p1[1]) * (q2[0] - q1[0]);
+  if (d === 0) return false;
+  const t = ((q1[0] - p1[0]) * (q2[1] - q1[1]) - (q1[1] - p1[1]) * (q2[0] - q1[0])) / d;
+  const u = ((q1[0] - p1[0]) * (p2[1] - p1[1]) - (q1[1] - p1[1]) * (p2[0] - p1[0])) / d;
+  return t > 0 && t < 1 && u > 0 && u < 1;
+}
+/** 線路の点の線路が、ホームの一番近い辺と並んでいるか（曲がったホームでも、その場所の向きで比べる） */
+function alongPlatform(n, platform) {
+  const q = xy(n.p);
+  const ring = platform.xy;
+  let best = Infinity;
+  let axis = platform.axis;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const d = segmentDistance(q, a, b);
+    // 短い辺（ホームの端）は向きの手がかりにしない
+    if (d < best && Math.hypot(b[0] - a[0], b[1] - a[1]) > 3) {
+      best = d;
+      axis = (Math.atan2(b[1] - a[1], b[0] - a[0]) + 2 * Math.PI) % Math.PI;
+    }
+  }
+  const angle = (x) => {
+    const d = Math.abs(nodeAxis(n) - x) % Math.PI;
+    return Math.min(d, Math.PI - d);
+  };
+  // ホーム全体の向きとも大きく違わない（形の一部の辺だけが交差する路線とそろっていることがある）
+  return angle(axis) < TRACK_ALONG_ANGLE && angle(platform.axis) < PLATFORM_ALONG_ANGLE;
+}
+/** 線路の点での線路の向き（隣の点どうしを結ぶ向き） */
+function nodeAxis(n) {
+  const ps = n.edges.map(([k]) => xy(nodes.get(k).p));
+  if (ps.length === 0) return 0;
+  const a = ps.length >= 2 ? ps[0] : xy(n.p);
+  const b = ps.length >= 2 ? ps[1] : ps[0];
+  return (Math.atan2(b[1] - a[1], b[0] - a[0]) + 2 * Math.PI) % Math.PI;
+}
 /** 点 p から線分 a-b までの距離 (m)（平面の座標で） */
 function segmentDistance(p, a, b) {
   const dx = b[0] - a[0];
@@ -122,7 +217,7 @@ for (const { x, y, data } of await readTiles(ROOF_DIR)) {
   data.forEach(([kind, , station, coords], i) => {
     if (kind !== 2) return;
     const ring = decode(coords);
-    platforms.push({ id: `${x}/${y}#${i}`, station, ring, xy: ring.map(xy) });
+    platforms.push({ id: `${x}/${y}#${i}`, station, ring, xy: ring.map(xy), axis: principalAxis(ring.map(xy)) });
   });
 }
 // ホームを探しやすくする格子（ホームのまわり 60m までのマスに入れる）
@@ -176,17 +271,113 @@ const node = (p) => {
   return nodes.get(k);
 };
 for (const { x, y, data } of rawTiles) {
-  for (const [bridge, layer, gauge, coords] of data) {
+  for (const [bridge, layer, gauge, coords, subway = 0] of data) {
     const pts = densify(decode(coords));
     const keys = pts.map(key);
-    pts.forEach(node);
+    for (const p of pts) {
+      // 通る線路の layer の最大と、橋の印（駅の上下を決めるのに使う）
+      const n = node(p);
+      n.layer = Math.max(n.layer ?? -Infinity, layer);
+      n.bridge = n.bridge || Boolean(bridge);
+      // 軌間（同じ駅の線路かどうかの手がかり。別の路線の線路がホームのそばを並んで通っていても、軌間が違えば別）
+      n.gauge ??= gauge;
+    }
     for (let i = 1; i < pts.length; i++) {
       const d = meters(pts[i - 1], pts[i]);
       nodes.get(keys[i - 1]).edges.push([keys[i], d]);
       nodes.get(keys[i]).edges.push([keys[i - 1], d]);
     }
-    runs.push({ tile: `${x}/${y}`, gauge, bridge, layer, pts, keys });
+    runs.push({ tile: `${x}/${y}`, gauge, bridge, layer, pts, keys, subway });
   }
+}
+
+// ---- トンネルで途切れた線路：別の線路の下をくぐる短い区間を、掘割の線路としてつなぐ ----
+// 元データはトンネルを除いているので、交差する線路の下をくぐる所（明大前の井の頭線など）が抜けている。
+// 行き止まりの点どうしが GAP_MAX m 以内で向きがそろい、その間で別の線路と交わるものをつなぐ
+const deadEnds = [...nodes].filter(([, n]) => n.edges.length === 1);
+const usedEnds = new Set();
+let tunnels = 0;
+/** 行き止まりの点から外へ向かう向き（平面の単位ベクトル） */
+const outward = (n) => {
+  const a = xy(nodes.get(n.edges[0][0]).p);
+  const b = xy(n.p);
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
+};
+const runOf = new Map(); // 点 → その点を通る線路（最初の1本）
+runs.forEach((r) => r.keys.forEach((k) => runOf.has(k) || runOf.set(k, r)));
+for (const [ka, a] of deadEnds) {
+  if (usedEnds.has(ka)) continue;
+  const da = outward(a);
+  const pa = xy(a.p);
+  let best = null;
+  for (const [kb, b] of deadEnds) {
+    if (kb === ka || usedEnds.has(kb)) continue;
+    const pb = xy(b.p);
+    const d = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+    if (d < 5 || d > GAP_MAX || (best && d >= best.d)) continue;
+    const u = [(pb[0] - pa[0]) / d, (pb[1] - pa[1]) / d];
+    const db = outward(b);
+    // a から外へ進んだ先に b があり、b からも a の方へ外に向いている
+    if (u[0] * da[0] + u[1] * da[1] < GAP_ALIGN || -(u[0] * db[0] + u[1] * db[1]) < GAP_ALIGN) continue;
+    // その間で、別の線路と交わる（下をくぐっている）
+    const crosses = runs.some((r) => {
+      if (r.keys.includes(ka) || r.keys.includes(kb)) return false;
+      for (let i = 1; i < r.pts.length; i++) if (intersectXY(pa, pb, xy(r.pts[i - 1]), xy(r.pts[i]))) return true;
+      return false;
+    });
+    if (crosses) best = { kb, b, d };
+  }
+  if (!best) continue;
+  usedEnds.add(ka);
+  usedEnds.add(best.kb);
+  const from = runOf.get(ka);
+  const pts = densify([a.p, best.b.p]);
+  const keys = pts.map(key);
+  for (const p of pts) {
+    const n = node(p);
+    n.layer = Math.max(n.layer ?? -Infinity, -1);
+  }
+  for (let i = 1; i < pts.length; i++) {
+    const d = meters(pts[i - 1], pts[i]);
+    nodes.get(keys[i - 1]).edges.push([keys[i], d]);
+    nodes.get(keys[i]).edges.push([keys[i - 1], d]);
+  }
+  runs.push({ tile: from.tile, gauge: from.gauge, bridge: 0, layer: -1, pts, keys, tunnel: true });
+  tunnels++;
+}
+
+// ---- トンネルの入口（坑口）：行き止まりの点が、本当のトンネルの端（data/osm/rail-tunnels.json）と重なる所 ----
+const tunnelEnds = JSON.parse(await readFile(new URL('../data/osm/rail-tunnels.json', import.meta.url), 'utf8'));
+const T_CELL = 0.001;
+const tunnelGrid = new Map();
+for (const [lat, lon, nlat, nlon] of tunnelEnds) {
+  const k = `${Math.floor(lat / 1e6 / T_CELL)},${Math.floor(lon / 1e6 / T_CELL)}`;
+  if (!tunnelGrid.has(k)) tunnelGrid.set(k, []);
+  tunnelGrid.get(k).push([lat / 1e6, lon / 1e6, nlat / 1e6, nlon / 1e6]);
+}
+const portals = []; // [点のキー, トンネルの中へ向かう向き（平面の単位ベクトル）]
+for (const [k, n] of nodes) {
+  if (n.edges.length !== 1) continue;
+  const cy = Math.floor(n.p[0] / T_CELL);
+  const cx = Math.floor(n.p[1] / T_CELL);
+  let hit = null;
+  for (let a = -1; a <= 1 && !hit; a++) {
+    for (let b = -1; b <= 1 && !hit; b++) {
+      for (const t of tunnelGrid.get(`${cy + a},${cx + b}`) ?? []) {
+        if (meters(n.p, [t[0], t[1]]) < PORTAL_MATCH) {
+          hit = t;
+          break;
+        }
+      }
+    }
+  }
+  if (!hit) continue;
+  const a = xy(n.p);
+  const b = xy([hit[2], hit[3]]);
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  portals.push([k, [(b[0] - a[0]) / d, (b[1] - a[1]) / d]]);
+  n.portal = true;
 }
 
 // ---- 橋のつながりの長さ（タイルで分かれた区間も端点でつなぐ） ----
@@ -271,7 +462,8 @@ function crossings(fn) {
 // 地上の線路 × 地上の道路：線路を持ち上げる（交わる線分の両端を高架の高さに）
 let raised = 0;
 crossings((r, i, _t, road) => {
-  if (road.bridge || r.layer < 0) return;
+  // 路面電車寄りの線（世田谷線など、軌間 1372mm）は踏切で道路と交わるので持ち上げない
+  if (road.bridge || r.layer < 0 || r.gauge === TRAM_GAUGE) return;
   const a = nodes.get(r.keys[i - 1]);
   const b = nodes.get(r.keys[i]);
   if (Math.max(a.base, b.base) >= VIADUCT) return;
@@ -279,7 +471,8 @@ crossings((r, i, _t, road) => {
   raised++;
 });
 
-// 線路どうしの立体交差：layer の大きい方（橋のもの）を、交わる線分の両端で 5m 上げる
+// ---- 線路どうしの立体交差 ----
+// 平面で交わる線路（分岐・合流でないもの）を集め、上下を決めて、上の線路を下の線路より高くする
 const railGrid = new Map();
 runs.forEach((r, ri) => {
   for (let j = 1; j < r.pts.length; j++) {
@@ -288,29 +481,73 @@ runs.forEach((r, ri) => {
     railGrid.get(c).push([ri, j]);
   }
 });
-let stacked = 0;
-runs.forEach((r) => {
-  // 橋の印の無い線路は、layer が大きくても上に重ねない（印が地上の線路にも付いていることがある）
-  if (!r.bridge) return;
+const railCrossings = []; // { r, i, t, o, j, u }
+runs.forEach((r, ri) => {
   for (let i = 1; i < r.pts.length; i++) {
     const cy = Math.floor(r.pts[i][0] / CELL);
     const cx = Math.floor(r.pts[i][1] / CELL);
+    const seen = new Set();
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         for (const [oi, j] of railGrid.get(`${cy + dy},${cx + dx}`) ?? []) {
+          if (oi <= ri || seen.has(`${oi}/${j}`)) continue;
+          seen.add(`${oi}/${j}`);
           const o = runs[oi];
-          if (o.layer >= r.layer) continue;
-          if (!intersect(r.pts[i - 1], r.pts[i], o.pts[j - 1], o.pts[j])) continue;
-          for (const k of [r.keys[i - 1], r.keys[i]]) {
-            const n = nodes.get(k);
-            n.base = Math.max(n.base, VIADUCT + STACK);
-          }
-          stacked++;
+          const a = xy(r.pts[i - 1]);
+          const b = xy(r.pts[i]);
+          const c = xy(o.pts[j - 1]);
+          const d = xy(o.pts[j]);
+          // 分岐・合流（同じ点を通る、向きがほぼ同じ）は交差ではない
+          if ([r.keys[i - 1], r.keys[i]].some((k) => k === o.keys[j - 1] || k === o.keys[j])) continue;
+          const angle = Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(d[1] - c[1], d[0] - c[0]);
+          if (Math.abs(Math.sin(angle)) < Math.sin(MIN_CROSSING_ANGLE)) continue;
+          const hit = intersect(r.pts[i - 1], r.pts[i], o.pts[j - 1], o.pts[j]);
+          if (hit) railCrossings.push({ r, i, t: hit[0], o, j, u: hit[1] });
         }
       }
     }
   }
 });
+const offsetAt = (run, i, t) => nodes.get(run.keys[i - 1]).offset * (1 - t) + nodes.get(run.keys[i]).offset * t;
+const isCut = (run) => run.layer < 0 && !run.bridge;
+/**
+ * 交差の上下：1. layer の大きい方 2. 橋の印のある方 3. 今の高さ（スロープ込み）の高い方 4. 路面電車寄りの線は下。
+ * トンネルで途切れた区間をつないだ線路は layer -1 なので 1 で下になる。決まらなければ null
+ */
+function upperOf(c) {
+  const { r, o } = c;
+  if (r.layer !== o.layer) return r.layer > o.layer ? 'r' : 'o';
+  if (Boolean(r.bridge) !== Boolean(o.bridge)) return r.bridge ? 'r' : 'o';
+  const hr = offsetAt(r, c.i, c.t);
+  const ho = offsetAt(o, c.j, c.u);
+  if (Math.abs(hr - ho) >= 1) return hr > ho ? 'r' : 'o';
+  if ((r.gauge === TRAM_GAUGE) !== (o.gauge === TRAM_GAUGE)) return r.gauge === TRAM_GAUGE ? 'o' : 'r';
+  return null;
+}
+let stacked = 0;
+let undecided = [];
+/** 上の線路を、下の線路より RAIL_CLEAR m（下が駅の中なら STATION_STACK m）高くする。下が掘割なら地面から CUT_OVER m */
+function resolveCrossings() {
+  stacked = 0;
+  undecided = [];
+  for (const c of railCrossings) {
+    const side = upperOf(c);
+    if (!side) {
+      undecided.push(c);
+      continue;
+    }
+    const [up, ui, lo, li, lt] = side === 'r' ? [c.r, c.i, c.o, c.j, c.u] : [c.o, c.j, c.r, c.i, c.t];
+    const lowerStation = [lo.keys[li - 1], lo.keys[li]].some((k) => nodes.get(k).station !== undefined);
+    const need = isCut(lo) ? CUT_OVER : offsetAt(lo, li, lt) + (lowerStation ? STATION_STACK : RAIL_CLEAR);
+    for (const k of [lo.keys[li - 1], lo.keys[li]]) nodes.get(k).under = true;
+    for (const k of [up.keys[ui - 1], up.keys[ui]]) {
+      const n = nodes.get(k);
+      n.stacked = true;
+      if (n.fixed === undefined && n.base < need) n.base = need;
+    }
+    stacked++;
+  }
+}
 
 // ---- スロープ：高い所から順に、つながった点へ「勾配ぶん下げた高さ」を広げる ----
 const heap = [];
@@ -349,6 +586,10 @@ function slopes() {
     n.offset = n.fixed ?? n.base;
     if (n.offset > 0) push(k, n.offset);
   }
+  propagate();
+}
+/** 積んだ点から、つながった点へ勾配ぶん下げた高さを広げる（駅の中は変えない）。掘割の線路は 0 に戻す */
+function propagate() {
   while (heap.length > 0) {
     const [v, k] = pop();
     const n = nodes.get(k);
@@ -368,7 +609,9 @@ function slopes() {
   for (const r of runs) if (r.layer < 0) for (const k of r.keys) if (nodes.get(k).fixed === undefined) nodes.get(k).offset = 0;
 }
 
-// 駅を考えずに一度決める（駅の高さを決めるのに使う）
+// 駅を考えずに一度決める（駅の高さを決めるのに使う）。線路どうしの立体交差は、今の高さで上下を決めてから上げ直す
+slopes();
+resolveCrossings();
 slopes();
 
 // ---- 駅：ホームに面した線路をまとめ、駅の中を1つの高さにする ----
@@ -381,20 +624,42 @@ const platformsOf = new Map(); // 点 → 面しているホームの番号
 for (const [k, n] of nodes) {
   for (const pi of platformsAround(n.p)) {
     if (platformDistance(n.p, platforms[pi]) > PLATFORM_NEAR) continue;
+    // ホームと並んで走る線路だけ（交差する路線の線路は、ホームの上や下を通っていても面していない）
+    if (!alongPlatform(n, platforms[pi])) continue;
     facing[pi].push(k);
     if (!platformsOf.has(k)) platformsOf.set(k, []);
     platformsOf.get(k).push(pi);
   }
 }
+// ホームに面した線路は、そのホームで一番多い軌間の線路だけにする（別の路線の線路がそばを並んで通っていることがある）
+const platformGauge = facing.map((list) => {
+  const count = new Map();
+  for (const k of list) count.set(nodes.get(k).gauge, (count.get(nodes.get(k).gauge) ?? 0) + 1);
+  return [...count].sort((a, b) => b[1] - a[1])[0]?.[0];
+});
+facing.forEach((list, pi) => {
+  const keep = list.filter((k) => nodes.get(k).gauge === platformGauge[pi]);
+  for (const k of list) {
+    if (keep.includes(k)) continue;
+    const ps = platformsOf.get(k).filter((x) => x !== pi);
+    if (ps.length > 0) platformsOf.set(k, ps);
+    else platformsOf.delete(k);
+  }
+  facing[pi] = keep;
+});
 // 同じ線路の点に面したホームどうし・同じ駅の近いホームどうしを1つの駅にまとめる
 const pParent = platforms.map((_, i) => i);
 const pFind = (i) => (pParent[i] === i ? i : (pParent[i] = pFind(pParent[i])));
-for (const list of platformsOf.values()) for (const pi of list) pParent[pFind(pi)] = pFind(list[0]);
+for (const list of platformsOf.values()) {
+  // 向きの違うホーム（交差する路線）は、同じ線路の点に面していてもまとめない
+  for (const pi of list) if (parallel(platforms[pi].axis, platforms[list[0]].axis)) pParent[pFind(pi)] = pFind(list[0]);
+}
 platforms.forEach((a, i) => {
   if (facing[i].length === 0) return;
   for (const j of platformsAround(a.ring[0])) {
     const b = platforms[j];
-    if (j <= i || facing[j].length === 0 || b.station !== a.station) continue;
+    // 交差する路線のホーム（向きが違う）は、同じ名前の駅でも別の駅にする（立体交差）
+    if (j <= i || facing[j].length === 0 || b.station !== a.station || !parallel(a.axis, b.axis)) continue;
     if (Math.min(...b.ring.map((p) => platformDistance(p, a))) <= PLATFORM_JOIN) pParent[pFind(j)] = pFind(i);
   }
 });
@@ -411,18 +676,59 @@ for (const g of groups.values()) {
   // 駅の高さ：駅を考えずに決めた、面した線路の点の高さの中央値
   // （築堤の上の駅は橋の印が無いので、基本の高さではなく、道路をまたぐために持ち上げた後の高さで決める）
   const heights = [...g.nodes].map((k) => nodes.get(k).offset).sort((a, b) => a - b);
-  const level = Math.round(heights[Math.floor(heights.length / 2)] * 10) / 10;
+  let level = Math.round(heights[Math.floor(heights.length / 2)] * 10) / 10;
+  // ホームの半分以上に高架の印（layer 1 以上）があれば、線路に橋の印が無くても高架の高さにする（東京駅の JR など）
+  if (g.platforms.filter((i) => elevatedPlatforms.has(platforms[i].id)).length * 2 >= g.platforms.length) {
+    level = Math.max(level, VIADUCT);
+  }
   const cut = [...g.nodes].filter((k) => nodes.get(k).cut).length;
   // 基準点：ホームの頂点の平均
   const all = g.platforms.flatMap((i) => platforms[i].ring);
   const ref = [all.reduce((s, p) => s + p[0], 0) / all.length, all.reduce((s, p) => s + p[1], 0) / all.length];
-  stations.push({ ...g, level, cut: cut * 2 > g.nodes.size, ref });
+  const ns = [...g.nodes].map((k) => nodes.get(k));
+  // 駅の中で他の線路の上を通る所があれば、駅ごとその高さまで上げる（駅の中は水平なので、交差する所だけ上げられない）
+  for (const n of ns) if (n.stacked) level = Math.max(level, Math.round(n.base * 10) / 10);
+  stations.push({
+    ...g,
+    level,
+    cut: cut * 2 > g.nodes.size,
+    ref,
+    axis: platforms[g.platforms[0]].axis,
+    // 上下を決める手がかり：他の線路の上に重ねた（橋の印で 5m 上げた）点があるか、通る線路の layer の最大
+    stacked: ns.some((n) => n.stacked),
+    layer: Math.max(...ns.map((n) => n.layer)),
+  });
+}
+// 立体交差の駅：交差する路線の駅（向きが違う）が重なっていたら、上の駅を下の駅のホームと上屋の上を通れる高さにする。
+// 上下は、他の線路の上に重ねた点のある方（無ければ layer の大きい方）を上とする。下が掘割の駅なら、上は今の高さのまま
+let crossingStations = 0;
+const crossingPairs = new Set(); // '上の駅/下の駅'
+for (let pass = 0; pass < 2; pass++) {
+  for (const a of stations) {
+    for (const b of stations) {
+      if (a === b || parallel(a.axis, b.axis)) continue;
+      const upper = (a.stacked && !b.stacked) || (a.stacked === b.stacked && a.layer > b.layer);
+      if (!upper || b.cut) continue;
+      // a の線路が b のホームの上を通っているか
+      const over = [...a.nodes].some((k) =>
+        b.platforms.some((pi) => platformDistance(nodes.get(k).p, platforms[pi]) <= STATION_AREA),
+      );
+      if (!over) continue;
+      crossingPairs.add(`${stations.indexOf(a)}/${stations.indexOf(b)}`);
+      if (a.level >= b.level + STATION_STACK) continue;
+      a.level = Math.round((b.level + STATION_STACK) * 10) / 10;
+      if (pass === 0) crossingStations++;
+    }
+  }
 }
 // ホームの近くを通る、駅と同じ高さの線路（通過線）も駅に入れる
 stations.forEach((st, si) => {
   for (const pi of st.platforms) {
     for (const [k, n] of nodes) {
       if (n.station !== undefined || Math.abs(n.offset - st.level) > 0.5 || st.nodes.has(k)) continue;
+      // 交差する路線の線路（向きが違う、立体交差の上下になっている）や、掘割の駅でない駅のそばの掘割の線路は、通過線ではない
+      if (!alongPlatform(n, platforms[pi]) || n.stacked || n.under || (n.cut && !st.cut)) continue;
+      if (n.gauge !== platformGauge[pi]) continue;
       if (Math.abs(n.p[0] - platforms[pi].ring[0][0]) > 0.003 || Math.abs(n.p[1] - platforms[pi].ring[0][1]) > 0.004) continue;
       if (platformDistance(n.p, platforms[pi]) <= STATION_AREA && !platformsOf.has(k)) st.nodes.add(k);
     }
@@ -478,7 +784,9 @@ function spread(sources, perMeter, limit = Infinity) {
   return best;
 }
 
-// 駅の中を平らにして決め直す
+// 駅の中を平らにして決め直す（駅の高さが変わったので、線路どうしの立体交差も決め直す）
+slopes();
+resolveCrossings();
 slopes();
 // 駅より低い所へは、駅から坂で下りる（駅の高さ + 勾配ぶんより高くしない）
 const ceiling = spread(
@@ -488,6 +796,57 @@ const ceiling = spread(
 for (const [k, n] of nodes) {
   if (n.fixed === undefined && ceiling.has(k)) n.offset = Math.min(n.offset, ceiling.get(k)[0]);
 }
+// ただし線路どうしの立体交差で上げた所は下げない（そこから坂を広げ直す）
+for (const [k, n] of nodes) {
+  if (!n.stacked || n.fixed !== undefined || n.offset >= n.base) continue;
+  n.offset = n.base;
+  push(k, n.base);
+}
+propagate();
+// トンネルの入口へは、地面の下 PORTAL_DEPTH m まで勾配 PORTAL_GRADE の坂で下りる（入口からの距離 × 勾配より高くしない）。
+// 駅の中は変えない（駅が入口に近くて下りきれない所は、入口の壁で地形との段差をふさぐ）
+// 坂は標高（海抜）で考える：丘へ入る入口（渋谷の銀座線など）は、地面が上っていく分だけ線路は下がらなくてよい
+await prepareDem(
+  new Set(rawTiles.flatMap(({ x, y }) => [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => `${+x + dx}/${+y + dy}`)))),
+);
+const groundOf = (k) => heightAt(...nodes.get(k).p) ?? 0;
+const portalSources = portals.map(([k]) => [k, groundOf(k) - PORTAL_DEPTH, -1]);
+let portalCeiling = spread(portalSources, PORTAL_GRADE);
+const applyPortalCeiling = () => {
+  for (const [k, n] of nodes) {
+    if (n.fixed === undefined && portalCeiling.has(k)) n.offset = Math.min(n.offset, portalCeiling.get(k)[0] - groundOf(k));
+  }
+};
+applyPortalCeiling();
+// 入口へ下りる坂の途中で別の線路と交わる所：坂の側（下をくぐる側）を、上の線路より RAIL_CLEAR m 下まで下げる
+for (let pass = 0; pass < 3; pass++) {
+  const extra = [];
+  for (const c of railCrossings) {
+    const hr = offsetAt(c.r, c.i, c.t);
+    const ho = offsetAt(c.o, c.j, c.u);
+    const [up, lo, li, hu, hl] = hr >= ho ? [c.r, c.o, c.j, hr, ho] : [c.o, c.r, c.i, ho, hr];
+    if (hu - hl >= RAIL_CLEAR) continue;
+    const keys = [lo.keys[li - 1], lo.keys[li]];
+    if (!keys.some((k) => portalCeiling.has(k) && nodes.get(k).fixed === undefined)) continue;
+    for (const k of keys) extra.push([k, groundOf(k) + hu - RAIL_CLEAR, -1]);
+  }
+  if (extra.length === 0) break;
+  portalCeiling = spread([...portalSources, ...extra], PORTAL_GRADE);
+  applyPortalCeiling();
+}
+// 駅から入口へは、駅の高さから勾配 PORTAL_GRADE より急に下げない（入口と駅が近い所で、線路が滑り台のようにならないように）。
+// 下りきれない入口は届く高さで止め、入口の壁で地面までふさぐ
+const stationFloor = spread(
+  [...nodes].filter(([, n]) => n.fixed !== undefined).map(([k, n]) => [k, -(groundOf(k) + n.fixed), n.station]),
+  PORTAL_GRADE,
+);
+for (const [k, n] of nodes) {
+  if (n.fixed !== undefined || !portalCeiling.has(k) || !stationFloor.has(k)) continue;
+  n.offset = Math.max(n.offset, -stationFloor.get(k)[0] - groundOf(k));
+}
+let portalsShallow = 0;
+for (const [k] of portals) if (nodes.get(k).offset > -PORTAL_DEPTH + 0.5) portalsShallow++;
+// 坂が「地面からの高さ」で 0 より上なら、地面より下ではないので掘割にしない（そのまま）
 
 // 駅の地面の基準に合わせる割合：駅の中は 1、駅の外へ STATION_BLEND m で 0 に
 const blend = spread(
@@ -526,6 +885,18 @@ crossings((r, i, t, road) => {
   noPier.get(r.tile).push([Math.round(p[0] * 1e6), Math.round(p[1] * 1e6), ROAD_HALF[road.cls] ?? 3]);
 });
 
+// 立体交差の駅：上の路線の橋脚を、下の駅の線路・ホームの上に立てない（下の駅の線路の点のまわり CROSSING_NO_PIER m）
+for (const pair of crossingPairs) {
+  const [ai, bi] = pair.split('/').map(Number);
+  const upper = stations[ai];
+  const below = [...stations[bi].nodes].map((k) => nodes.get(k).p);
+  for (const r of runs) {
+    if (!r.keys.some((k) => upper.nodes.has(k))) continue;
+    if (!noPier.has(r.tile)) noPier.set(r.tile, []);
+    for (const p of below) noPier.get(r.tile).push([Math.round(p[0] * 1e6), Math.round(p[1] * 1e6), CROSSING_NO_PIER]);
+  }
+}
+
 // ---- 書き出し ----
 await rm(OUT_DIR, { recursive: true, force: true });
 const out = new Map();
@@ -557,6 +928,39 @@ for (const r of runs) {
   }
   tile.t.push(track);
 }
+// トンネルの入口：並んだ線路の入口をまとめる。
+// [緯度, 経度（1e-6度）, 向き（0.1度、東が 0 で北へ回る）, レール面の高さ（0.1m、地面から）, 地下鉄(0/1),
+//  [各線路の、入口の中心からの左右の位置（0.1m、トンネルへ向かって左が正）...]]
+{
+  const used = new Set();
+  for (const [k, dir] of portals) {
+    if (used.has(k)) continue;
+    const group = portals.filter(
+      ([k2, d2]) => !used.has(k2) && meters(nodes.get(k).p, nodes.get(k2).p) < PORTAL_GROUP && dir[0] * d2[0] + dir[1] * d2[1] > 0.9,
+    );
+    for (const [k2] of group) used.add(k2);
+    const ps = group.map(([k2]) => nodes.get(k2).p);
+    const c = [ps.reduce((s2, p) => s2 + p[0], 0) / ps.length, ps.reduce((s2, p) => s2 + p[1], 0) / ps.length];
+    const side = [-dir[1], dir[0]];
+    const o = xy(c);
+    const across = ps.map((p) => {
+      const q = xy(p);
+      return Math.round(((q[0] - o[0]) * side[0] + (q[1] - o[1]) * side[1]) * 10);
+    });
+    const offset = Math.min(...group.map(([k2]) => nodes.get(k2).offset));
+    const run = runOf.get(k);
+    if (!run) continue;
+    if (!out.has(run.tile)) out.set(run.tile, { t: [], x: noPier.get(run.tile) ?? [], s: [] });
+    (out.get(run.tile).p ??= []).push([
+      Math.round(c[0] * 1e6),
+      Math.round(c[1] * 1e6),
+      Math.round(((Math.atan2(dir[1], dir[0]) * 180) / Math.PI) * 10),
+      Math.round(offset * 10),
+      group.some(([k2]) => runOf.get(k2)?.subway) ? 1 : 0,
+      across.sort((a, b) => a - b),
+    ]);
+  }
+}
 for (const tile of out.values()) if (tile.s.length === 0) delete tile.s;
 let bytes = 0;
 for (const [tile, data] of out) {
@@ -587,9 +991,19 @@ await writeFile(
 );
 console.log(
   `${platforms.length} platforms → ${stations.length} stations ` +
-    `(${stations.filter((s) => s.level > 0).length} elevated, ${stations.filter((s) => s.cut).length} in cuttings)`,
+    `(${stations.filter((s) => s.level > 0).length} elevated, ${stations.filter((s) => s.cut).length} in cuttings, ` +
+    `${crossingStations} raised over crossing stations)`,
 );
 console.log(
   `${runs.length} runs, ${nodes.size} points; raised at ${raised} level crossings; ${stacked} rail-over-rail; ` +
-    `${overpasses} overpass crossings → ${raiseRoad.size} road bridges raised; ${(bytes / 1e6).toFixed(2)} MB`,
+    `${overpasses} overpass crossings → ${raiseRoad.size} road bridges raised; ${tunnels} tunnel gaps joined; ` +
+    `${portals.length} tunnel portals (${portalsShallow} could not go fully underground); ` +
+    `${(bytes / 1e6).toFixed(2)} MB`,
 );
+// 上下が決まらなかった線路どうしの交差（平らなまま）
+if (undecided.length > 0) {
+  console.log(
+    `${undecided.length} rail crossings left level (no clue which is on top):\n` +
+      undecided.map((c) => `  ${c.r.pts[c.i][0].toFixed(5)},${c.r.pts[c.i][1].toFixed(5)}`).join('\n'),
+  );
+}

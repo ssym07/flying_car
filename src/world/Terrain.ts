@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
-import { PARKS, TERRAIN } from '../core/config';
+import { PARKS, RAILWAYS, TERRAIN } from '../core/config';
+import { addLanduse, fetchLanduse } from './landuse';
 import { addParks, buildTrees, fetchParks } from './parks';
 import { addWater, fetchWaterMask, flattenWater, waterTime } from './water';
 
@@ -69,6 +70,24 @@ export class Terrain {
 
   removeCarve(key: string): void {
     this.carves.delete(key);
+  }
+
+  /**
+   * チャンク (x, y) の「描かない所」の画像を差し替える（トンネルの入口へ下りる掘割の内側。地形の頂点の間隔では
+   * 深く細い掘割を削れないので、内側の地形は描かずに、線路側で底と擁壁を描く）。画像の形式は addTrenchMask を参照。
+   * null で元に戻す。チャンクが無ければ画像を捨てる
+   */
+  setTrenchMask(x: number, y: number, mask: THREE.Texture | null): void {
+    const chunk = this.chunks.get(`${x}/${y}`);
+    const uniform = (chunk?.mesh?.material as THREE.Material[] | undefined)?.[0]?.userData.trench as
+      | { value: THREE.Texture }
+      | undefined;
+    if (!uniform) {
+      mask?.dispose();
+      return;
+    }
+    if (uniform.value !== noTrench) uniform.value.dispose();
+    uniform.value = mask ?? noTrench;
   }
 
   addListener(listener: ChunkListener): void {
@@ -232,20 +251,22 @@ export class Terrain {
       fillNoData(heights, TILE_PX);
       if (waterData) flattenWater(heights, waterData.mask, waterData.size);
       const water = waterData?.texture ?? null;
-      const parks = await fetchParks(chunk.x, chunk.y, z, waterData?.mask ?? null);
+      const [parks, landuse] = await Promise.all([
+        fetchParks(chunk.x, chunk.y, z, waterData?.mask ?? null),
+        fetchLanduse(chunk.x, chunk.y, z),
+      ]);
       const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
       if (chunk.dead) {
         geometry.dispose();
         map?.dispose();
         water?.dispose();
         parks?.texture.dispose();
+        landuse?.dispose();
         this.chunks.delete(key(chunk));
         return;
       }
-      chunk.mesh = new THREE.Mesh(
-        geometry,
-        map || water || parks ? createMaterials(map, water, parks?.texture ?? null) : this.materials,
-      );
+      // 地面の種類（データが無くても住宅地の敷地のテンプレートで塗る）があるので、チャンクごとに材質を作る
+      chunk.mesh = new THREE.Mesh(geometry, createMaterials(map, water, parks?.texture ?? null, landuse));
       applyCarves(chunk.mesh, [...this.carves.values()], false);
       geometry.computeBoundsTree();
       chunk.heights = heights;
@@ -282,6 +303,9 @@ export class Terrain {
       if (materials[0].map !== whitePixel) materials[0].map?.dispose();
       (materials[0].userData.waterMap as THREE.Texture | undefined)?.dispose();
       (materials[0].userData.parkMap as THREE.Texture | undefined)?.dispose();
+      (materials[0].userData.landuseMap as THREE.Texture | null | undefined)?.dispose();
+      const trench = materials[0].userData.trench as { value: THREE.Texture } | undefined;
+      if (trench && trench.value !== noTrench) trench.value.dispose();
       for (const m of materials) m.dispose();
     }
     chunk.mesh = null;
@@ -352,6 +376,33 @@ function key(chunk: { x: number; y: number }): string {
   return `${chunk.x}/${chunk.y}`;
 }
 
+/** 掘割の無いチャンクの「描かない所」の画像（どこも遠い） */
+const noTrench = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat);
+noTrench.needsUpdate = true;
+
+/**
+ * 地形の材質に「描かない所」を足す。画像（写真と同じ uv）の赤は、掘割の中心線からの距離を RAILWAYS.portal.maskRange m で
+ * 0〜1 にしたもの。擁壁の内側（RAILWAYS.portal.retainOffset m より近い所）は描かない。画像は setTrenchMask で後から差し替える
+ */
+function addTrenchMask(material: THREE.MeshStandardMaterial): void {
+  const uniform = { value: noTrench as THREE.Texture };
+  material.userData.trench = uniform;
+  const previous = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    previous.call(material, shader, renderer);
+    shader.uniforms.trenchMap = uniform;
+    shader.uniforms.trenchCut = { value: (RAILWAYS.portal.retainOffset - 0.05) / RAILWAYS.portal.maskRange };
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nuniform sampler2D trenchMap;\nuniform float trenchCut;`)
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>\nif (texture2D(trenchMap, vMapUv).r < trenchCut) discard;`,
+      );
+  };
+  const previousKey = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${previousKey()}+trench`;
+}
+
 /** [本体, 縁の壁] のマテリアル */
 const whitePixel = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 whitePixel.needsUpdate = true;
@@ -360,12 +411,13 @@ function createMaterials(
   map: THREE.Texture | null,
   water: THREE.Texture | null = null,
   park: THREE.Texture | null = null,
+  landuse: THREE.Texture | null = null,
 ): THREE.Material[] {
   const color = map ? 0xffffff : 0x7d8a72;
   // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
   const ground = new THREE.MeshStandardMaterial({
     // 写真が無くても水面は描けるよう、白1画素の画像を貼っておく（水面のシェーダーは写真と同じ uv を使う）
-    map: map ?? (water || park ? whitePixel : null),
+    map: map ?? whitePixel,
     color,
     roughness: 1,
     polygonOffset: true,
@@ -375,6 +427,9 @@ function createMaterials(
   if (water) addWater(ground, water);
   // 水面の処理より先に芝生を塗る（池の上は水面になる）。addParks は前の処理に続けてつなぐので、水面の後に呼ぶ
   if (park) addParks(ground, park);
+  // 地面の種類は公園・水面より先に塗る（公園の芝生・水面が上になる）。同じ理由で最後に呼ぶ
+  addLanduse(ground, landuse);
+  addTrenchMask(ground);
   return [
     ground,
     // 縁の壁はずらさない（垂直な面は大きく奥へずれて、隠したい隙間が見えてしまう）。

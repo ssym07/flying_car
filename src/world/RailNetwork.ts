@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { RAILWAYS, WATER } from '../core/config';
+import { RAILWAYS, TERRAIN, WATER } from '../core/config';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
 import { cutFloor, smoothGround, stationGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
+import { type Approach, type PortalRecord, TunnelPortalBuilder } from './tunnelPortals';
 
 /**
  * 線路データ1タイル（scripts/build-rail-heights.mjs の出力）。
@@ -10,11 +11,14 @@ import type { ChunkListener, Terrain } from './Terrain';
  *     各点の駅（s の番号、駅の外は -1）, 各点の駅の地面に合わせる割合（0〜10）]（駅の2つは駅の近くの線路だけ）
  * x：[緯度, 経度（1e-6度）, 半径(m)] 線路が道路と交わる所（橋脚を立てない）
  * s：[緯度, 経度（1e-6度）, 掘割(0/1)] 駅の地面の基準点（ホームも同じ点を基準にする）
+ * p：トンネルの入口（坑口）。形式は tunnelPortals.ts の PortalRecord
+ * 高さが負の所は、トンネルの入口へ下りる坂（地形を削って掘割にする）
  */
 interface RailTile {
   t: Array<[number, number[], number[], (0 | 1)?, number[]?, number[]?]>;
   x: Array<[number, number, number]>;
   s?: Array<[number, number, 0 | 1]>;
+  p?: PortalRecord[];
 }
 
 /** 道床の画像1枚が表す長さ (m)。枕木 4 本ぶん */
@@ -22,7 +26,7 @@ const TEXTURE_LENGTH_M = 2.4;
 
 /**
  * 線路。航空写真を参考に、茶色い砂利の道床・枕木・2本のレールを1枚の画像にして、線路の中心線に沿って貼る。
- * 高架の線路は地面から持ち上げ、コンクリートの桁・側壁・橋脚を付ける。
+ * 高架の線路は地面から持ち上げ、コンクリートの桁・側壁・橋脚を付ける。トンネルの入口には、コンクリートの壁と暗い開口部を付ける。
  * 地形チャンクが読まれたら同じ範囲の線路データを読み、捨てられたら一緒に捨てる。
  */
 export class RailNetwork implements ChunkListener {
@@ -37,6 +41,10 @@ export class RailNetwork implements ChunkListener {
     roughness: 0.85,
     side: THREE.DoubleSide,
   });
+  /** トンネルの入口・擁壁のコンクリート（型枠の継ぎ目と雨だれの汚れ） */
+  private readonly portalMaterial = createPortalConcreteMaterial();
+  /** トンネルの内壁（頂点色で、入口から奥へ暗くする。光の届かない所なのでライティングしない） */
+  private readonly liningMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 
   constructor(private readonly terrain: Terrain) {
     terrain.addListener(this);
@@ -69,6 +77,7 @@ export class RailNetwork implements ChunkListener {
     const tile = this.tiles.get(key);
     this.tiles.delete(key);
     this.terrain.removeCarve(`rail:${key}`);
+    this.terrain.removeCarve(`rail-portal:${key}`);
     if (!tile || tile === 'loading') return;
     this.group.remove(tile);
     tile.traverse((obj) => {
@@ -82,13 +91,16 @@ export class RailNetwork implements ChunkListener {
     const viaduct = new MeshBuilder();
     const noPier = data.x.map(([lat, lon, r]) => [lat / 1e6, lon / 1e6, r] as const);
     const cuts: THREE.Vector3[][] = [];
+    // トンネルの入口へ下りる掘割（両側に擁壁を立てる）
+    const approachCuts: THREE.Vector3[][] = [];
+    const approaches: Approach[] = [];
     // 駅の地面の高さ（駅の中の線路はこれを基準にして、ホームと高さをそろえる）
     const stationBase = (data.s ?? []).map(([lat, lon, cut]) =>
       stationGround(this.terrain, lat / 1e6, lon / 1e6, cut === 1, RAILWAYS.smoothRadius, RAILWAYS.cutFloorRadius),
     );
     for (const [gauge, coords, offsets, cut, stations, weights] of data.t) {
       const station = stations && weights ? { stations, weights, base: stationBase } : null;
-      const pts = this.buildTrack(
+      const built = this.buildTrack(
         decode(coords),
         offsets,
         cut === 1,
@@ -97,10 +109,53 @@ export class RailNetwork implements ChunkListener {
         gauge >= 1400 ? standard : narrow,
         viaduct,
       );
-      if (cut === 1 && pts) cuts.push(pts.map((p) => p.clone().setY(p.y - RAILWAYS.lift - RAILWAYS.cutDepthBelow)));
+      if (!built) continue;
+      const floor = (p: THREE.Vector3) => p.clone().setY(p.y - RAILWAYS.lift - RAILWAYS.cutDepthBelow);
+      if (cut === 1) cuts.push(built.pts.map(floor));
+      else {
+        // 地面より下の所（トンネルの入口へ下りる坂）だけ削る。前後に1点ずつ足して、地面との境目までつなぐ
+        let run: number[] = [];
+        const flush = () => {
+          if (run.length > 1) {
+            // 削るのは当たり判定のため（見た目は Terrain.setTrenchMask と擁壁）。入口の側は手前で止める
+            // （削った影響がトンネルの上の地形まで届くと、地形が開口部の中へ垂れ下がる）
+            const deep = built.lift[run[0]] < built.lift[run[run.length - 1]] ? 0 : run.length - 1;
+            const end = built.pts[run[deep]];
+            const kept = run.filter((i) => built.pts[i].distanceTo(end) > RAILWAYS.portal.carveStop);
+            if (kept.length > 1) approachCuts.push(kept.map((i) => floor(built.pts[i])));
+            approaches.push({
+              pts: run.map((i) => built.pts[i]),
+              sides: run.map((i) => built.sides[i]),
+              lift: run.map((i) => built.lift[i]),
+            });
+          }
+          run = [];
+        };
+        built.lift.forEach((l, i) => {
+          if (l < -0.3) {
+            if (run.length === 0 && i > 0) run.push(i - 1);
+            run.push(i);
+          } else if (run.length > 0) {
+            run.push(i);
+            flush();
+          }
+        });
+        flush();
+      }
     }
+    // トンネルの入口と、入口へ下りる掘割の擁壁
+    const portals = new TunnelPortalBuilder(this.terrain, narrow);
+    for (const p of data.p ?? []) portals.addPortal(p);
+    portals.addRetainingWalls(approaches);
+    // 掘割の内側の地形は描かない（地形の頂点の間隔では、深く細い掘割を削りきれない）
+    const [tx, ty] = key.split('/').map(Number);
+    this.terrain.setTrenchMask(tx, ty, this.trenchMask(tx, ty, approaches));
     // 掘割の線路のまわりの地形を削る
     if (cuts.length > 0) this.terrain.addCarve(`rail:${key}`, cuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
+    // 入口へ下りる掘割も同じく削る（地形の頂点の間隔が広いので、擁壁の幅では削りきれない。壁の外は斜面になる）
+    if (approachCuts.length > 0) {
+      this.terrain.addCarve(`rail-portal:${key}`, approachCuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
+    }
     const group = new THREE.Group();
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
       if (g) group.add(new THREE.Mesh(g, m));
@@ -108,7 +163,63 @@ export class RailNetwork implements ChunkListener {
     add(narrow.build(), this.trackMaterials.narrow);
     add(standard.build(), this.trackMaterials.standard);
     add(viaduct.build(), this.concreteMaterial);
+    const { concrete, lining } = portals.build();
+    add(concrete, this.portalMaterial);
+    add(lining, this.liningMaterial);
     return group;
+  }
+
+  /**
+   * チャンク (x, y) の、掘割の中心線からの距離の画像（Terrain.setTrenchMask の形式）。掘割が無ければ null
+   */
+  private trenchMask(x: number, y: number, approaches: Approach[]): THREE.Texture | null {
+    const { maskSize: S, maskRange } = RAILWAYS.portal;
+    const z = TERRAIN.demZoom;
+    const n = 2 ** z;
+    const toPx = (p: THREE.Vector3): [number, number] | null => {
+      const ll = this.terrain.toLatLon(p);
+      if (!ll) return null;
+      const tx = ((ll.lon + 180) / 360) * n;
+      const ty = ((1 - Math.asinh(Math.tan(THREE.MathUtils.degToRad(ll.lat))) / Math.PI) / 2) * n;
+      return [(tx - x) * S, (ty - y) * S];
+    };
+    const segments: Array<[[number, number], [number, number]]> = [];
+    let lat = 0;
+    for (const ap of approaches) {
+      const px = ap.pts.map(toPx);
+      for (let i = 1; i < px.length; i++) if (px[i - 1] && px[i]) segments.push([px[i - 1]!, px[i]!]);
+      lat = this.terrain.toLatLon(ap.pts[0])?.lat ?? lat;
+    }
+    if (segments.length === 0) return null;
+    const metersPerPx = (40075016 * Math.cos(THREE.MathUtils.degToRad(lat))) / n / S;
+    const reach = maskRange / metersPerPx;
+    const data = new Uint8Array(S * S).fill(255);
+    for (const [a, b] of segments) {
+      const x0 = Math.max(0, Math.floor(Math.min(a[0], b[0]) - reach));
+      const x1 = Math.min(S - 1, Math.ceil(Math.max(a[0], b[0]) + reach));
+      const y0 = Math.max(0, Math.floor(Math.min(a[1], b[1]) - reach));
+      const y1 = Math.min(S - 1, Math.ceil(Math.max(a[1], b[1]) + reach));
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len2 = dx * dx + dy * dy || 1;
+      for (let row = y0; row <= y1; row++) {
+        for (let col = x0; col <= x1; col++) {
+          const cx = col + 0.5;
+          const cy = row + 0.5;
+          const t = Math.min(1, Math.max(0, ((cx - a[0]) * dx + (cy - a[1]) * dy) / len2));
+          const d = Math.hypot(cx - a[0] - dx * t, cy - a[1] - dy * t) * metersPerPx;
+          const v = Math.min(255, Math.round((d / maskRange) * 255));
+          // 画像の行 0 が v = 0（南）。写真（北が上）と同じ uv で貼るので上下を入れ替える
+          const k = (S - 1 - row) * S + col;
+          if (v < data[k]) data[k] = v;
+        }
+      }
+    }
+    const texture = new THREE.DataTexture(data, S, S, THREE.RedFormat);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    return texture;
   }
 
   /**
@@ -124,7 +235,7 @@ export class RailNetwork implements ChunkListener {
     noPier: ReadonlyArray<readonly [number, number, number]>,
     track: MeshBuilder,
     viaduct: MeshBuilder,
-  ): THREE.Vector3[] | null {
+  ): { pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[] } | null {
     // 細かく区切った点と、中心線に沿った距離 s、地面からの高さ
     const samples: Array<[number, number]> = [];
     const s: number[] = [];
@@ -180,8 +291,10 @@ export class RailNetwork implements ChunkListener {
       let base = THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1));
       // 駅の近くは駅の地面に寄せる
       if (stationWeight[i] > 0) base = THREE.MathUtils.lerp(base, stationBase[i]!, stationWeight[i]);
-      // 川の上（地面が水面）では水面から少し上に（駅の中はホームと高さをそろえるので上げない）
-      const overWater = Math.max(base + lift[i], WATER.surfaceHeight + RAILWAYS.waterClearance);
+      // 川の上（地面が水面）では水面から少し上に（駅の中はホームと高さをそろえるので上げない。
+      // 地面より下（トンネルの入口へ下りる坂）も上げない）
+      const overWater =
+        lift[i] < 0 ? base + lift[i] : Math.max(base + lift[i], WATER.surfaceHeight + RAILWAYS.waterClearance);
       return THREE.MathUtils.lerp(overWater, base + lift[i], stationWeight[i]) + RAILWAYS.lift;
     });
     const pts = samples.map(([lat, lon], i) => this.terrain.toLocal(lat, lon, heights[i]));
@@ -208,7 +321,7 @@ export class RailNetwork implements ChunkListener {
       if (prev) track.quad(prev[0], prev[1], a, b);
       prev = [a, b];
     }
-    if (!elevated.some(Boolean)) return pts;
+    if (!elevated.some(Boolean)) return { pts, lift, sides };
 
     // 高架：側壁・桁の側面・底面（高架の所だけ）
     const edge = half + RAILWAYS.viaductShoulder;
@@ -261,7 +374,7 @@ export class RailNetwork implements ChunkListener {
         viaduct.quad(a, b, c, d);
       }
     }
-    return pts;
+    return { pts, lift, sides };
   }
 }
 
@@ -329,4 +442,42 @@ function createTrackMaterial(gauge: number): THREE.MeshStandardMaterial {
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
+}
+
+/** トンネルの入口・擁壁のコンクリート：型枠の縦の継ぎ目と、上からの雨だれの汚れ（1枚 = 4m 四方） */
+function createPortalConcreteMaterial(): THREE.MeshStandardMaterial {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#b3b1aa';
+  g.fillRect(0, 0, size, size);
+  let seed = 11;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // ざらつき
+  for (let i = 0; i < 3000; i++) {
+    const v = 150 + rand() * 50;
+    g.fillStyle = `rgba(${v},${v - 2},${v - 6},0.35)`;
+    g.fillRect(rand() * size, rand() * size, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  // 雨だれ（上から下へ細く暗い筋）
+  for (let i = 0; i < 40; i++) {
+    const x = rand() * size;
+    const len = size * (0.2 + rand() * 0.6);
+    const grad = g.createLinearGradient(0, 0, 0, len);
+    grad.addColorStop(0, 'rgba(60,58,52,0.35)');
+    grad.addColorStop(1, 'rgba(60,58,52,0)');
+    g.fillStyle = grad;
+    g.fillRect(x, 0, 1 + rand() * 4, len);
+  }
+  // 型枠の継ぎ目（縦 0.9m おき、横 1.8m おき）
+  g.fillStyle = 'rgba(70,68,64,0.5)';
+  for (let k = 0; k <= 4; k++) g.fillRect((k * size) / 4.44 - 1, 0, 2, size);
+  for (let k = 0; k <= 2; k++) g.fillRect(0, (k * size) / 2.22 - 1, size, 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(0.25, 0.25);
+  texture.anisotropy = 8;
+  return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.9, side: THREE.DoubleSide });
 }

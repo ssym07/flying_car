@@ -33,14 +33,15 @@ export class StationRoofs implements ChunkListener {
     roughness: 0.9,
     side: THREE.DoubleSide,
   });
-  private readonly tactileMaterial = new THREE.MeshStandardMaterial({
-    color: STATION_ROOFS.tactileColor,
-    roughness: 0.7,
+  private readonly platformEdgeMaterial = new THREE.MeshStandardMaterial({
+    color: STATION_ROOFS.platformEdgeColor,
+    roughness: 0.8,
     side: THREE.DoubleSide,
     polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
+  private readonly tactileMaterial = createTactileMaterial();
   private readonly pillarMaterial = new THREE.MeshStandardMaterial({
     color: STATION_ROOFS.pillarColor,
     roughness: 0.5,
@@ -89,10 +90,14 @@ export class StationRoofs implements ChunkListener {
   private build(records: RoofRecord[]): THREE.Group {
     const roof = new Builder();
     const fascia = new Builder();
-    const floor = new Builder();
-    const side = new Builder();
-    const tactile = new Builder();
     const pillar = new Builder();
+    const parts: PlatformParts = {
+      floor: new Builder(),
+      edge: new Builder(),
+      side: new Builder(),
+      tactile: new Builder(),
+      pillar,
+    };
     for (const [kind, height, station, coords, refLat, refLon, cut] of records) {
       // 駅舎は描かない（形は PLATEAU の建物に任せる。屋根の板だけ置くと、建物と合わない所で宙に浮く）
       if (kind === 0 || height < 0) continue;
@@ -121,7 +126,7 @@ export class StationRoofs implements ChunkListener {
       }
       const top = ground + height;
       const points = latLon.map(([lat, lon]) => this.terrain.toLocal(lat, lon, top));
-      if (kind === 2) this.addPlatform(points, floor, side, tactile);
+      if (kind === 2) this.addPlatform(points, height, parts);
       else {
         this.addRoof(points, kind, station, roof, fascia);
         if (kind === 1) this.addPillars(points, pillar);
@@ -138,46 +143,124 @@ export class StationRoofs implements ChunkListener {
       if (g) group.add(new THREE.Mesh(g, m));
     };
     add(fascia.build(false), this.fasciaMaterial);
-    add(floor.build(false), this.platformMaterial);
-    add(side.build(false), this.platformSideMaterial);
-    add(tactile.build(false), this.tactileMaterial);
+    add(parts.floor.build(false), this.platformMaterial);
+    add(parts.edge.build(false), this.platformEdgeMaterial);
+    add(parts.side.build(false), this.platformSideMaterial);
+    add(parts.tactile.build(false), this.tactileMaterial);
     add(pillar.build(false), this.pillarMaterial);
     return group;
   }
 
-  /** ホーム：床（タイル）、線路側に下りる側面、縁から少し内側の黄色い点字ブロック */
-  private addPlatform(points: THREE.Vector3[], floor: Builder, side: Builder, tactile: Builder): void {
+  /**
+   * ホーム：床（タイル）、線路側の縁（白い縁石・その下に引っ込んだ暗い壁）、縁から少し内側の白線と黄色い点字ブロック。
+   * height は床の地面からの高さ。高架のホームは、線路の高架の下面の高さまで側面を下ろし、その下は柱で支える
+   */
+  private addPlatform(points: THREE.Vector3[], height: number, parts: PlatformParts): void {
     if (points.length < 3) return;
     const ccw = toCounterClockwise(points);
     const contour = ccw.map((p) => new THREE.Vector2(p.x, p.z));
+    const { floor, edge, side, tactile, pillar } = parts;
     const base = floor.positions.length / 3;
     // 床のタイル：1枚の画像 = 2.4m 四方
     for (const p of ccw) floor.vertex(p, p.x / 2.4, p.z / 2.4);
     for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(contour, [])) floor.indices.push(base + a, base + c, base + b);
 
-    const { platformDepth, tactileInset, tactileWidth } = STATION_ROOFS;
-    for (let i = 0; i < ccw.length; i++) {
+    const S = STATION_ROOFS;
+    const top = ccw[0].y;
+    const depth = Math.min(height, S.platformDepth + RAILWAYS.lift + RAILWAYS.viaductDepth);
+    const bottom = top - depth;
+    const axis = principalAxis(ccw);
+    const n = ccw.length;
+    // 線路に面した辺：ホームの長い向きに沿った辺（端の短い辺には縁石・点字ブロックを付けない）
+    const facing = ccw.map((a, i) => {
+      const b = ccw[(i + 1) % n];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      return len > 0 && Math.abs(((b.x - a.x) * axis.x + (b.z - a.z) * axis.y) / len) > 0.5;
+    });
+    // 頂点 i を内側へ d m 寄せた点（線路に面した辺どうしの角は、両方の辺から d m になるように）
+    const inward = (i: number, d: number, y: number) => {
+      const normalOf = (k: number) => {
+        const a = ccw[(k + n) % n];
+        const b = ccw[(k + 1) % n];
+        const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+        return new THREE.Vector2(-(b.z - a.z) / len, (b.x - a.x) / len);
+      };
+      const prev = facing[(i - 1 + n) % n] ? normalOf(i - 1) : null;
+      const next = facing[i] ? normalOf(i) : null;
+      let m = prev && next ? prev.clone().add(next).normalize() : (prev ?? next ?? new THREE.Vector2());
+      const along = prev && next ? Math.min(2, 1 / Math.max(0.5, m.dot(next))) : 1;
+      m = m.multiplyScalar(d * along);
+      return new THREE.Vector3(ccw[i].x + m.x, y, ccw[i].z + m.y);
+    };
+    let u = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
       const a = ccw[i];
-      const b = ccw[(i + 1) % ccw.length];
-      // 側面
-      const v0 = side.vertex(a, 0, 0);
-      const v1 = side.vertex(b, 1, 0);
-      const v2 = side.vertex(a.clone().setY(a.y - platformDepth), 0, 1);
-      const v3 = side.vertex(b.clone().setY(b.y - platformDepth), 1, 1);
+      const b = ccw[j];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const u0 = u;
+      const u1 = (u += len);
+      const wall = (out: Builder, p: THREE.Vector3, q: THREE.Vector3, y0: number, y1: number) => {
+        const v0 = out.vertex(p.clone().setY(y0), u0, 0);
+        const v1 = out.vertex(q.clone().setY(y0), u1, 0);
+        const v2 = out.vertex(p.clone().setY(y1), u0, 1);
+        const v3 = out.vertex(q.clone().setY(y1), u1, 1);
+        out.indices.push(v0, v2, v1, v1, v2, v3);
+      };
+      const band = (out: Builder, d0: number, d1: number, y: number) => {
+        const v0 = out.vertex(inward(i, d0, y), u0 / S.tactileTile, 0);
+        const v1 = out.vertex(inward(j, d0, y), u1 / S.tactileTile, 0);
+        const v2 = out.vertex(inward(i, d1, y), u0 / S.tactileTile, 1);
+        const v3 = out.vertex(inward(j, d1, y), u1 / S.tactileTile, 1);
+        out.indices.push(v0, v2, v1, v1, v2, v3);
+      };
+      if (!facing[i]) {
+        wall(side, a, b, top, bottom);
+        continue;
+      }
+      // 縁石の前面と、その下の引っ込み（列車とホームの間に落ちた人が逃げ込む所）の天井・奥の壁
+      wall(edge, a, b, top, top - S.edgeDepth);
+      const lip = top - S.edgeDepth;
+      const ia = inward(i, S.recess, lip);
+      const ib = inward(j, S.recess, lip);
+      const v0 = side.vertex(a.clone().setY(lip), u0, 0);
+      const v1 = side.vertex(b.clone().setY(lip), u1, 0);
+      const v2 = side.vertex(ia, u0, 1);
+      const v3 = side.vertex(ib, u1, 1);
       side.indices.push(v0, v2, v1, v1, v2, v3);
-      // 点字ブロック：長い辺（線路に面した辺）だけ。反時計回りなので内側は辺の左
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const len = Math.hypot(dx, dz);
-      if (len < STATION_ROOFS.tactileMinEdge) continue;
-      const inX = -dz / len;
-      const inZ = dx / len;
-      const at = (p: THREE.Vector3, d: number) => new THREE.Vector3(p.x + inX * d, p.y + 0.01, p.z + inZ * d);
-      const t0 = tactile.vertex(at(a, tactileInset), 0, 0);
-      const t1 = tactile.vertex(at(b, tactileInset), 1, 0);
-      const t2 = tactile.vertex(at(a, tactileInset + tactileWidth), 0, 1);
-      const t3 = tactile.vertex(at(b, tactileInset + tactileWidth), 1, 1);
-      tactile.indices.push(t0, t2, t1, t1, t2, t3);
+      wall(side, ia, ib, lip, bottom);
+      // 床の上：縁の白い帯と、黄色い点字ブロック
+      band(edge, 0, S.edgeWidth, top + 0.005);
+      band(tactile, S.tactileInset, S.tactileInset + S.tactileWidth, top + 0.01);
+    }
+
+    // 高架のホームは、側面の下に柱を立てる（ホームの中心線に沿って）
+    const ground = top - height;
+    if (bottom - ground < S.platformPillarFrom) return;
+    let minA = Infinity;
+    let maxA = -Infinity;
+    for (const p of ccw) {
+      const a = p.x * axis.x + p.z * axis.y;
+      minA = Math.min(minA, a);
+      maxA = Math.max(maxA, a);
+    }
+    const count = Math.max(1, Math.round((maxA - minA - 6) / S.platformPillarSpacing));
+    for (let k = 0; k <= count; k++) {
+      const a = minA + 3 + ((maxA - minA - 6) * k) / count;
+      // その位置でのホームの幅の中央：辺がこの位置を横切る所の真ん中
+      const cross: THREE.Vector2[] = [];
+      for (let i = 0; i < n; i++) {
+        const p = ccw[i];
+        const q = ccw[(i + 1) % n];
+        const ap = p.x * axis.x + p.z * axis.y;
+        const aq = q.x * axis.x + q.z * axis.y;
+        if ((ap - a) * (aq - a) > 0 || ap === aq) continue;
+        const t = (a - ap) / (aq - ap);
+        cross.push(new THREE.Vector2(p.x + (q.x - p.x) * t, p.z + (q.z - p.z) * t));
+      }
+      if (cross.length < 2) continue;
+      const c = cross.reduce((s, v) => s.add(v), new THREE.Vector2()).divideScalar(cross.length);
+      addBox(pillar, c.x, c.y, S.platformPillarSize, ground, bottom);
     }
   }
 
@@ -302,6 +385,75 @@ class Builder {
   }
 }
 
+/** ホームを作る部品ごとの形 */
+interface PlatformParts {
+  floor: Builder;
+  edge: Builder;
+  side: Builder;
+  tactile: Builder;
+  pillar: Builder;
+}
+
+/** 四角い柱（中心 x, z・太さ size・高さ y0〜y1）の側面 */
+function addBox(out: Builder, x: number, z: number, size: number, y0: number, y1: number): void {
+  const h = size / 2;
+  const corners = [
+    [h, h],
+    [-h, h],
+    [-h, -h],
+    [h, -h],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const [x0, z0] = corners[i];
+    const [x1, z1] = corners[(i + 1) % 4];
+    const v0 = out.vertex(new THREE.Vector3(x + x0, y1, z + z0), 0, 0);
+    const v1 = out.vertex(new THREE.Vector3(x + x1, y1, z + z1), 1, 0);
+    const v2 = out.vertex(new THREE.Vector3(x + x0, y0, z + z0), 0, 1);
+    const v3 = out.vertex(new THREE.Vector3(x + x1, y0, z + z1), 1, 1);
+    out.indices.push(v0, v2, v1, v1, v2, v3);
+  }
+}
+
+/** 点字ブロック：黄色の地に、丸い突起の列（1枚 = 0.3m 四方）と、線状の突起の向き */
+function createTactileMaterial(): THREE.MeshStandardMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#e9c22c';
+  g.fillRect(0, 0, 64, 64);
+  // ブロックの継ぎ目
+  g.fillStyle = 'rgba(120, 90, 0, 0.45)';
+  g.fillRect(0, 0, 64, 1);
+  g.fillRect(0, 0, 1, 64);
+  // 突起：明るい上面と、下の影
+  for (let y = 0; y < 5; y++) {
+    for (let x = 0; x < 5; x++) {
+      const cx = 7 + x * 12.5;
+      const cy = 7 + y * 12.5;
+      g.fillStyle = 'rgba(110, 80, 0, 0.5)';
+      g.beginPath();
+      g.arc(cx + 1, cy + 1.5, 3.6, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#f7d850';
+      g.beginPath();
+      g.arc(cx, cy, 3.4, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 8;
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    roughness: 0.75,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+}
+
 /** 金属の波板：細い明暗の筋を繰り返す画像。色は頂点色で付ける */
 function createRoofMaterial(): THREE.MeshStandardMaterial {
   const canvas = document.createElement('canvas');
@@ -355,6 +507,27 @@ function hash(n: number): number {
 function toCounterClockwise(points: THREE.Vector3[]): THREE.Vector3[] {
   const contour = points.map((p) => new THREE.Vector2(p.x, p.z));
   return THREE.ShapeUtils.isClockWise(contour) ? [...points].reverse() : points;
+}
+
+/** 点の並びの一番広がった向き（x, z 平面の単位ベクトル）。細かく区切った曲がったホームでも、長い向きが分かる */
+function principalAxis(points: THREE.Vector3[]): THREE.Vector2 {
+  let cx = 0;
+  let cz = 0;
+  for (const p of points) (cx += p.x), (cz += p.z);
+  cx /= points.length;
+  cz /= points.length;
+  let xx = 0;
+  let xz = 0;
+  let zz = 0;
+  for (const p of points) {
+    const dx = p.x - cx;
+    const dz = p.z - cz;
+    xx += dx * dx;
+    xz += dx * dz;
+    zz += dz * dz;
+  }
+  const angle = Math.atan2(2 * xz, xx - zz) / 2;
+  return new THREE.Vector2(Math.cos(angle), Math.sin(angle));
 }
 
 /** 一番長い辺の向き（x, z 平面の単位ベクトル） */

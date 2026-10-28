@@ -4,17 +4,31 @@
 //
 // - 通り道：線路の中心から左右 TRACK_HALF m、レール面の CLEAR_BELOW m 下から CLEARANCE m 上まで。
 //   ホームの上も、床の CLEAR_BELOW m 下から同じ高さまで
-// - 高さの基準は、その建物の一番低い所（建物の建っている地面）。線路の高さは public/rail-tracks の「地面からの高さ」
+// - 高さは楕円体高（建物の座標と同じ）。線路・ホームの「地面からの高さ」を、ゲームと同じ地形（国土地理院の標高タイル、
+//   data/cache/dem に保存）と同じ計算で直す（坂の途中の駅で、建物の地面と線路の地面が違っても高さが合う）
 // - 通り道の外にある建物の部分はそのまま残るので、線路の上の建物は両側の本体とつながったままになる
 // - 書き換える前の建物のタイルは data/cache/plateau-original に取っておき、2回目からはそこから作り直す
 //   （通り道を変えてやり直しても、前に切り抜いた跡が残らない）
 // - 切り抜いたタイルは Draco で圧縮せずに書く（属性は建物の番号・ID・名前を含めてそのまま）
 // - 切り抜いて宙に浮いた部分：薄い残り（屋根の面だけ）や小さなかけらは消し、線路をまたぐ駅舎などには、
 //   列車にぶつからない所（線路の間・ホームの上）に地面から柱を立てる。SHOW_FLOATING=1 で柱を立てられなかった所を表示
+// - ホーム・上屋・高架をまとめて1つの細長い箱にした建物（東京駅の JR のホームなど）は、切り抜かずに丸ごと消す
+//   （ホームと上屋は station-roofs、高架は線路の方で描く）。ただし大屋根の駅舎（BIG_ROOFS）は、屋根だけ残して柱で支える
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as THREE from 'three';
 import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
+import {
+  CUT_RADIUS,
+  GEOID,
+  SMOOTH_RADIUS,
+  WATER_CLEARANCE,
+  WATER_SURFACE,
+  heightAt,
+  prepareDem,
+  smoothGround,
+  stationGround,
+} from './lib/dem.mjs';
 
 const require = createRequire(import.meta.url);
 const draco3d = require('draco3dgltf');
@@ -77,20 +91,57 @@ const decode = (c) => {
   return out;
 };
 
-// ---- 通り道（平面の形と、地面からの高さの範囲） ----
+// ---- 地形（ゲームと同じ国土地理院の標高タイル）：線路・ホームの「地面からの高さ」を楕円体高（建物の座標と同じ基準）に直すのに使う ----
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ---- 通り道（平面の形と、高さの範囲（楕円体高, m）） ----
 // 線路：つながった線分ごとの長方形。ホーム：ホームの形
-const corridors = []; // { ring: [[x, y] (m)], bottom, top（地面からの高さ）, box }
+const corridors = []; // { ring: [[x, y] (m)], bottom, top（楕円体高）, box }
 function addCorridor(ring, bottom, top) {
   const xs = ring.map((p) => p[0]);
   const ys = ring.map((p) => p[1]);
   corridors.push({ ring, bottom, top, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] });
 }
+// 線路のタイルとその周り（均した地面は 60m 先まで見る）の標高を読む
+{
+  const keys = new Set();
+  for (const x of await readdir(RAIL_DIR)) {
+    for (const f of await readdir(new URL(`${x}/`, RAIL_DIR))) {
+      const y = Number(f.replace('.json', ''));
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) keys.add(`${Number(x) + dx}/${y + dy}`);
+    }
+  }
+  console.log(`${await prepareDem(keys)} elevation tiles`);
+}
 for (const x of await readdir(RAIL_DIR)) {
   for (const f of await readdir(new URL(`${x}/`, RAIL_DIR))) {
-    const { t } = JSON.parse(await readFile(new URL(`${x}/${f}`, RAIL_DIR), 'utf8'));
-    for (const [, coords, offsets] of t) {
-      const pts = decode(coords).map(([lat, lon]) => [lon * MX, lat * MY]);
-      const h = offsets.map((o) => o / 10);
+    const { t, s = [] } = JSON.parse(await readFile(new URL(`${x}/${f}`, RAIL_DIR), 'utf8'));
+    const stationBase = s.map(([lat, lon, cut]) => stationGround(lat / 1e6, lon / 1e6, cut === 1));
+    for (const [, coords, offsets, cut, refs, weights] of t) {
+      const geo = decode(coords);
+      const pts = geo.map(([lat, lon]) => [lon * MX, lat * MY]);
+      // RailNetwork.ts の buildTrack と同じ高さ（レール面の楕円体高）。地上の線路の地面は描いた地形の面の代わりに標高そのもの
+      const along = [0];
+      for (let i = 1; i < pts.length; i++) along.push(along[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      const dem = geo.map(([lat, lon]) => heightAt(lat, lon) ?? 0);
+      const ground = cut
+        ? dem.map((_, i) => {
+            // 掘割の底：前後 CUT_RADIUS m の一番低い所
+            let m = Infinity;
+            for (let j = 0; j < dem.length; j++) if (Math.abs(along[j] - along[i]) <= CUT_RADIUS) m = Math.min(m, dem[j]);
+            return m;
+          })
+        : dem;
+      const h = geo.map(([lat, lon], i) => {
+        const lift = offsets[i] / 10;
+        const smooth = smoothGround(lat, lon, SMOOTH_RADIUS) ?? ground[i];
+        let base = lerp(ground[i], smooth, Math.min(Math.max(lift / 2, 0), 1));
+        const ref = refs?.[i] ?? -1;
+        const w = ref >= 0 && stationBase[ref] !== null ? weights[i] / 10 : 0;
+        if (w > 0) base = lerp(base, stationBase[ref], w);
+        const overWater = Math.max(base + lift, WATER_SURFACE + WATER_CLEARANCE);
+        return lerp(overWater, base + lift, w) + BALLAST + GEOID;
+      });
       // 向きと高さがほぼ同じ線分をつなぐ
       let start = 0;
       for (let i = 1; i < pts.length; i++) {
@@ -113,7 +164,7 @@ for (const x of await readdir(RAIL_DIR)) {
           // 隣の線分とすき間ができないよう、前後に少し伸ばす
           const a2 = [a[0] - ux, a[1] - uy];
           const b2 = [b[0] + ux, b[1] + uy];
-          const rail = Math.min(h[start], h[i]) + BALLAST;
+          const seg = h.slice(start, i + 1);
           addCorridor(
             [
               [a2[0] + nx, a2[1] + ny],
@@ -121,8 +172,8 @@ for (const x of await readdir(RAIL_DIR)) {
               [b2[0] - nx, b2[1] - ny],
               [a2[0] - nx, a2[1] - ny],
             ],
-            rail - CLEAR_BELOW,
-            Math.max(h[start], h[i]) + BALLAST + CLEARANCE,
+            Math.min(...seg) - CLEAR_BELOW,
+            Math.max(...seg) + CLEARANCE,
           );
         }
         start = i;
@@ -133,13 +184,23 @@ for (const x of await readdir(RAIL_DIR)) {
 const trackCorridors = corridors.length;
 for (const x of await readdir(ROOF_DIR)) {
   for (const f of await readdir(new URL(`${x}/`, ROOF_DIR))) {
-    for (const [kind, height, , coords] of JSON.parse(await readFile(new URL(`${x}/${f}`, ROOF_DIR), 'utf8'))) {
+    for (const [kind, height, , coords, refLat, refLon, cut] of JSON.parse(
+      await readFile(new URL(`${x}/${f}`, ROOF_DIR), 'utf8'),
+    )) {
       if (kind !== 2 || height < 0) continue;
-      const rail = height - PLATFORM_HEIGHT;
+      const ring = decode(coords);
+      // StationRoofs.ts と同じ地面：駅の基準点の駅の地面、無ければ形の頂点の標高の平均
+      let ground = refLat !== undefined ? stationGround(refLat / 1e6, refLon / 1e6, cut === 1) : null;
+      if (ground === null) {
+        const hs = ring.map(([lat, lon]) => heightAt(lat, lon)).filter((v) => v !== null);
+        if (hs.length === 0) continue;
+        ground = hs.reduce((a, b) => a + b, 0) / hs.length;
+      }
+      const floor = ground + height + GEOID;
       addCorridor(
-        decode(coords).map(([lat, lon]) => [lon * MX, lat * MY]),
-        height - CLEAR_BELOW,
-        rail + CLEARANCE,
+        ring.map(([lat, lon]) => [lon * MX, lat * MY]),
+        floor - CLEAR_BELOW,
+        floor - PLATFORM_HEIGHT + CLEARANCE,
       );
     }
   }
@@ -276,7 +337,76 @@ console.warn = (...args) => {
   warn(...args);
 };
 const evaluator = new Evaluator();
-const stats = { removed: 0, supported: 0, unsupported: 0 };
+const stats = { removed: 0, supported: 0, unsupported: 0, platformBoxes: 0, bigRoofs: 0 };
+
+/**
+ * 大屋根の駅舎（PLATEAU では中の詰まった箱になっている）：ホームの箱として消さず、上の ROOF_THICKNESS m だけ残して
+ * その下をくり抜き、柱で支えた屋根にする。建物の ID（gml_id）→ 名前
+ */
+const BIG_ROOFS = {
+  'bldg_26d9fc02-3d05-4c22-b1b0-4af3cc17230e': '高輪ゲートウェイ駅',
+};
+const ROOF_THICKNESS = 2;
+
+/** 上から見た点の並びを囲む、一番細い向きの長方形：{ ring（平面の m）, length, width } */
+function orientedBox(pts) {
+  let best = null;
+  for (let deg = 0; deg < 180; deg += 5) {
+    const c = Math.cos(deg * K);
+    const s = Math.sin(deg * K);
+    let a0 = Infinity;
+    let a1 = -Infinity;
+    let b0 = Infinity;
+    let b1 = -Infinity;
+    for (const [x, y] of pts) {
+      const a = x * c + y * s;
+      const b = -x * s + y * c;
+      a0 = Math.min(a0, a);
+      a1 = Math.max(a1, a);
+      b0 = Math.min(b0, b);
+      b1 = Math.max(b1, b);
+    }
+    if (!best || b1 - b0 < best.width) best = { c, s, a0, a1, b0, b1, width: b1 - b0, length: a1 - a0 };
+  }
+  const { c, s, a0, a1, b0, b1 } = best;
+  const at = (a, b) => [a * c - b * s, a * s + b * c];
+  return { ...best, ring: [at(a0, b0), at(a1, b0), at(a1, b1), at(a0, b1)] };
+}
+
+/** ホームの箱とみなす：線路の向きに細長く（長さ BOX_LENGTH m 以上、長さ/幅 BOX_ASPECT 以上）、低く（BOX_HEIGHT m 以下）、
+ * 上から見た形のほとんど（BOX_COVERED 以上）が線路・ホームの通り道に入る建物 */
+const BOX_LENGTH = 80;
+const BOX_ASPECT = 2.5;
+const BOX_HEIGHT = 25;
+const BOX_COVERED = 0.75;
+/** ホームの箱は、上端が一番低いレール面からこの高さ (m) 以上ある（高架下の店は、レール面より低い） */
+const BOX_ABOVE_RAIL = 2;
+function isPlatformBox(tris, hits, low, high) {
+  if (high - low > BOX_HEIGHT) return false;
+  // 線路より上まで伸びていないもの（高架下の店など）は違う
+  const rail = Math.min(...hits.map((ci) => corridors[ci].bottom + CLEAR_BELOW));
+  if (high < rail + BOX_ABOVE_RAIL) return false;
+  const pts = tris.flat();
+  const { length, width } = orientedBox(pts);
+  if (length < BOX_LENGTH || length < width * BOX_ASPECT) return false;
+  // 上から見た形のうち、通り道に入る割合（2m おきに調べる）
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const rings = hits.map((ci) => corridors[ci]);
+  let inside = 0;
+  let covered = 0;
+  for (let x = Math.min(...xs); x <= Math.max(...xs); x += 2) {
+    for (let y = Math.min(...ys); y <= Math.max(...ys); y += 2) {
+      const p = [x, y];
+      if (!tris.some(([a, b, c]) => insideTriangle(p, a, b, c))) continue;
+      inside++;
+      if (rings.some((c) => p[0] >= c.box[0] && p[0] <= c.box[2] && p[1] >= c.box[1] && p[1] <= c.box[3] && insideRing(p, c.ring))) {
+        covered++;
+      }
+    }
+  }
+  return inside > 0 && covered / inside >= BOX_COVERED;
+}
 evaluator.attributes = ['position', 'normal'];
 evaluator.useGroups = false;
 
@@ -284,7 +414,7 @@ evaluator.useGroups = false;
  * glb の中の建物を切り抜く。origin は glTF の座標（y が上）の原点の ECEF。
  * 切り抜いた建物があれば新しい glb を、無ければ null を返す
  */
-function cutGlb(glb, origin) {
+function cutGlb(glb, origin, gmlIds = null) {
   const { json, bin } = parseGlb(glb);
   if (json.meshes.length !== 1 || json.meshes[0].primitives.length !== 1) return null;
   const prim = json.meshes[0].primitives[0];
@@ -337,9 +467,35 @@ function cutGlb(glb, origin) {
     // 建物に重なる通り道（高さも建物の範囲にかかるもの）
     const hits = corridorsIn([minX, minY, maxX, maxY]).filter((ci) => {
       const c = corridors[ci];
-      return low + c.bottom < high && low + c.top > low && overlaps(c.ring, tris);
+      return c.bottom < high && c.top > low && overlaps(c.ring, tris);
     });
     if (hits.length === 0) continue;
+    // 大屋根の駅舎：上の ROOF_THICKNESS m を残して、その下を形ごとくり抜く（線路・ホームの通り道もその中に入る）
+    const bigRoof = BIG_ROOFS[gmlIds?.[b]];
+    let cutters = hits.map((ci) => corridors[ci]);
+    if (bigRoof) {
+      const box = orientedBox(tris.flat());
+      const grow = (p) => {
+        const cx = (box.ring[0][0] + box.ring[2][0]) / 2;
+        const cy = (box.ring[0][1] + box.ring[2][1]) / 2;
+        const d = Math.hypot(p[0] - cx, p[1] - cy) || 1;
+        return [p[0] + ((p[0] - cx) / d) * 2, p[1] + ((p[1] - cy) / d) * 2];
+      };
+      cutters = [{ ring: box.ring.map(grow), bottom: low - 1, top: high - ROOF_THICKNESS }];
+      stats.bigRoofs++;
+    }
+    // ホームと線路をまとめて1つの箱にした建物（東京駅の JR のホームなど）は、丸ごと消す
+    // （ホーム・上屋は station-roofs、高架は線路の方で描く）
+    if (!bigRoof && isPlatformBox(tris, hits, low, high)) {
+      replaced.set(b, new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([], 3)));
+      replaced.get(b).setAttribute('normal', new THREE.Float32BufferAttribute([], 3));
+      stats.platformBoxes++;
+      if (process.env.SHOW_BOXES) {
+        const c = tris[0][0];
+        console.log(`  box ${(c[1] / MY).toFixed(5)},${(c[0] / MX).toFixed(5)} h ${(high - low).toFixed(1)}`);
+      }
+      continue;
+    }
     // 建物の三角形を three の形に
     const g = new THREE.BufferGeometry();
     const pos = new Float32Array(faces.length * 9);
@@ -356,9 +512,8 @@ function cutGlb(glb, origin) {
     if (!normal) g.computeVertexNormals();
     let brush = new Brush(g);
     brush.updateMatrixWorld();
-    for (const ci of hits) {
-      const c = corridors[ci];
-      const prism = prismGeometry(c, low, local);
+    for (const c of cutters) {
+      const prism = prismGeometry(c, local);
       const cutter = new Brush(prism);
       cutter.updateMatrixWorld();
       try {
@@ -470,8 +625,8 @@ function cutGlb(glb, origin) {
   return { glb: buildGlb(json, newBin), buildings: replaced.size };
 }
 
-/** 通り道の柱（底 bottom から上 top まで、建物の地面 ground からの高さ）を、メッシュの座標で */
-function prismGeometry(c, ground, local) {
+/** 通り道の柱（底 bottom から上 top まで、楕円体高）を、メッシュの座標で */
+function prismGeometry(c, local) {
   // 反時計回りにそろえる
   let ring = c.ring;
   let area = 0;
@@ -481,7 +636,7 @@ function prismGeometry(c, ground, local) {
     area += p[0] * q[1] - q[0] * p[1];
   }
   if (area < 0) ring = [...ring].reverse();
-  const at = ([x, y], h) => local(toEcef(y / MY, x / MX, ground + h));
+  const at = ([x, y], h) => local(toEcef(y / MY, x / MX, h));
   const bottom = ring.map((p) => at(p, c.bottom));
   const top = ring.map((p) => at(p, c.top));
   const pos = [];
@@ -728,7 +883,9 @@ function cutContent(buf) {
     const glbStart = 28 + ftJson + ftBin + btJson + btBin;
     const { json } = parseGlb(buf.subarray(glbStart));
     const rtc = json.extensions?.CESIUM_RTC?.center ?? ft.RTC_CENTER ?? [0, 0, 0];
-    const result = cutGlb(buf.subarray(glbStart), rtc);
+    // 建物の ID（バッチテーブルの gml_id）
+    const bt = btJson > 0 ? JSON.parse(buf.toString('utf8', 28 + ftJson + ftBin, 28 + ftJson + ftBin + btJson).trim() || '{}') : {};
+    const result = cutGlb(buf.subarray(glbStart), rtc, Array.isArray(bt.gml_id) ? bt.gml_id : null);
     if (!result) return null;
     const head = buf.subarray(0, glbStart);
     const out = Buffer.concat([head, result.glb]);
@@ -795,7 +952,10 @@ for (const ward of only.length > 0 ? wards.filter((w) => only.includes(w)) : war
     `${ward}: ${uris.length} candidate tiles → ${tiles} tiles / ${buildings} buildings cut (${((Date.now() - started) / 1000).toFixed(0)}s)`,
   );
 }
-console.log(`total: ${totalTiles} tiles, ${totalBuildings} buildings`);
+console.log(
+  `total: ${totalTiles} tiles, ${totalBuildings} buildings (${stats.platformBoxes} platform boxes removed, ` +
+    `${stats.bigRoofs} big station roofs)`,
+);
 console.log(
   `floating parts: ${stats.removed} thin leftovers removed, ${stats.supported} supported by pillars, ` +
     `${stats.unsupported} without room for pillars`,
