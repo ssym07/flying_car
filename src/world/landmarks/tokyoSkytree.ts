@@ -23,8 +23,8 @@ const PROFILE: Array<[number, number]> = [
   [150, 24],
   [250, 19.5],
   [340, 17],
-  [368, 11.5],
-  [445, 10.5],
+  [368, 9],
+  [445, 8],
   [452, 7.5],
   [500, 6],
 ];
@@ -102,7 +102,7 @@ export function buildSkytree(cx: number): SkytreeParts {
   // 中心の心柱（灰色の円筒）
   for (const [h0, h1, r] of [
     [0, 340, 8],
-    [368, 445, 6],
+    [368, 445, 4.5],
     [452, 500, 3.5],
   ]) {
     steel.push(colored(new THREE.CylinderGeometry(r, r, h1 - h0, 20).translate(cx, (h0 + h1) / 2, 0), CORE));
@@ -122,7 +122,7 @@ export function buildSkytree(cx: number): SkytreeParts {
   white.push(cyl(cx, 369.6, 20, 0.8));
 
   // デッキの上（372〜438m）：骨組みのまわりに張り出した水平のひだ（アンテナの台）
-  for (let y = 374; y <= 436; y += 4.5) white.push(frustum(cx, y, radius(y) + 3.2, radius(y) + 3.2, 0.5));
+  for (let y = 374; y <= 436; y += 4.5) white.push(frustum(cx, y, radius(y) + 2.6, radius(y) + 2.6, 0.5));
 
   // ---- 天望回廊（445〜452m）：ガラスのリングと、まわりを1周半巻いて上るらせんの管 ----
   white.push(cyl(cx, 443.6, 16, 1));
