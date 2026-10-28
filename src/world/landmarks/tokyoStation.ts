@@ -251,8 +251,9 @@ export function createBrickMaterial(): THREE.MeshStandardMaterial {
       g.fillRect(x, y, 7, 2);
     }
   }
-  // 白い石の帯：階の境目（画像の下端）と、窓の上下の飾り
+  // 白い石の帯：れんがの壁を横切る細いまっすぐな帯（約 1.1m おき）と、階の境目の太い帯
   g.fillStyle = '#d6cfc0';
+  for (let y = 18; y < H - 10; y += 36) g.fillRect(0, y, W, 4);
   g.fillRect(0, H - 10, W, 10);
   // 窓：白い枠、暗い緑がかったガラス、中の縦の桟
   const wx = 40;
@@ -268,12 +269,6 @@ export function createBrickMaterial(): THREE.MeshStandardMaterial {
   g.fillStyle = '#d7d2c6';
   g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
   g.fillRect(wx, wy + wh * 0.35, ww, 4);
-  // 窓の左右の白い石の隅（両端の柱の飾り）
-  g.fillStyle = '#d3ccbd';
-  for (let y = 6; y < H - 12; y += 22) {
-    g.fillRect(0, y, 10, 10);
-    g.fillRect(W - 10, y + 11, 10, 10);
-  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;

@@ -347,10 +347,45 @@ const BIG_ROOFS = {
   'bldg_26d9fc02-3d05-4c22-b1b0-4af3cc17230e': '高輪ゲートウェイ駅',
 };
 const ROOF_THICKNESS = 2;
+const PLAZA_IDS = [
+  'bldg_a16cfc59-110f-47f0-b622-2daff1b7c077',
+  'bldg_0adb2df8-9ce1-4856-a6cc-0a56a98b1a33',
+  'bldg_d789a902-8a89-4c5d-9766-23981f07b436',
+  'bldg_3782687d-cc34-4fab-b3f6-728a90e5ac0a',
+  'bldg_368795e4-4ea5-4aad-92d8-1524d8463f4a',
+  'bldg_194048b0-76a1-4362-af9f-8022455c92f5',
+  'bldg_1fcee33e-3608-4265-97b1-120f64967d35',
+  'bldg_28d19c58-bee3-47e2-bf73-7e8777e6e915',
+  'bldg_2e0506ad-1f0e-4177-8f15-72f634343529',
+  'bldg_3b79ea3c-daf4-422a-beb5-20f6b4269d48',
+  'bldg_46468e66-bf4d-45ea-8c3f-96a2ad476673',
+  'bldg_48fab8e2-9b16-43c2-8f67-4d8c0b64bd63',
+  'bldg_4fd39851-e5e6-4e0e-9a32-c2b50b8d96ab',
+  'bldg_577c07aa-dd00-4792-b3da-686f72153228',
+  'bldg_5fddebc8-9ca4-47d5-a9e0-8f02ab7df171',
+  'bldg_5ffc2bd4-bd77-45b9-9c03-08520a0220ae',
+  'bldg_6831738f-19f5-4d7b-8cb8-bb132543fd85',
+  'bldg_6b06fc06-9eb4-4534-a7b4-792eff042182',
+  'bldg_6da3a696-44fd-4b36-bb0b-0b4ea987fdfe',
+  'bldg_74f37035-2f67-4adb-bf92-8e44b91988bf',
+  'bldg_8ef4229b-0d7e-45a0-b59e-39f1d2c37ede',
+  'bldg_9a631ab3-c153-4167-a85a-2c9703ee1169',
+  'bldg_a144b000-fa6f-4761-b627-9100c8c978c1',
+  'bldg_a167d98a-a942-42f3-9b71-a85483c86a89',
+  'bldg_b6493c4f-d0dd-4017-8056-783ec82785df',
+  'bldg_c2f71b82-6c33-450c-8be5-78a13b2de3a5',
+  'bldg_c4fa981d-b14f-4cb0-821b-a95c0f98447f',
+  'bldg_d25d1e98-1372-45fc-ba92-0b44b9d0021f',
+  'bldg_d6daf92c-7567-4e57-a191-2f3059213dc8',
+  'bldg_dd63f862-3392-481a-b590-7f1b3c1b8591',
+  'bldg_f74cea45-e523-47f8-8cb0-afae9cd5497f',
+];
 /** 作り込んだ形に置き換える建物（src/world/landmarks/Landmarks.ts の gmlId と同じ）。丸ごと消す */
 const REPLACED_BY_LANDMARK = new Set([
   // 東京駅丸の内駅舎
   'bldg_6af58cef-669e-4aca-bc01-355e870d1ad5',
+  // 丸の内駅前広場の低い建物（地下への入口・換気塔など。広場を作り直すので消す）
+  ...PLAZA_IDS,
 ]);
 
 /** 上から見た点の並びを囲む、一番細い向きの長方形：{ ring（平面の m）, length, width } */

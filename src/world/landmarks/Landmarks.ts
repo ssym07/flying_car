@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { TERRAIN } from '../../core/config';
 import type { ChunkListener, Terrain } from '../Terrain';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildMarunouchiPlaza, createStoneMaterial, type PlazaParts } from './marunouchiPlaza';
 import { buildTokyoStation, createBrickMaterial } from './tokyoStation';
 
 /**
@@ -33,10 +35,44 @@ const LANDMARKS: Landmark[] = [
       group.add(new THREE.Mesh(parts.roof, materials().roof));
       group.add(new THREE.Mesh(parts.trim, materials().trim));
       group.add(new THREE.Mesh(parts.canopy, materials().canopy));
+      // 丸の内駅前広場
+      const plaza = buildMarunouchiPlaza(length);
+      for (const [name, list] of Object.entries(plaza) as Array<[keyof PlazaParts, THREE.BufferGeometry[]]>) {
+        if (list.length === 0) continue;
+        const merged = mergeGeometries(list.map((g) => (g.index ? g.toNonIndexed() : g)).map(keepPositionUv));
+        for (const g of list) g.dispose();
+        if (!merged) continue;
+        merged.computeVertexNormals();
+        group.add(new THREE.Mesh(merged, plazaMaterials()[name]));
+      }
       return group;
     },
   },
 ];
+
+/** 位置と uv だけにそろえる（まとめるため） */
+function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'uv') g.deleteAttribute(name);
+  if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+  return g;
+}
+
+let plazaShared: Record<keyof PlazaParts, THREE.Material> | null = null;
+function plazaMaterials() {
+  const flat = (color: number, roughness = 0.9) => new THREE.MeshStandardMaterial({ color, roughness });
+  plazaShared ??= {
+    stone: createStoneMaterial(),
+    lawn: flat(0x6f9e4c),
+    asphalt: flat(0x45474c),
+    curb: flat(0xc4c2bc),
+    marking: flat(0xeeeeea, 0.7),
+    glass: new THREE.MeshStandardMaterial({ color: 0xa9bcc8, roughness: 0.2, metalness: 0.3 }),
+    trunk: flat(0x6b4b36),
+    leaves: flat(0x55893f),
+    pine: flat(0x2f5a34),
+  };
+  return plazaShared;
+}
 
 let shared: Record<'brick' | 'roof' | 'trim' | 'canopy', THREE.Material> | null = null;
 function materials() {
