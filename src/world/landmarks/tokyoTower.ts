@@ -39,6 +39,9 @@ function halfWidth(h: number): number {
   return PROFILE[PROFILE.length - 1][1];
 }
 
+/** 主柱の間の面を分ける区画の幅 (m) */
+const FACE_PANEL = 16;
+
 /** 高さ h (m) での主柱（四隅の四角い骨組み）の断面の一辺 (m)。下の 45m で 10m → 4m、上は 1.6m まで細くなる */
 function legSize(h: number): number {
   return h < 45 ? THREE.MathUtils.lerp(10, 4, h / 45) : THREE.MathUtils.lerp(4, 1.6, Math.min(1, (h - 45) / 205));
@@ -88,7 +91,7 @@ export function buildTokyoTower(cx: number): TowerParts {
   const levels: number[] = [0];
   while (levels[levels.length - 1] < 250) {
     const h = levels[levels.length - 1];
-    levels.push(Math.min(250, h + THREE.MathUtils.clamp(legSize(h) * 0.75, 2.5, 6)));
+    levels.push(Math.min(250, h + THREE.MathUtils.clamp(legSize(h) * 1.1, 3.5, 8)));
   }
   /** 主柱 (sx, sz) の高さ h の断面の4点：外側の角、面 x に沿った内側、内側の角、面 z に沿った内側 */
   const section = (h: number, sx: number, sz: number) => {
@@ -110,8 +113,8 @@ export function buildTokyoTower(cx: number): TowerParts {
         beam(lo[k], hi[k], t * (k === 2 ? 0.8 : 1));
         beam(hi[k], hi[(k + 1) % 4], t * 0.45);
         // 斜材は段ごとに向きを変える（ジグザグ）。低い所は X 形
-        if (i % 2 === 0 || levels[i] < LEG_TOP) beam(lo[k], hi[(k + 1) % 4], t * 0.35);
-        if (i % 2 === 1 || levels[i] < LEG_TOP) beam(lo[(k + 1) % 4], hi[k], t * 0.35);
+        if (i % 2 === 0) beam(lo[k], hi[(k + 1) % 4], t * 0.35);
+        else beam(lo[(k + 1) % 4], hi[k], t * 0.35);
       }
     }
     // コンクリートの台座
@@ -153,17 +156,17 @@ export function buildTokyoTower(cx: number): TowerParts {
         continue;
       }
       const top = onFace(k, us[i], LEG_TOP);
-      if (pts[i].y < LEG_TOP - 1) beam(pts[i], top, 0.4);
-      if (prevPost) {
-        beam(prevPost[0], top, 0.3);
-        beam(prevPost[1], pts[i], 0.3);
+      if (i % 2 === 0 && pts[i].y < LEG_TOP - 1) {
+        beam(pts[i], top, 0.4);
+        if (prevPost) beam(prevPost[0], top, 0.3);
+        prevPost = [pts[i], top];
       }
-      prevPost = [pts[i], top];
     }
   }
 
   // 45m から上：面ごとに、主柱の間を幅 8m ほどの小さな区画に分け、縦の材と X 形の斜材を入れる（2段ごと）
   const faceLevels = levels.filter((h) => h >= LEG_TOP).filter((_, i) => i % 2 === 0);
+  // （区画の幅 FACE_PANEL m。主柱の段 2つぶんで1段）
   if (faceLevels[faceLevels.length - 1] !== 250) faceLevels.push(250);
   for (let k = 0; k < 4; k++) {
     for (let i = 1; i < faceLevels.length; i++) {
@@ -171,7 +174,7 @@ export function buildTokyoTower(cx: number): TowerParts {
       const h1 = faceLevels[i];
       const span = inner(h0) * 2;
       if (span < 0.5) continue;
-      const n = Math.max(1, Math.round(span / 8));
+      const n = Math.max(1, Math.round(span / FACE_PANEL));
       const t = THREE.MathUtils.lerp(0.5, 0.25, h0 / 250);
       for (let j = 0; j < n; j++) {
         const u0 = (a: number) => inner(a) * (1 - (2 * j) / n);
