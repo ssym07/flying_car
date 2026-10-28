@@ -164,11 +164,14 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
             // 線路の敷地：砂利
             col = lu_ballast * (0.7 + luHash(floor(w * 6.0)) * 0.45) * (0.9 + big * 0.15);
           } else if (kind < 2.5) {
-            // 墓地：石畳に墓石の並び
+            // 墓地：石畳に墓石の並び。6区画ごとに通路を空け、ところどころ空き区画にする
             col = lu_stone * (0.92 + fine * 0.1);
+            vec2 cell = floor(vec2(along / 2.2, across / 2.6));
             vec2 g = vec2(mod(along, 2.2), mod(across, 2.6));
+            float aisle = step(5.0, mod(cell.x, 6.0)) + step(3.0, mod(cell.y, 4.0));
             float grave = step(0.4, g.x) * step(g.x, 1.4) * step(0.5, g.y) * step(g.y, 1.7);
-            col = mix(col, lu_grave * (0.85 + luHash(floor(vec2(along / 2.2, across / 2.6))) * 0.3), grave);
+            grave *= (1.0 - clamp(aisle, 0.0, 1.0)) * step(0.12, luHash(cell + 7.0));
+            col = mix(col, lu_grave * (0.8 + luHash(cell) * 0.4), grave);
           } else if (kind < 3.5) {
             // 寺社の境内：白い玉砂利
             col = lu_gravel * (0.85 + luHash(floor(w * 8.0)) * 0.25);
