@@ -23,6 +23,7 @@ import {
   createBlueGlassMaterial,
   createDarkFacadeMaterial,
   createMoriGlassMaterial,
+  createStationGlassMaterial,
 } from './toranomonHills';
 import { buildTokyoTower } from './tokyoTower';
 
@@ -177,6 +178,7 @@ function toranomonGroup(parts: ToranomonParts): THREE.Group {
     mori: createMoriGlassMaterial(),
     glass: createBlueGlassMaterial(),
     dark: createDarkFacadeMaterial(),
+    station: createStationGlassMaterial(),
     accent: new THREE.MeshStandardMaterial({ color: 0x7fb3a0, roughness: 0.15, metalness: 0.4, transparent: true, opacity: 0.9 }),
     white: new THREE.MeshStandardMaterial({ color: 0xe3e6e9, roughness: 0.5 }),
     podium: new THREE.MeshStandardMaterial({ color: 0x9a9890, roughness: 0.8 }),

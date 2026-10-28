@@ -11,7 +11,8 @@ import { FLOOR, cap, extrudeWalls, facadeMaterial, roundedRect } from './azabuda
  *   オーバル広場の上へ張り出す白い縁の楕円の庇
  * - ビジネスタワー（2020年、185m）：角を落とした四角いガラスの塔。片側に緑の段々の低層部
  * - レジデンシャルタワー（2022年、220m）：暗い灰色の縦の筋の四角い塔
- * - ステーションタワー（2023年、266m）：ガラスの塔の頂部に、四隅の柱だけ残した吹き抜け（TOKYO NODE）
+ * - ステーションタワー（2023年、266m）：四隅を切り欠いた十字形の平面が上へ細くなる、白い縦のフィンの多い銀青色の
+ *   ガラスの塔。頂部は段違いの塔屋。足元はガラスの低層部と、その上を巻いて南へ張り出す白い帯（門の形）
  */
 export interface ToranomonParts {
   /** 森タワーの明るい銀色がかったガラス */
@@ -22,13 +23,15 @@ export interface ToranomonParts {
   dark: THREE.BufferGeometry;
   /** 森タワーの足元の緑のガラスの箱 */
   accent: THREE.BufferGeometry;
+  /** ステーションタワーの、白い縦のフィンの多い銀青色のガラス */
+  station: THREE.BufferGeometry;
   white: THREE.BufferGeometry;
   podium: THREE.BufferGeometry;
   green: THREE.BufferGeometry;
 }
 
 type Lists = Record<keyof ToranomonParts, THREE.BufferGeometry[]>;
-const empty = (): Lists => ({ mori: [], glass: [], dark: [], accent: [], white: [], podium: [], green: [] });
+const empty = (): Lists => ({ mori: [], glass: [], dark: [], accent: [], station: [], white: [], podium: [], green: [] });
 
 export function buildToranomonMori(cx: number): ToranomonParts {
   const p = empty();
@@ -121,30 +124,91 @@ export function buildToranomonResidential(cx: number): ToranomonParts {
 export function buildToranomonStation(cx: number): ToranomonParts {
   const p = empty();
   const H = 266;
-  const W = 70;
-  const D = 56;
-  const body = H - 22;
-  const shape = roundedRect(W, D, 4);
-  p.glass.push(extrudeWalls(shape, cx, 0, body));
-  p.white.push(cap(shape, cx, body));
-  // 頂部の吹き抜け：四隅の柱と、上の縁の梁（ガラスの帯）
-  for (const [sx, sz] of [
-    [1, 1],
-    [-1, 1],
-    [-1, -1],
-    [1, -1],
-  ]) {
-    p.glass.push(extrudeWalls(roundedRect(14, 12, 2), cx + sx * (W / 2 - 7), body, H - 4, sz * (D / 2 - 6)));
-  }
-  const ring = new THREE.Shape(shape.getPoints(6));
-  ring.holes.push(new THREE.Path(roundedRect(W - 12, D - 12, 2).getPoints(6)));
-  p.glass.push(
-    new THREE.ExtrudeGeometry(ring, { depth: 4, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(cx, H - 4, 0),
-  );
-  p.green.push(new THREE.BoxGeometry(W - 14, 0.6, D - 14).translate(cx, body + 1.8, 0));
-  // 足元の低層部（駅前広場側に張り出す）
-  p.podium.push(new THREE.BoxGeometry(W + 30, 20, D + 16).translate(cx, 10, 0));
+  const BASE = 52;
+  // 塔：四隅を切り欠いた十字形の平面（70×58m、切り欠き 7m）が、上へ向かって細くなる（頂部で 0.68 倍）
+  const plan = notchedRect(70, 58, 7);
+  const scale = (h: number) => THREE.MathUtils.lerp(1, 0.68, (h - BASE) / (H - BASE));
+  p.station.push(loftPolygon(cx, 0, BASE, H - 14, plan, scale));
+  p.white.push(capPolygon(cx, H - 14, plan, scale(H - 14)));
+  // 頂部：一回り細い塔屋が片側に寄って 14m 突き出る（写真の、段違いの頂部）
+  const crown = notchedRect(40, 40, 5).map((q) => new THREE.Vector2(q.x + 6, q.y));
+  p.station.push(loftPolygon(cx, 0, H - 14, H, crown, (h) => scale(h) / scale(H - 14)));
+  p.white.push(capPolygon(cx, H, crown, scale(H) / scale(H - 14)));
+  // 足元：ガラスの低層部（0〜40m）と、その上の白い帯の張り出し（40〜52m）。南側へ 16m 張り出して門の形をつくる
+  p.station.push(extrudeWalls(roundedRect(84, 66, 2), cx, 0, 40));
+  p.white.push(new THREE.BoxGeometry(92, 12, 74).translate(cx, 46, 8));
+  p.white.push(new THREE.BoxGeometry(30, 12, 18).translate(cx - 18, 46, 52));
+  p.podium.push(new THREE.BoxGeometry(30, 0.4, 18).translate(cx - 18, 39.8, 52));
+  // 低層部の階段状の緑（正面の大階段）
+  for (let k = 0; k < 4; k++) p.green.push(new THREE.BoxGeometry(20, 3, 6).translate(cx + 30, 1.5 + k * 3, 36 + k * 5));
   return finish(p);
+}
+
+/** 四隅を n m 切り欠いた長方形（中心が原点）の点（反時計回り） */
+function notchedRect(w: number, d: number, n: number): THREE.Vector2[] {
+  const x = w / 2;
+  const y = d / 2;
+  return [
+    [x, -y + n],
+    [x, y - n],
+    [x - n, y - n],
+    [x - n, y],
+    [-x + n, y],
+    [-x + n, y - n],
+    [-x, y - n],
+    [-x, -y + n],
+    [-x + n, -y + n],
+    [-x + n, -y],
+    [x - n, -y],
+    [x - n, -y + n],
+  ].map(([a, b]) => new THREE.Vector2(a, b));
+}
+
+/** 平面 pts を、高さ h で scale(h) 倍にしながら y0〜y1 に積んだ外壁（BASE までは等倍）。u = 周の長さ / 3m、v = 高さ / FLOOR */
+function loftPolygon(
+  cx: number,
+  base: number,
+  y0: number,
+  y1: number,
+  pts: THREE.Vector2[],
+  scale: (h: number) => number,
+): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const rows: number[] = [];
+  for (let h = y0; h < y1; h += 12) rows.push(h);
+  rows.push(y1);
+  const k = (h: number) => (h <= base ? 1 : scale(h));
+  for (let i = 1; i < rows.length; i++) {
+    const h0 = rows[i - 1];
+    const h1 = rows[i];
+    let s = 0;
+    for (let j = 0; j < pts.length; j++) {
+      const a = pts[j];
+      const b = pts[(j + 1) % pts.length];
+      const len = a.distanceTo(b) * k(h0);
+      const u0 = s / 3;
+      const u1 = (s + len) / 3;
+      s += len;
+      const P = (q: THREE.Vector2, h: number) => [cx + q.x * k(h), h, q.y * k(h)];
+      pos.push(...P(a, h0), ...P(b, h0), ...P(b, h1), ...P(a, h0), ...P(b, h1), ...P(a, h1));
+      uv.push(u0, h0 / FLOOR, u1, h0 / FLOOR, u1, h1 / FLOOR, u0, h0 / FLOOR, u1, h1 / FLOOR, u0, h1 / FLOOR);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+
+/** 平面 pts（scale 倍）の上のふた（厚み 1.5m） */
+function capPolygon(cx: number, y: number, pts: THREE.Vector2[], scale: number): THREE.BufferGeometry {
+  return new THREE.ExtrudeGeometry(new THREE.Shape(pts.map((q) => q.clone().multiplyScalar(scale))), {
+    depth: 1.5,
+    bevelEnabled: false,
+  })
+    .rotateX(Math.PI / 2)
+    .translate(cx, y + 1.5, 0);
 }
 
 /**
@@ -230,6 +294,7 @@ function finish(p: Lists): ToranomonParts {
     glass: merge(p.glass),
     dark: merge(p.dark),
     accent: merge(p.accent),
+    station: merge(p.station),
     white: merge(p.white),
     podium: merge(p.podium),
     green: merge(p.green),
@@ -295,4 +360,23 @@ function member(a: THREE.Vector3, b: THREE.Vector3, t: number): THREE.BufferGeom
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()));
   const mid = a.clone().add(b).multiplyScalar(0.5);
   return g.translate(mid.x, mid.y, mid.z);
+}
+
+/** ステーションタワー：銀色がかった青のガラスに、細かい白い縦のフィン（1枚 = 3m に 3本） */
+export function createStationGlassMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      const grad = g.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, '#6f8fae');
+      grad.addColorStop(1, '#5b7c9c');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#e4e9ee';
+      for (let k = 0; k < 3; k++) g.fillRect((k * W) / 3, 0, 4, H);
+      g.fillStyle = 'rgba(210,220,230,0.8)';
+      g.fillRect(0, H - 4, W, 4);
+    },
+    0.15,
+    0.5,
+  );
 }
