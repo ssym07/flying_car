@@ -215,7 +215,7 @@ function capPolygon(cx: number, y: number, pts: THREE.Vector2[], scale: number):
  * 角を丸めた長方形の平面を、高さごとに幅 w(h)・奥行き d(h) で積んだ外壁と、上のふた（上の縁の高さ top(x, w)）。
  * u = 周に沿った長さ / 3m、v = 高さ / FLOOR
  */
-function loftRounded(
+export function loftRounded(
   cx: number,
   y0: number,
   y1: number,
@@ -355,7 +355,7 @@ export function createDarkFacadeMaterial(): THREE.MeshStandardMaterial {
 }
 
 /** a から b への細い板（幅 t） */
-function member(a: THREE.Vector3, b: THREE.Vector3, t: number): THREE.BufferGeometry {
+export function member(a: THREE.Vector3, b: THREE.Vector3, t: number): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(t, a.distanceTo(b), t);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()));
   const mid = a.clone().add(b).multiplyScalar(0.5);

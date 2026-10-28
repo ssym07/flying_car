@@ -13,6 +13,7 @@ import {
   createResidenceAMaterial,
   createResidenceMaterial,
 } from './azabudaiHills';
+import { type RoppongiParts, buildRoppongiMoriTower, createRoppongiGlassMaterial } from './roppongiHills';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -57,6 +58,25 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 六本木ヒルズ森タワー（PLATEAU には塔が無く、足元の複合施設だけがあるので、何も消さずに塔を置く）
+    gmlId: '',
+    ...around(35.66046, 139.7293, 80),
+    front: -1,
+    build: (length) => {
+      roppongiShared ??= {
+        glass: createRoppongiGlassMaterial(),
+        white: new THREE.MeshStandardMaterial({ color: 0xe4e7ea, roughness: 0.5 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x6a6e73, roughness: 0.6 }),
+      };
+      const parts = buildRoppongiMoriTower(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof RoppongiParts>) {
+        group.add(new THREE.Mesh(parts[key], roppongiShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 虎ノ門ヒルズ森タワー（PLATEAU には塔が無く、広場の平らな板だけなので、それを消して置く）
     gmlId: 'bldg_96c9d242-0fc6-4364-aeae-c21102718c35',
@@ -171,6 +191,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let roppongiShared: Record<keyof RoppongiParts, THREE.Material> | null = null;
 
 let toranomonShared: Record<keyof ToranomonParts, THREE.Material> | null = null;
 function toranomonGroup(parts: ToranomonParts): THREE.Group {
@@ -321,4 +343,4 @@ function chunkOf(lm: Landmark): string {
 }
 
 /** 置き換える PLATEAU の建物の ID（scripts/build-station-cutouts.mjs に同じものを書く） */
-export const REPLACED_GML_IDS = LANDMARKS.map((lm) => lm.gmlId);
+export const REPLACED_GML_IDS = LANDMARKS.map((lm) => lm.gmlId).filter((id) => id !== '');
