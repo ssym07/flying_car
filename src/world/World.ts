@@ -5,6 +5,7 @@ import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
 import { ExpresswayNetwork } from './ExpresswayNetwork';
 import { Labels } from './Labels';
+import { Landmarks } from './landmarks/Landmarks';
 import { RailNetwork } from './RailNetwork';
 import { RoadNetwork } from './RoadNetwork';
 import { StationRoofs } from './StationRoofs';
@@ -27,6 +28,8 @@ export class World {
   readonly expressways: ExpresswayNetwork;
   /** 駅の屋根 */
   readonly stationRoofs: StationRoofs;
+  /** 作り込んだ建物（東京駅丸の内駅舎など） */
+  readonly landmarks: Landmarks;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
@@ -69,6 +72,7 @@ export class World {
     this.rails = new RailNetwork(this.terrain);
     this.expressways = new ExpresswayNetwork(this.terrain);
     this.stationRoofs = new StationRoofs(this.terrain);
+    this.landmarks = new Landmarks(this.terrain);
     this.scene.add(
       ...this.layers.map((l) => l.group),
       this.terrain.group,
@@ -77,8 +81,15 @@ export class World {
       this.rails.group,
       this.expressways.group,
       this.stationRoofs.group,
+      this.landmarks.group,
     );
-    this.colliders = [...this.layers.map((l) => l.group), this.terrain.group, this.stationRoofs.group, this.expressways.group];
+    this.colliders = [
+      ...this.layers.map((l) => l.group),
+      this.terrain.group,
+      this.stationRoofs.group,
+      this.expressways.group,
+      this.landmarks.group,
+    ];
 
     // 地形の外側の平面（ローカル座標の y=0 は原点の楕円体高）。
     // ゼロメートル地帯（標高 -4m 前後）の地形より上に出ないよう、十分低くする

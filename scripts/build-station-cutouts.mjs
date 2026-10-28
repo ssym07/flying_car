@@ -337,7 +337,7 @@ console.warn = (...args) => {
   warn(...args);
 };
 const evaluator = new Evaluator();
-const stats = { removed: 0, supported: 0, unsupported: 0, platformBoxes: 0, bigRoofs: 0 };
+const stats = { removed: 0, supported: 0, unsupported: 0, platformBoxes: 0, bigRoofs: 0, landmarks: 0 };
 
 /**
  * 大屋根の駅舎（PLATEAU では中の詰まった箱になっている）：ホームの箱として消さず、上の ROOF_THICKNESS m だけ残して
@@ -347,6 +347,11 @@ const BIG_ROOFS = {
   'bldg_26d9fc02-3d05-4c22-b1b0-4af3cc17230e': '高輪ゲートウェイ駅',
 };
 const ROOF_THICKNESS = 2;
+/** 作り込んだ形に置き換える建物（src/world/landmarks/Landmarks.ts の gmlId と同じ）。丸ごと消す */
+const REPLACED_BY_LANDMARK = new Set([
+  // 東京駅丸の内駅舎
+  'bldg_6af58cef-669e-4aca-bc01-355e870d1ad5',
+]);
 
 /** 上から見た点の並びを囲む、一番細い向きの長方形：{ ring（平面の m）, length, width } */
 function orientedBox(pts) {
@@ -463,6 +468,15 @@ function cutGlb(glb, origin, gmlIds = null) {
         low = Math.min(low, h);
         high = Math.max(high, h);
       }
+    }
+    // 作り込んだ形に置き換える建物は、丸ごと消す
+    if (REPLACED_BY_LANDMARK.has(gmlIds?.[b])) {
+      const empty = new THREE.BufferGeometry();
+      empty.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+      empty.setAttribute('normal', new THREE.Float32BufferAttribute([], 3));
+      replaced.set(b, empty);
+      stats.landmarks++;
+      continue;
     }
     // 建物に重なる通り道（高さも建物の範囲にかかるもの）
     const hits = corridorsIn([minX, minY, maxX, maxY]).filter((ci) => {
@@ -954,7 +968,7 @@ for (const ward of only.length > 0 ? wards.filter((w) => only.includes(w)) : war
 }
 console.log(
   `total: ${totalTiles} tiles, ${totalBuildings} buildings (${stats.platformBoxes} platform boxes removed, ` +
-    `${stats.bigRoofs} big station roofs)`,
+    `${stats.bigRoofs} big station roofs, ${stats.landmarks} replaced by landmarks)`,
 );
 console.log(
   `floating parts: ${stats.removed} thin leftovers removed, ${stats.supported} supported by pillars, ` +
