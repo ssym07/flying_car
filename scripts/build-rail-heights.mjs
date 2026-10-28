@@ -930,7 +930,7 @@ for (const r of runs) {
 }
 // トンネルの入口：並んだ線路の入口をまとめる。
 // [緯度, 経度（1e-6度）, 向き（0.1度、東が 0 で北へ回る）, レール面の高さ（0.1m、地面から）, 地下鉄(0/1),
-//  [各線路の、入口の中心からの左右の位置（0.1m、トンネルへ向かって左が正）...]]
+//  [各線路の、入口の中心からの左右の位置（0.1m、トンネルへ向かって左が正）...], [各線路の端の、正面からの位置（0.1m、手前が負）...]]
 {
   const used = new Set();
   for (const [k, dir] of portals) {
@@ -940,13 +940,25 @@ for (const r of runs) {
     );
     for (const [k2] of group) used.add(k2);
     const ps = group.map(([k2]) => nodes.get(k2).p);
-    const c = [ps.reduce((s2, p) => s2 + p[0], 0) / ps.length, ps.reduce((s2, p) => s2 + p[1], 0) / ps.length];
+    // 入口の正面は、一番奥（トンネルの向き）の線路の端にそろえる（手前で終わる線路は、正面まで延ばす）
+    const along = ps.map((p) => xy(p)[0] * dir[0] + xy(p)[1] * dir[1]);
+    const front = Math.max(...along);
+    const mean = [ps.reduce((s2, p) => s2 + p[0], 0) / ps.length, ps.reduce((s2, p) => s2 + p[1], 0) / ps.length];
+    const m = xy(mean);
+    const shift = front - (m[0] * dir[0] + m[1] * dir[1]);
+    const o = [m[0] + dir[0] * shift, m[1] + dir[1] * shift];
+    const c = [o[1] / MY, o[0] / MX];
     const side = [-dir[1], dir[0]];
-    const o = xy(c);
-    const across = ps.map((p) => {
-      const q = xy(p);
+    const order = ps.map((p, i) => i).sort((a, b) => {
+      const qa = xy(ps[a]);
+      const qb = xy(ps[b]);
+      return (qa[0] - o[0]) * side[0] + (qa[1] - o[1]) * side[1] - ((qb[0] - o[0]) * side[0] + (qb[1] - o[1]) * side[1]);
+    });
+    const across = order.map((i) => {
+      const q = xy(ps[i]);
       return Math.round(((q[0] - o[0]) * side[0] + (q[1] - o[1]) * side[1]) * 10);
     });
+    const behind = order.map((i) => Math.round((along[i] - front) * 10));
     const offset = Math.min(...group.map(([k2]) => nodes.get(k2).offset));
     const run = runOf.get(k);
     if (!run) continue;
@@ -957,7 +969,8 @@ for (const r of runs) {
       Math.round(((Math.atan2(dir[1], dir[0]) * 180) / Math.PI) * 10),
       Math.round(offset * 10),
       group.some(([k2]) => runOf.get(k2)?.subway) ? 1 : 0,
-      across.sort((a, b) => a - b),
+      across,
+      behind,
     ]);
   }
 }

@@ -49,6 +49,8 @@ export class Terrain {
   private readonly listeners: ChunkListener[] = [];
   /** 地形を削る線（掘割の線路など）。キーごとに登録し、今あるチャンクとこれから作るチャンクに当てる */
   private readonly carves = new Map<string, Carve>();
+  /** 地形を描かない掘割（addTrench）。キーごとに登録する */
+  private readonly trenches = new Map<string, { lines: THREE.Vector3[][]; box: THREE.Box3 }>();
   /** 写真が取れなかったチャンク用（[本体, 縁の壁]） */
   private readonly materials: THREE.Material[];
 
@@ -73,21 +75,95 @@ export class Terrain {
   }
 
   /**
-   * チャンク (x, y) の「描かない所」の画像を差し替える（トンネルの入口へ下りる掘割の内側。地形の頂点の間隔では
-   * 深く細い掘割を削れないので、内側の地形は描かずに、線路側で底と擁壁を描く）。画像の形式は addTrenchMask を参照。
-   * null で元に戻す。チャンクが無ければ画像を捨てる
+   * 「描かない所」：トンネルの入口へ下りる掘割の中心線（ローカル座標）。地形の頂点の間隔では深く細い掘割を削りきれないので、
+   * 中心線から RAILWAYS.portal.retainOffset m 以内の地形は描かず、線路側で底と擁壁を描く。
+   * 掘割はチャンクの境目をまたぐので、かかるチャンクすべての画像を作り直す
    */
-  setTrenchMask(x: number, y: number, mask: THREE.Texture | null): void {
-    const chunk = this.chunks.get(`${x}/${y}`);
-    const uniform = (chunk?.mesh?.material as THREE.Material[] | undefined)?.[0]?.userData.trench as
+  addTrench(key: string, lines: THREE.Vector3[][]): void {
+    const box = new THREE.Box3();
+    for (const line of lines) for (const p of line) box.expandByPoint(p);
+    this.trenches.set(key, { lines, box });
+    for (const chunk of this.chunks.values()) if (chunk.mesh && this.trenchTouches(chunk, box)) this.updateTrenchMask(chunk);
+  }
+
+  removeTrench(key: string): void {
+    const trench = this.trenches.get(key);
+    if (!trench) return;
+    this.trenches.delete(key);
+    for (const chunk of this.chunks.values()) {
+      if (chunk.mesh && this.trenchTouches(chunk, trench.box)) this.updateTrenchMask(chunk);
+    }
+  }
+
+  private trenchTouches(chunk: Chunk, box: THREE.Box3): boolean {
+    const bounds = (chunk.mesh!.geometry as THREE.BufferGeometry).boundingBox;
+    if (!bounds) return true;
+    const r = RAILWAYS.portal.maskRange;
+    return !(
+      box.max.x + r < bounds.min.x ||
+      box.min.x - r > bounds.max.x ||
+      box.max.z + r < bounds.min.z ||
+      box.min.z - r > bounds.max.z
+    );
+  }
+
+  /** チャンクの「描かない所」の画像を、かかる掘割すべてから作り直す（赤 = 中心線からの距離 / maskRange） */
+  private updateTrenchMask(chunk: Chunk): void {
+    const uniform = (chunk.mesh?.material as THREE.Material[] | undefined)?.[0]?.userData.trench as
       | { value: THREE.Texture }
       | undefined;
-    if (!uniform) {
-      mask?.dispose();
-      return;
+    if (!uniform) return;
+    const { maskSize: S, maskRange } = RAILWAYS.portal;
+    const n = 2 ** TERRAIN.demZoom;
+    const segments: Array<[[number, number], [number, number]]> = [];
+    let metersPerPx = 0;
+    for (const { lines, box } of this.trenches.values()) {
+      if (!this.trenchTouches(chunk, box)) continue;
+      for (const line of lines) {
+        const px = line.map((p) => {
+          const ll = this.toLatLon(p);
+          if (!ll) return null;
+          metersPerPx ||= (40075016 * Math.cos(THREE.MathUtils.degToRad(ll.lat))) / n / S;
+          const tx = ((ll.lon + 180) / 360) * n;
+          const ty = ((1 - Math.asinh(Math.tan(THREE.MathUtils.degToRad(ll.lat))) / Math.PI) / 2) * n;
+          return [(tx - chunk.x) * S, (ty - chunk.y) * S] as [number, number];
+        });
+        for (let i = 1; i < px.length; i++) if (px[i - 1] && px[i]) segments.push([px[i - 1]!, px[i]!]);
+      }
     }
     if (uniform.value !== noTrench) uniform.value.dispose();
-    uniform.value = mask ?? noTrench;
+    if (segments.length === 0) {
+      uniform.value = noTrench;
+      return;
+    }
+    const reach = maskRange / metersPerPx;
+    const data = new Uint8Array(S * S).fill(255);
+    for (const [a, b] of segments) {
+      const x0 = Math.max(0, Math.floor(Math.min(a[0], b[0]) - reach));
+      const x1 = Math.min(S - 1, Math.ceil(Math.max(a[0], b[0]) + reach));
+      const y0 = Math.max(0, Math.floor(Math.min(a[1], b[1]) - reach));
+      const y1 = Math.min(S - 1, Math.ceil(Math.max(a[1], b[1]) + reach));
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len2 = dx * dx + dy * dy || 1;
+      for (let row = y0; row <= y1; row++) {
+        for (let col = x0; col <= x1; col++) {
+          const cx = col + 0.5;
+          const cy = row + 0.5;
+          const t = Math.min(1, Math.max(0, ((cx - a[0]) * dx + (cy - a[1]) * dy) / len2));
+          const d = Math.hypot(cx - a[0] - dx * t, cy - a[1] - dy * t) * metersPerPx;
+          const v = Math.min(255, Math.round((d / maskRange) * 255));
+          // 画像の行 0 が v = 0（南）。写真（北が上）と同じ uv で貼るので上下を入れ替える
+          const k = (S - 1 - row) * S + col;
+          if (v < data[k]) data[k] = v;
+        }
+      }
+    }
+    const texture = new THREE.DataTexture(data, S, S, THREE.RedFormat);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    uniform.value = texture;
   }
 
   addListener(listener: ChunkListener): void {
@@ -268,6 +344,8 @@ export class Terrain {
       // 地面の種類（データが無くても住宅地の敷地のテンプレートで塗る）があるので、チャンクごとに材質を作る
       chunk.mesh = new THREE.Mesh(geometry, createMaterials(map, water, parks?.texture ?? null, landuse));
       applyCarves(chunk.mesh, [...this.carves.values()], false);
+      geometry.computeBoundingBox();
+      this.updateTrenchMask(chunk);
       geometry.computeBoundsTree();
       chunk.heights = heights;
       this.group.add(chunk.mesh);
@@ -382,7 +460,7 @@ noTrench.needsUpdate = true;
 
 /**
  * 地形の材質に「描かない所」を足す。画像（写真と同じ uv）の赤は、掘割の中心線からの距離を RAILWAYS.portal.maskRange m で
- * 0〜1 にしたもの。擁壁の内側（RAILWAYS.portal.retainOffset m より近い所）は描かない。画像は setTrenchMask で後から差し替える
+ * 0〜1 にしたもの。擁壁の内側（RAILWAYS.portal.retainOffset m より近い所）は描かない。画像は Terrain.addTrench で後から作り直す
  */
 function addTrenchMask(material: THREE.MeshStandardMaterial): void {
   const uniform = { value: noTrench as THREE.Texture };

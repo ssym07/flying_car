@@ -6,9 +6,10 @@ import type { Terrain } from './Terrain';
 
 /**
  * トンネルの入口（坑口）：[緯度, 経度（1e-6度）, 向き（0.1度、東が 0 で北へ回る）, レール面の高さ（0.1m、地面から）,
- * 地下鉄(0/1), [各線路の、入口の中心からの左右の位置（0.1m、トンネルへ向かって左が正）...]]
+ * 地下鉄(0/1), [各線路の、入口の中心からの左右の位置（0.1m、トンネルへ向かって左が正。小さい順）...],
+ * [各線路の端の、正面からの位置（0.1m、手前が負）...]]
  */
-export type PortalRecord = [number, number, number, number, 0 | 1, number[]];
+export type PortalRecord = [number, number, number, number, 0 | 1, number[], number[]?];
 
 /** 入口へ下りる掘割の線路1本：中心線の点（レール面）、各点の左向きの単位ベクトル、各点のレール面の地面からの高さ */
 export interface Approach {
@@ -43,7 +44,7 @@ export class TunnelPortalBuilder {
     return h === null ? null : this.terrain.toLocal(ll.lat, ll.lon, h).y;
   }
 
-  addPortal([lat6, lon6, angle10, offset10, subway, across10]: PortalRecord): void {
+  addPortal([lat6, lon6, angle10, offset10, subway, across10, behind10]: PortalRecord): void {
     const lat = lat6 / 1e6;
     const lon = lon6 / 1e6;
     const ground = this.terrain.surfaceHeightAt(lat, lon);
@@ -60,7 +61,8 @@ export class TunnelPortalBuilder {
     const frame = new THREE.Matrix4().makeBasis(side, UP, forward).setPosition(center);
 
     // 開口部：近い線路はまとめる（地下鉄は複線で1つ。それ以外は柱が立たないほど近い時だけ）
-    const tracks = across10.map((v) => v / 10).sort((x, y) => x - y);
+    // 左右の位置は小さい順に並んでいる（端の位置もその順）
+    const tracks = across10.map((v) => v / 10);
     const openings: Array<{ left: number; right: number; count: number }> = [];
     for (const u of tracks) {
       const last = openings[openings.length - 1];
@@ -164,10 +166,11 @@ export class TunnelPortalBuilder {
       this.lining.push(end.applyMatrix4(frame).toNonIndexed());
     }
 
-    // トンネルの中の線路（入口で途切れないよう、奥まで延ばす）
+    // トンネルの中の線路（入口で途切れないよう、線路の端から奥まで延ばす）
     const half = RAILWAYS.ballastWidth / 2;
-    for (const u of tracks) {
-      const rows = [0, RAILWAYS.portalDepth + P.thickness].map((z) => [
+    for (const [i, u] of tracks.entries()) {
+      const start = (behind10?.[i] ?? 0) / 10;
+      const rows = [start, RAILWAYS.portalDepth + P.thickness].map((z) => [
         this.track.vertex(at(u + half, z), 0, z / 2.4),
         this.track.vertex(at(u - half, z), 1, z / 2.4),
       ]);
@@ -177,7 +180,7 @@ export class TunnelPortalBuilder {
 
   /**
    * 入口へ下りる掘割：底（擁壁の間）と、両側のコンクリートの擁壁（上端は地面の高さ。深い所は柵の代わりに少し高く）。
-   * 掘割の内側の地形は描かない（Terrain.setTrenchMask）ので、地面より低い所はここで全部ふさぐ。
+   * 掘割の内側の地形は描かない（Terrain.addTrench）ので、地面より低い所はここで全部ふさぐ。
    * 隣を並んで走る掘割の線路がある側には擁壁を立てない（線路の間に壁が立たないように）
    */
   addRetainingWalls(approaches: Approach[]): void {

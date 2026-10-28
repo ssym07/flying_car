@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RAILWAYS, TERRAIN, WATER } from '../core/config';
+import { RAILWAYS, WATER } from '../core/config';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
 import { cutFloor, smoothGround, stationGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
@@ -78,6 +78,7 @@ export class RailNetwork implements ChunkListener {
     this.tiles.delete(key);
     this.terrain.removeCarve(`rail:${key}`);
     this.terrain.removeCarve(`rail-portal:${key}`);
+    this.terrain.removeTrench(`rail:${key}`);
     if (!tile || tile === 'loading') return;
     this.group.remove(tile);
     tile.traverse((obj) => {
@@ -117,7 +118,7 @@ export class RailNetwork implements ChunkListener {
         let run: number[] = [];
         const flush = () => {
           if (run.length > 1) {
-            // 削るのは当たり判定のため（見た目は Terrain.setTrenchMask と擁壁）。入口の側は手前で止める
+            // 削るのは当たり判定のため（見た目は Terrain.addTrench と擁壁）。入口の側は手前で止める
             // （削った影響がトンネルの上の地形まで届くと、地形が開口部の中へ垂れ下がる）
             const deep = built.lift[run[0]] < built.lift[run[run.length - 1]] ? 0 : run.length - 1;
             const end = built.pts[run[deep]];
@@ -148,8 +149,7 @@ export class RailNetwork implements ChunkListener {
     for (const p of data.p ?? []) portals.addPortal(p);
     portals.addRetainingWalls(approaches);
     // 掘割の内側の地形は描かない（地形の頂点の間隔では、深く細い掘割を削りきれない）
-    const [tx, ty] = key.split('/').map(Number);
-    this.terrain.setTrenchMask(tx, ty, this.trenchMask(tx, ty, approaches));
+    if (approaches.length > 0) this.terrain.addTrench(`rail:${key}`, approaches.map((ap) => ap.pts));
     // 掘割の線路のまわりの地形を削る
     if (cuts.length > 0) this.terrain.addCarve(`rail:${key}`, cuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
     // 入口へ下りる掘割も同じく削る（地形の頂点の間隔が広いので、擁壁の幅では削りきれない。壁の外は斜面になる）
@@ -167,59 +167,6 @@ export class RailNetwork implements ChunkListener {
     add(concrete, this.portalMaterial);
     add(lining, this.liningMaterial);
     return group;
-  }
-
-  /**
-   * チャンク (x, y) の、掘割の中心線からの距離の画像（Terrain.setTrenchMask の形式）。掘割が無ければ null
-   */
-  private trenchMask(x: number, y: number, approaches: Approach[]): THREE.Texture | null {
-    const { maskSize: S, maskRange } = RAILWAYS.portal;
-    const z = TERRAIN.demZoom;
-    const n = 2 ** z;
-    const toPx = (p: THREE.Vector3): [number, number] | null => {
-      const ll = this.terrain.toLatLon(p);
-      if (!ll) return null;
-      const tx = ((ll.lon + 180) / 360) * n;
-      const ty = ((1 - Math.asinh(Math.tan(THREE.MathUtils.degToRad(ll.lat))) / Math.PI) / 2) * n;
-      return [(tx - x) * S, (ty - y) * S];
-    };
-    const segments: Array<[[number, number], [number, number]]> = [];
-    let lat = 0;
-    for (const ap of approaches) {
-      const px = ap.pts.map(toPx);
-      for (let i = 1; i < px.length; i++) if (px[i - 1] && px[i]) segments.push([px[i - 1]!, px[i]!]);
-      lat = this.terrain.toLatLon(ap.pts[0])?.lat ?? lat;
-    }
-    if (segments.length === 0) return null;
-    const metersPerPx = (40075016 * Math.cos(THREE.MathUtils.degToRad(lat))) / n / S;
-    const reach = maskRange / metersPerPx;
-    const data = new Uint8Array(S * S).fill(255);
-    for (const [a, b] of segments) {
-      const x0 = Math.max(0, Math.floor(Math.min(a[0], b[0]) - reach));
-      const x1 = Math.min(S - 1, Math.ceil(Math.max(a[0], b[0]) + reach));
-      const y0 = Math.max(0, Math.floor(Math.min(a[1], b[1]) - reach));
-      const y1 = Math.min(S - 1, Math.ceil(Math.max(a[1], b[1]) + reach));
-      const dx = b[0] - a[0];
-      const dy = b[1] - a[1];
-      const len2 = dx * dx + dy * dy || 1;
-      for (let row = y0; row <= y1; row++) {
-        for (let col = x0; col <= x1; col++) {
-          const cx = col + 0.5;
-          const cy = row + 0.5;
-          const t = Math.min(1, Math.max(0, ((cx - a[0]) * dx + (cy - a[1]) * dy) / len2));
-          const d = Math.hypot(cx - a[0] - dx * t, cy - a[1] - dy * t) * metersPerPx;
-          const v = Math.min(255, Math.round((d / maskRange) * 255));
-          // 画像の行 0 が v = 0（南）。写真（北が上）と同じ uv で貼るので上下を入れ替える
-          const k = (S - 1 - row) * S + col;
-          if (v < data[k]) data[k] = v;
-        }
-      }
-    }
-    const texture = new THREE.DataTexture(data, S, S, THREE.RedFormat);
-    texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = THREE.LinearFilter;
-    texture.needsUpdate = true;
-    return texture;
   }
 
   /**
