@@ -39,9 +39,9 @@ function halfWidth(h: number): number {
   return PROFILE[PROFILE.length - 1][1];
 }
 
-/** 高さ h (m) での脚の断面の一辺 (m)。下の 45m だけ */
+/** 高さ h (m) での主柱（四隅の四角い骨組み）の断面の一辺 (m)。下の 45m で 10m → 4m、上は 1.6m まで細くなる */
 function legSize(h: number): number {
-  return THREE.MathUtils.lerp(10, 4, Math.min(1, h / 45));
+  return h < 45 ? THREE.MathUtils.lerp(10, 4, h / 45) : THREE.MathUtils.lerp(4, 1.6, Math.min(1, (h - 45) / 205));
 }
 
 /** 高さ h (m) の色：メインデッキの下はオレンジ、上は約 12m ごとにオレンジと白を交互に */
@@ -81,101 +81,118 @@ export function buildTokyoTower(cx: number): TowerParts {
   const beam = (a: THREE.Vector3, b: THREE.Vector3, t: number, color?: THREE.Color) =>
     steel.push(member(a, b, t, color ?? paint((a.y + b.y) / 2)));
 
-  // ---- 下の 45m：4本の脚（それぞれ四角い骨組み）と、脚の間のアーチ ----
+  // ---- 4本の主柱：地面から 250m まで続く四角い骨組み（断面 legSize、外側の角が塔の輪郭）。
+  // 一段ごとに、主柱の4つの面へ水平材と X 形の斜材を入れる。足元はコンクリートの台座 ----
   const LEG_TOP = 45;
-  const legLevels = [0, 9, 18, 27, 36, LEG_TOP];
+  const pedestals: THREE.BufferGeometry[] = [];
+  const levels: number[] = [0];
+  while (levels[levels.length - 1] < 250) {
+    const h = levels[levels.length - 1];
+    levels.push(Math.min(250, h + THREE.MathUtils.clamp(legSize(h) * 0.75, 2.5, 6)));
+  }
+  /** 主柱 (sx, sz) の高さ h の断面の4点：外側の角、面 x に沿った内側、内側の角、面 z に沿った内側 */
+  const section = (h: number, sx: number, sz: number) => {
+    const s = legSize(h);
+    const o = corner(h, sx, sz);
+    return [
+      o,
+      o.clone().add(new THREE.Vector3(-sx * s, 0, 0)),
+      o.clone().add(new THREE.Vector3(-sx * s, 0, -sz * s)),
+      o.clone().add(new THREE.Vector3(0, 0, -sz * s)),
+    ];
+  };
   for (const [sx, sz] of corners) {
-    // 脚の断面：外側の角は塔の輪郭、内側へ s(h) の四角
-    const section = (h: number) => {
-      const s = legSize(h);
-      const o = corner(h, sx, sz);
-      return [
-        o,
-        o.clone().add(new THREE.Vector3(-sx * s, 0, 0)),
-        o.clone().add(new THREE.Vector3(-sx * s, 0, -sz * s)),
-        o.clone().add(new THREE.Vector3(0, 0, -sz * s)),
-      ];
-    };
-    for (let i = 1; i < legLevels.length; i++) {
-      const lo = section(legLevels[i - 1]);
-      const hi = section(legLevels[i]);
+    for (let i = 1; i < levels.length; i++) {
+      const lo = section(levels[i - 1], sx, sz);
+      const hi = section(levels[i], sx, sz);
+      const t = THREE.MathUtils.lerp(0.9, 0.35, levels[i] / 250);
       for (let k = 0; k < 4; k++) {
-        beam(lo[k], hi[k], 0.9);
-        beam(hi[k], hi[(k + 1) % 4], 0.45);
-        beam(lo[k], hi[(k + 1) % 4], 0.35);
-        beam(lo[(k + 1) % 4], hi[k], 0.35);
+        beam(lo[k], hi[k], t * (k === 2 ? 0.8 : 1));
+        beam(hi[k], hi[(k + 1) % 4], t * 0.45);
+        // 斜材は段ごとに向きを変える（ジグザグ）。低い所は X 形
+        if (i % 2 === 0 || levels[i] < LEG_TOP) beam(lo[k], hi[(k + 1) % 4], t * 0.35);
+        if (i % 2 === 1 || levels[i] < LEG_TOP) beam(lo[(k + 1) % 4], hi[k], t * 0.35);
       }
     }
+    // コンクリートの台座
+    const base = corner(0, sx, sz).add(new THREE.Vector3((-sx * legSize(0)) / 2, 0, (-sz * legSize(0)) / 2));
+    pedestals.push(new THREE.BoxGeometry(legSize(0) + 2, 5, legSize(0) + 2).translate(base.x, 1.5, base.z));
   }
-  // 脚の間のアーチ（各面）：両側の脚の内側の柱（角から legSize ぶん内側）から立ち上がり、面の中央で LEG_TOP の水平材に届く。
-  // 面の上の点：面の向きに固定した座標は塔の輪郭（halfWidth）、面に沿った座標 u は角から角へ
-  const SPRING = 8;
+
+  // ---- 面（主柱の間）：面に沿った座標 u は a の側が +。固定した座標は塔の輪郭 ----
   const onFace = (k: number, u: number, h: number) => {
     const [ax, az] = corners[k];
     const [bx] = corners[(k + 1) % 4];
     const w = halfWidth(h);
-    // a と b で同じ側の座標が面の向き。もう一方が面に沿った向き（a の側が +u）
-    return ax === bx
-      ? new THREE.Vector3(cx + ax * w, h, az * u)
-      : new THREE.Vector3(cx + ax * u, h, az * w);
+    return ax === bx ? new THREE.Vector3(cx + ax * w, h, az * u) : new THREE.Vector3(cx + ax * u, h, az * w);
   };
+  /** 高さ h での、面の両端（主柱の内側の柱）の u */
+  const inner = (h: number) => halfWidth(h) - legSize(h);
+
+  // 下の 45m：脚の間のアーチ。両側の主柱の内側の柱から立ち上がり、面の中央で LEG_TOP に届く。
+  // アーチの上は縦の材と X 形の斜材で、LEG_TOP の水平材とつなぐ
+  const SPRING = 8;
+  const ARCH = 16;
   for (let k = 0; k < 4; k++) {
     const pts: THREE.Vector3[] = [];
     const us: number[] = [];
-    for (let i = 0; i <= 16; i++) {
-      const t = i / 16;
+    for (let i = 0; i <= ARCH; i++) {
+      const t = i / ARCH;
       const h = SPRING + (LEG_TOP - SPRING) * Math.sin(t * Math.PI);
-      const u = (halfWidth(h) - legSize(h)) * (1 - 2 * t);
+      const u = inner(h) * (1 - 2 * t);
       pts.push(onFace(k, u, h));
       us.push(u);
     }
-    for (let i = 1; i < pts.length; i++) {
-      beam(pts[i - 1], pts[i], 1.1);
-      // アーチと LEG_TOP の水平材をつなぐ縦の材（水平材の範囲の中だけ）
-      if (i < pts.length - 1 && i % 2 === 0 && Math.abs(us[i]) < halfWidth(LEG_TOP) - 1.5 && pts[i].y < LEG_TOP - 1.5) {
-        beam(pts[i], onFace(k, us[i], LEG_TOP), 0.35);
+    beam(onFace(k, inner(0), 0), pts[0], 1.0);
+    beam(onFace(k, -inner(0), 0), pts[ARCH], 1.0);
+    let prevPost: [THREE.Vector3, THREE.Vector3] | null = null;
+    for (let i = 1; i <= ARCH; i++) {
+      beam(pts[i - 1], pts[i], 1.0);
+      if (i === ARCH || Math.abs(us[i]) >= inner(LEG_TOP) - 0.5) {
+        prevPost = null;
+        continue;
       }
+      const top = onFace(k, us[i], LEG_TOP);
+      if (pts[i].y < LEG_TOP - 1) beam(pts[i], top, 0.4);
+      if (prevPost) {
+        beam(prevPost[0], top, 0.3);
+        beam(prevPost[1], pts[i], 0.3);
+      }
+      prevPost = [pts[i], top];
     }
-    // アーチの足元を、脚の内側の柱に沿って地面まで下ろす
-    beam(onFace(k, halfWidth(0) - legSize(0), 0), pts[0], 1.1);
-    beam(onFace(k, -(halfWidth(0) - legSize(0)), 0), pts[pts.length - 1], 1.1);
   }
 
-  // ---- 45m から上：四隅の柱・水平材・X 形の斜材 ----
-  const levels: number[] = [LEG_TOP];
-  while (levels[levels.length - 1] < 250) {
-    const h = levels[levels.length - 1];
-    levels.push(Math.min(250, h + Math.max(5, halfWidth(h) * 1.15)));
-  }
-  for (let i = 1; i < levels.length; i++) {
-    const h0 = levels[i - 1];
-    const h1 = levels[i];
-    const t = THREE.MathUtils.lerp(2.2, 0.7, h0 / 250);
-    for (let k = 0; k < 4; k++) {
-      const [ax, az] = corners[k];
-      const [bx, bz] = corners[(k + 1) % 4];
-      const a0 = corner(h0, ax, az);
-      const a1 = corner(h1, ax, az);
-      const b0 = corner(h0, bx, bz);
-      const b1 = corner(h1, bx, bz);
-      beam(a0, a1, t);
-      beam(a1, b1, t * 0.45);
-      beam(a0, b1, t * 0.3);
-      beam(b0, a1, t * 0.3);
-      // 低い所は面が広いので、面の中を縦に2つに分けて斜材を足す
-      if (halfWidth(h0) > 12) {
-        const m0 = a0.clone().lerp(b0, 0.5);
-        const m1 = a1.clone().lerp(b1, 0.5);
-        beam(m0, m1, t * 0.3);
-        beam(a0, m1, t * 0.2);
-        beam(m0, b1, t * 0.2);
+  // 45m から上：面ごとに、主柱の間を幅 8m ほどの小さな区画に分け、縦の材と X 形の斜材を入れる（2段ごと）
+  const faceLevels = levels.filter((h) => h >= LEG_TOP).filter((_, i) => i % 2 === 0);
+  if (faceLevels[faceLevels.length - 1] !== 250) faceLevels.push(250);
+  for (let k = 0; k < 4; k++) {
+    for (let i = 1; i < faceLevels.length; i++) {
+      const h0 = faceLevels[i - 1];
+      const h1 = faceLevels[i];
+      const span = inner(h0) * 2;
+      if (span < 0.5) continue;
+      const n = Math.max(1, Math.round(span / 8));
+      const t = THREE.MathUtils.lerp(0.5, 0.25, h0 / 250);
+      for (let j = 0; j < n; j++) {
+        const u0 = (a: number) => inner(a) * (1 - (2 * j) / n);
+        const u1 = (a: number) => inner(a) * (1 - (2 * (j + 1)) / n);
+        const p00 = onFace(k, u0(h0), h0);
+        const p01 = onFace(k, u1(h0), h0);
+        const p10 = onFace(k, u0(h1), h1);
+        const p11 = onFace(k, u1(h1), h1);
+        beam(p10, p11, t);
+        if (j > 0) beam(p00, p10, t * 0.8);
+        beam(p00, p11, t * 0.7);
+        beam(p01, p10, t * 0.7);
       }
+      if (i === 1) beam(onFace(k, inner(h0), h0), onFace(k, -inner(h0), h0), t * 1.4);
     }
-    // 内側の水平の筋交い（上から見て X）
-    if (i % 3 === 0) {
-      beam(corner(h1, 1, 1), corner(h1, -1, -1), t * 0.25);
-      beam(corner(h1, -1, 1), corner(h1, 1, -1), t * 0.25);
-    }
+  }
+  // 内側の水平の筋交い（上から見て X。数段ごと）
+  for (let i = 3; i < faceLevels.length; i += 3) {
+    const h = faceLevels[i];
+    beam(corner(h, 1, 1), corner(h, -1, -1), 0.35);
+    beam(corner(h, -1, 1), corner(h, 1, -1), 0.35);
   }
 
   // ---- メインデッキ（145〜154m）とトップデッキ（248〜254m） ----
@@ -210,7 +227,7 @@ export function buildTokyoTower(cx: number): TowerParts {
   }
 
   // ---- 足元の建物：暗い灰色の箱と、階ごとの窓の帯 ----
-  const base: THREE.BufferGeometry[] = [];
+  const base: THREE.BufferGeometry[] = [...pedestals];
   const F = FOOT_TOWN;
   base.push(new THREE.BoxGeometry(F.length, F.height, F.depth).translate(cx + F.x, F.height / 2, F.z));
   for (let y = 3; y < F.height - 2; y += 4.5) {
