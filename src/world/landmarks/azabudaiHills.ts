@@ -7,13 +7,19 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  *
  * - 森JPタワー：角を大きく丸めた四角い平面が、中ほどで少しふくらみ上へ細くなる。各面の中央に縦の白い筋、
  *   頂部は面の中央が下がる波形。青いガラスに階ごとの横の線。足元に低層部と屋上の緑
- * - レジデンス：角を丸めた長方形の白い高層棟（階ごとのバルコニーの白い帯）。B は高く、上の方で片側が一段下がる
+ * - レジデンスB（237m）：ベージュと暗い灰色のバルコニーの帯。四隅と面の中央に縦の明るいガラスの帯、
+ *   上の方の片側の面はガラス張り。足元はベージュの石の枠の低層部
+ * - レジデンスA（196m）：片側の端を大きく丸めた、暗い青灰色のガラスと暗いバルコニーの棟
  */
 export interface AzabudaiParts {
   /** 森JPタワーのガラス（u = 周に沿った長さ / 3m、v = 高さ / 1階） */
   glass: THREE.BufferGeometry;
-  /** レジデンスの外壁（u, v は同じ） */
+  /** レジデンスBの外壁：ベージュのバルコニーの帯と暗い灰色の奥（u, v は同じ） */
   residence: THREE.BufferGeometry;
+  /** レジデンスAの外壁：暗い青灰色のガラスと暗いバルコニー */
+  residenceA: THREE.BufferGeometry;
+  /** レジデンスBの角・面の縦の明るいガラスの帯と、上の方のガラスの面 */
+  lightGlass: THREE.BufferGeometry;
   /** 白い筋・縁・屋上 */
   white: THREE.BufferGeometry;
   /** 低層部 */
@@ -56,31 +62,48 @@ export function buildMoriJpTower(cx: number): AzabudaiParts {
 
 export function buildAzabudaiResidences(cx: number): AzabudaiParts {
   const p = emptyParts();
-  // レジデンスB（西寄り、高さ 237m）とレジデンスA（東寄り、高さ 196m）。長い向きは箱の短い向き（z）
-  for (const { x, w, d, h, step } of [
-    { x: 30, w: 34, d: 50, h: 237, step: true },
-    { x: -30, w: 32, d: 44, h: 196, step: false },
-  ]) {
-    const shape = roundedRect(w, d, 7);
-    const main = step ? h - 22 : h;
-    p.residence.push(extrudeWalls(shape, cx + x, 0, main));
-    p.white.push(cap(shape, cx + x, main));
-    if (step) {
-      // 上の方は片側だけ高い（写真の、頂部の一段下がった形）
-      const top = roundedRect(w, d * 0.6, 7);
-      const z = (d - d * 0.6) / 2;
-      p.residence.push(extrudeWalls(top, cx + x, main, h, z));
-      p.white.push(cap(top, cx + x, h, z));
+  // レジデンスB（西寄り、高さ 237m）
+  {
+    const x = cx + 30;
+    const w = 36;
+    const d = 50;
+    const h = 237;
+    const shape = roundedRect(w, d, 5);
+    p.residence.push(extrudeWalls(shape, x, 0, h));
+    p.white.push(cap(shape, x, h));
+    // 四隅と、長い面の中央の縦のガラスの帯（壁より少し外へ）
+    for (const [u, z] of [
+      [w / 2 - 2.5, d / 2 - 2.5],
+      [-(w / 2 - 2.5), d / 2 - 2.5],
+      [w / 2 - 2.5, -(d / 2 - 2.5)],
+      [-(w / 2 - 2.5), -(d / 2 - 2.5)],
+    ]) {
+      p.lightGlass.push(new THREE.BoxGeometry(5.6, h - 16, 5.6).translate(x + u, 16 + (h - 16) / 2, z));
     }
+    for (const side of [1, -1]) p.lightGlass.push(new THREE.BoxGeometry(5, h - 16, 0.8).translate(x, 16 + (h - 16) / 2, (side * d) / 2));
+    // 上の方（約 150m から上）の、一方の長い面の片側半分はガラス張り
+    p.lightGlass.push(new THREE.BoxGeometry(0.8, h - 150, d * 0.55).translate(x + w / 2, 150 + (h - 150) / 2, -d * 0.2));
+    // 足元：ベージュの石の枠の低層部
+    p.podium.push(new THREE.BoxGeometry(w + 12, 16, d + 12).translate(x, 8, 0));
+  }
+  // レジデンスA（東寄り、高さ 196m）：片側の端を大きく丸めた平面
+  {
+    const x = cx - 30;
+    const w = 32;
+    const d = 46;
+    const h = 196;
+    const shape = roundedRect(w, d, 14);
+    p.residenceA.push(extrudeWalls(shape, x, 0, h));
+    p.white.push(cap(shape, x, h));
   }
   // 足元の低層部と屋上の緑
-  p.podium.push(new THREE.BoxGeometry(112, 14, 70).translate(cx, 7, 0));
-  p.green.push(new THREE.BoxGeometry(106, 0.6, 64).translate(cx, 14.3, 0));
+  p.podium.push(new THREE.BoxGeometry(112, 12, 70).translate(cx, 6, 0));
+  p.green.push(new THREE.BoxGeometry(106, 0.6, 64).translate(cx, 12.3, 0));
   return finish(p);
 }
 
 function emptyParts(): Record<keyof AzabudaiParts, THREE.BufferGeometry[]> {
-  return { glass: [], residence: [], white: [], podium: [], green: [] };
+  return { glass: [], residence: [], residenceA: [], lightGlass: [], white: [], podium: [], green: [] };
 }
 
 function finish(p: Record<keyof AzabudaiParts, THREE.BufferGeometry[]>): AzabudaiParts {
@@ -106,6 +129,8 @@ function finish(p: Record<keyof AzabudaiParts, THREE.BufferGeometry[]>): Azabuda
   return {
     glass: merge(p.glass),
     residence: merge(p.residence),
+    residenceA: merge(p.residenceA),
+    lightGlass: merge(p.lightGlass),
     white: merge(p.white),
     podium: merge(p.podium),
     green: merge(p.green),
@@ -269,18 +294,45 @@ export function createGlassMaterial(): THREE.MeshStandardMaterial {
   }, 0.15, 0.5);
 }
 
-/** レジデンスの外壁：白いバルコニーの帯と、奥の暗いガラス */
+/** レジデンスBの外壁：ベージュのバルコニーの手すりの帯と、奥の暗い灰色の壁・ガラス */
 export function createResidenceMaterial(): THREE.MeshStandardMaterial {
   return facadeMaterial((g, W, H) => {
-    g.fillStyle = '#4c5866';
+    g.fillStyle = '#4a4f56';
     g.fillRect(0, 0, W, H);
-    g.fillStyle = '#e9ecee';
-    g.fillRect(0, H * 0.62, W, H * 0.38);
-    g.fillStyle = 'rgba(160,170,180,0.8)';
-    g.fillRect(0, H * 0.62, W, 3);
-    g.fillStyle = '#d5dade';
-    g.fillRect(0, 0, 3, H * 0.62);
-  }, 0.55, 0.1);
+    g.fillStyle = '#c9c1b2';
+    g.fillRect(0, H * 0.6, W, H * 0.4);
+    g.fillStyle = 'rgba(90,85,78,0.7)';
+    g.fillRect(0, H * 0.6, W, 3);
+    g.fillStyle = '#5d646c';
+    g.fillRect(W * 0.45, 0, 3, H * 0.6);
+  }, 0.7, 0.05);
+}
+
+/** レジデンスAの外壁：暗い青灰色のガラスと、細く暗いバルコニーの帯 */
+export function createResidenceAMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial((g, W, H) => {
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#3d5163');
+    grad.addColorStop(1, '#2b3a49');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#23292f';
+    g.fillRect(0, H * 0.72, W, H * 0.28);
+    g.fillStyle = 'rgba(150,165,180,0.6)';
+    g.fillRect(0, H * 0.72, W, 2);
+    g.fillRect(0, 0, 2, H * 0.72);
+  }, 0.25, 0.4);
+}
+
+/** 明るいガラス（レジデンスBの縦の帯と上の面）：銀色がかった水色に、階ごとの細い線 */
+export function createLightGlassMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial((g, W, H) => {
+    g.fillStyle = '#9fb5c6';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#d7dfe5';
+    g.fillRect(0, H - 4, W, 4);
+    g.fillRect(0, 0, 2, H);
+  }, 0.15, 0.5);
 }
 
 function facadeMaterial(

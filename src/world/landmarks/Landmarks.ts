@@ -9,6 +9,8 @@ import {
   buildAzabudaiResidences,
   buildMoriJpTower,
   createGlassMaterial,
+  createLightGlassMaterial,
+  createResidenceAMaterial,
   createResidenceMaterial,
 } from './azabudaiHills';
 import { buildSkytree } from './tokyoSkytree';
@@ -123,8 +125,10 @@ function azabudaiGroup(parts: AzabudaiParts): THREE.Group {
   azabudaiShared ??= {
     glass: createGlassMaterial(),
     residence: createResidenceMaterial(),
+    residenceA: createResidenceAMaterial(),
+    lightGlass: createLightGlassMaterial(),
     white: new THREE.MeshStandardMaterial({ color: 0xe6e9ec, roughness: 0.5 }),
-    podium: new THREE.MeshStandardMaterial({ color: 0x8c9096, roughness: 0.7 }),
+    podium: new THREE.MeshStandardMaterial({ color: 0xa79c8b, roughness: 0.8 }),
     green: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
   };
   const group = new THREE.Group();
