@@ -4,6 +4,7 @@ import type { ChunkListener, Terrain } from '../Terrain';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildMarunouchiPlaza, createStoneMaterial, type PlazaParts } from './marunouchiPlaza';
 import { buildTokyoStation, createBrickMaterial } from './tokyoStation';
+import { buildSkytree } from './tokyoSkytree';
 import { buildTokyoTower } from './tokyoTower';
 
 /**
@@ -23,6 +24,25 @@ interface Landmark {
 }
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京スカイツリーとスカイツリータウン（PLATEAU にはソラマチの平らな箱しか無いので、それを消して置く）。
+    // タウンの長い向き（東西）にそろえ、塔の中心から ±50m の2点で置く。イーストタワーの箱は別に消す
+    gmlId: 'bldg_58ab8c46-8369-49c4-86cf-6912bbc4efe1',
+    from: [35.710041, 139.810148],
+    to: [35.710085, 139.811252],
+    front: -1,
+    build: (length) => {
+      const parts = buildSkytree(length / 2);
+      const m = skytreeMaterials();
+      const group = new THREE.Group();
+      group.add(new THREE.Mesh(parts.steel, m.steel));
+      group.add(new THREE.Mesh(parts.glass, m.glass));
+      group.add(new THREE.Mesh(parts.white, m.white));
+      group.add(new THREE.Mesh(parts.podium, m.podium));
+      group.add(new THREE.Mesh(parts.green, m.green));
+      return group;
+    },
+  },
   {
     // 東京タワー（PLATEAU には足元の建物（フットタウン）の箱しか無いので、それを消して塔と足元の建物を置く）。
     // 長い向きは足元の建物にそろえ、中心から ±50m の2点で置く
@@ -73,6 +93,18 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'uv') g.deleteAttribute(name);
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
+}
+
+let skytreeShared: Record<'steel' | 'glass' | 'white' | 'podium' | 'green', THREE.Material> | null = null;
+function skytreeMaterials() {
+  skytreeShared ??= {
+    steel: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.25 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x7fa3bf, roughness: 0.12, metalness: 0.6, side: THREE.DoubleSide }),
+    white: new THREE.MeshStandardMaterial({ color: 0xe7eaec, roughness: 0.6 }),
+    podium: new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.7 }),
+    green: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
+  };
+  return skytreeShared;
 }
 
 let towerShared: Record<'steel' | 'glass' | 'deck' | 'base', THREE.Material> | null = null;
