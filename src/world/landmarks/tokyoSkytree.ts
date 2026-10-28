@@ -8,8 +8,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  *
  * - 塔の断面：足元は一辺約 68m の正三角形、上へ行くほど円に近づく（約 300m で円）。白い鋼管の柱と、
  *   リング・ダイヤ形の斜材のトラス。中心に灰色の心柱
- * - 天望デッキ（340〜360m）：3層のガラスの円筒。天望回廊（445〜452m）：細いガラスのリング
- * - その上：ゲイン塔（白い骨組み）とアンテナ（〜634m）
+ * - 天望デッキ（340〜368m）：上へ広がる3層のガラスの円すい台。その上（368〜445m）は細い骨組みと水平のひだ
+ * - 天望回廊（445〜452m）：ガラスのリングと、まわりを巻くらせんの管
+ * - その上：ゲイン塔（452〜500m、白い骨組み）と、節のあるアンテナ（〜634m）
  * - ソラマチ：塔の東西に低層の建物（屋上に緑）。イーストタワー：東の端の高さ 158m のガラスの高層ビル
  */
 const WHITE = new THREE.Color(0xf2f4f6);
@@ -22,11 +23,10 @@ const PROFILE: Array<[number, number]> = [
   [150, 24],
   [250, 19.5],
   [340, 17],
-  [360, 15],
-  [445, 11.5],
-  [460, 9],
-  [500, 7.5],
-  [585, 4],
+  [368, 11.5],
+  [445, 10.5],
+  [452, 7.5],
+  [500, 6],
 ];
 function radius(h: number): number {
   for (let i = 1; i < PROFILE.length; i++) {
@@ -68,7 +68,7 @@ export function buildSkytree(cx: number): SkytreeParts {
   const green: THREE.BufferGeometry[] = [];
   const beam = (a: THREE.Vector3, b: THREE.Vector3, t: number, color = WHITE) => steel.push(member(a, b, t, color));
 
-  // ---- 塔の骨組み（0〜585m）：柱 N 本、リングの段ごとにダイヤ形の斜材 ----
+  // ---- 塔の骨組み（0〜500m）：柱 N 本、リングの段ごとにダイヤ形の斜材 ----
   const N = 18;
   const point = (h: number, j: number) => {
     const a = Math.PI / 2 + (j / N) * Math.PI * 2;
@@ -76,14 +76,14 @@ export function buildSkytree(cx: number): SkytreeParts {
     return new THREE.Vector3(cx + Math.cos(a) * r, h, -Math.sin(a) * r);
   };
   const rings: number[] = [];
-  for (let h = 0; h < 585; h += h < 340 ? 13 : 10) rings.push(h);
-  rings.push(585);
+  for (let h = 0; h < 500; h += h < 340 ? 13 : 8) rings.push(h);
+  rings.push(500);
   for (let i = 1; i < rings.length; i++) {
     const h0 = rings[i - 1];
     const h1 = rings[i];
-    // デッキの中（340〜360m、445〜452m）は骨組みを描かない（展望台の床と壁で隠れる）
-    const hidden = (h0 >= 340 && h1 <= 362) || (h0 >= 444 && h1 <= 454);
-    const t = THREE.MathUtils.lerp(1.4, 0.45, h0 / 585);
+    // デッキの中（340〜368m、445〜452m）は骨組みを描かない（展望台の床と壁で隠れる）
+    const hidden = (h0 >= 338 && h1 <= 370) || (h0 >= 444 && h1 <= 454);
+    const t = THREE.MathUtils.lerp(1.4, 0.5, h0 / 500);
     for (let j = 0; j < N; j++) {
       const a0 = point(h0, j);
       const a1 = point(h1, j);
@@ -102,35 +102,51 @@ export function buildSkytree(cx: number): SkytreeParts {
   // 中心の心柱（灰色の円筒）
   for (const [h0, h1, r] of [
     [0, 340, 8],
-    [360, 445, 6],
-    [452, 500, 4],
+    [368, 445, 6],
+    [452, 500, 3.5],
   ]) {
     steel.push(colored(new THREE.CylinderGeometry(r, r, h1 - h0, 20).translate(cx, (h0 + h1) / 2, 0), CORE));
   }
 
-  // ---- 天望デッキ（340〜360m）：3層のガラスの円筒と、白い床・屋根 ----
-  for (const [y, r] of [
-    [340, 24],
-    [347, 25.5],
-    [354, 24],
+  // ---- 天望デッキ（340〜368m）：下が細く上が広い3層の円すい台。層の境目に白い帯、上に白い屋根 ----
+  const deckR = (y: number) => THREE.MathUtils.lerp(19, 28, (y - 340) / 28);
+  for (const [y0, y1] of [
+    [340, 349],
+    [349, 358],
+    [358, 368],
   ]) {
-    white.push(cyl(cx, y, r + 0.5, 0.8));
-    glass.push(cyl(cx, y + 0.8, r, 6.2, true));
+    glass.push(frustum(cx, y0 + 0.8, deckR(y1), deckR(y0 + 0.8), y1 - y0 - 0.8, true));
+    white.push(frustum(cx, y0, deckR(y0 + 0.8) + 0.4, deckR(y0) + 0.4, 0.8));
   }
-  white.push(cyl(cx, 361, 23, 1.2));
-  // 天望回廊（445〜452m）：細いガラスのリング
-  white.push(cyl(cx, 444, 17.5, 0.8));
-  glass.push(cyl(cx, 444.8, 17, 6.4, true));
-  white.push(cyl(cx, 451.2, 16.5, 1));
+  white.push(frustum(cx, 368, 27.5, 28.5, 1.6));
+  white.push(cyl(cx, 369.6, 20, 0.8));
 
-  // ---- アンテナ（585〜634m）：細い柱と継ぎ目 ----
-  for (let h = 585; h < 634; h += 7) {
-    const top = Math.min(634, h + 7);
-    const r0 = THREE.MathUtils.lerp(2.6, 0.5, (h - 585) / 49);
-    const r1 = THREE.MathUtils.lerp(2.6, 0.5, (top - 585) / 49);
-    steel.push(colored(new THREE.CylinderGeometry(r1, r0, top - h, 10).translate(cx, (h + top) / 2, 0), WHITE));
-    white.push(cyl(cx, top - 0.4, r1 + 0.7, 0.4));
+  // デッキの上（372〜438m）：骨組みのまわりに張り出した水平のひだ（アンテナの台）
+  for (let y = 374; y <= 436; y += 4.5) white.push(frustum(cx, y, radius(y) + 3.2, radius(y) + 3.2, 0.5));
+
+  // ---- 天望回廊（445〜452m）：ガラスのリングと、まわりを1周半巻いて上るらせんの管 ----
+  white.push(cyl(cx, 443.6, 16, 1));
+  glass.push(cyl(cx, 444.6, 15, 6.4, true));
+  white.push(cyl(cx, 451, 15.5, 1));
+  {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 3;
+      pts.push(new THREE.Vector3(cx + Math.cos(a) * 16.5, 441 + (i / 48) * 13, Math.sin(a) * 16.5));
+    }
+    glass.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 1.6, 8));
   }
+
+  // ---- アンテナ（500〜634m）：細くなる柱と、10m ごとの節（円盤）、頂部の小さな傘 ----
+  for (let h = 500; h < 630; h += 10) {
+    const top = Math.min(630, h + 10);
+    const r0 = THREE.MathUtils.lerp(3.2, 1.2, (h - 500) / 130);
+    const r1 = THREE.MathUtils.lerp(3.2, 1.2, (top - 500) / 130);
+    steel.push(colored(new THREE.CylinderGeometry(r1, r0, top - h, 10).translate(cx, (h + top) / 2, 0), WHITE));
+    white.push(cyl(cx, h, r0 + 1.4, 0.8));
+  }
+  white.push(cyl(cx, 630, 2.2, 3));
+  steel.push(colored(new THREE.CylinderGeometry(0.3, 0.6, 4, 6).translate(cx, 635, 0), WHITE));
 
   // ---- ソラマチ（低層部）：塔の西と東。塔のまわりは低い 4 階の床（入口フロア） ----
   const block = (x0: number, x1: number, z0: number, z1: number, h: number) => {
@@ -214,6 +230,11 @@ function roundedRect(w: number, d: number, r: number): THREE.Shape {
   s.lineTo(x, y + r);
   s.quadraticCurveTo(x, y, x + r, y);
   return s;
+}
+
+/** 円すい台（上の半径 rTop、下の半径 rBottom） */
+function frustum(cx: number, y: number, rTop: number, rBottom: number, h: number, open = false): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(rTop, rBottom, h, 40, 1, open).translate(cx, y + h / 2, 0);
 }
 
 function cyl(cx: number, y: number, r: number, h: number, open = false): THREE.BufferGeometry {
