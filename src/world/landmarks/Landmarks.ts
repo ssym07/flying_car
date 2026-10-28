@@ -4,6 +4,7 @@ import type { ChunkListener, Terrain } from '../Terrain';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildMarunouchiPlaza, createStoneMaterial, type PlazaParts } from './marunouchiPlaza';
 import { buildTokyoStation, createBrickMaterial } from './tokyoStation';
+import { buildTokyoTower } from './tokyoTower';
 
 /**
  * 作り込んだ建物（ランドマーク）。PLATEAU の単純な箱の代わりに、写真を参考に手続き的に作った形を置く。
@@ -22,6 +23,23 @@ interface Landmark {
 }
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京タワー（PLATEAU には足元の建物（フットタウン）の箱しか無いので、それを消して塔と足元の建物を置く）。
+    // 長い向きは足元の建物にそろえ、中心から ±50m の2点で置く
+    gmlId: 'bldg_7aff4a51-be8b-405b-abe4-ac489697cbc8',
+    from: [35.65833, 139.745891],
+    to: [35.658832, 139.744975],
+    front: -1,
+    build: (length) => {
+      const parts = buildTokyoTower(length / 2);
+      const group = new THREE.Group();
+      group.add(new THREE.Mesh(parts.steel, towerMaterials().steel));
+      group.add(new THREE.Mesh(parts.glass, towerMaterials().glass));
+      group.add(new THREE.Mesh(parts.deck, towerMaterials().deck));
+      group.add(new THREE.Mesh(parts.base, towerMaterials().base));
+      return group;
+    },
+  },
   {
     // 東京駅丸の内駅舎（南の端 → 北の端。正面は西の丸の内側）
     gmlId: 'bldg_6af58cef-669e-4aca-bc01-355e870d1ad5',
@@ -55,6 +73,17 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'uv') g.deleteAttribute(name);
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
+}
+
+let towerShared: Record<'steel' | 'glass' | 'deck' | 'base', THREE.Material> | null = null;
+function towerMaterials() {
+  towerShared ??= {
+    steel: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x8fb6cf, roughness: 0.15, metalness: 0.5, side: THREE.DoubleSide }),
+    deck: new THREE.MeshStandardMaterial({ color: 0xe9ecee, roughness: 0.6 }),
+    base: new THREE.MeshStandardMaterial({ color: 0x5a5d62, roughness: 0.8 }),
+  };
+  return towerShared;
 }
 
 let plazaShared: Record<keyof PlazaParts, THREE.Material> | null = null;

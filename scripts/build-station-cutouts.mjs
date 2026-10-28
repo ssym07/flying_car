@@ -347,6 +347,11 @@ const BIG_ROOFS = {
   'bldg_26d9fc02-3d05-4c22-b1b0-4af3cc17230e': '高輪ゲートウェイ駅',
 };
 const ROOF_THICKNESS = 2;
+/** 置き換える建物のある場所（緯度, 経度）。線路が通らないタイルも調べるため */
+const LANDMARK_AREAS = [
+  [35.6812, 139.7661], // 東京駅
+  [35.65842, 139.7453], // 東京タワー
+];
 const PLAZA_IDS = [
   'bldg_a16cfc59-110f-47f0-b622-2daff1b7c077',
   'bldg_0adb2df8-9ce1-4856-a6cc-0a56a98b1a33',
@@ -384,6 +389,8 @@ const PLAZA_IDS = [
 const REPLACED_BY_LANDMARK = new Set([
   // 東京駅丸の内駅舎
   'bldg_6af58cef-669e-4aca-bc01-355e870d1ad5',
+  // 東京タワーの足元の建物（フットタウン。屋上の設備まで含んだ高い箱なので、作った形に置き換える）
+  'bldg_7aff4a51-be8b-405b-abe4-ac489697cbc8',
   // 丸の内駅前広場の低い建物（地下への入口・換気塔など。広場を作り直すので消す）
   ...PLAZA_IDS,
 ]);
@@ -957,7 +964,8 @@ function candidateUris(tileset) {
     if (uri && region) {
       const [w, s, e, n] = region;
       const box = [(w / K) * MX, (s / K) * MY, (e / K) * MX, (n / K) * MY];
-      if (corridorsIn(box).length > 0) out.push(uri);
+      const landmark = LANDMARK_AREAS.some(([lat, lon]) => lat >= s / K && lat <= n / K && lon >= w / K && lon <= e / K);
+      if (landmark || corridorsIn(box).length > 0) out.push(uri);
     } else if (uri) out.push(uri);
     for (const child of node.children ?? []) walk(child);
   };
