@@ -32,6 +32,7 @@ import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUp
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import { type CocoonParts, buildCocoonTower, createCocoonGlassMaterial } from './cocoonTower';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -76,6 +77,25 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // モード学園コクーンタワー（PLATEAU の、東の広場まで含んだ箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_4e9cedb2-e1b8-48f6-9c04-b862aca365f1',
+    ...around(35.69159, 139.69694, 0),
+    front: -1,
+    build: (length) => {
+      cocoonShared ??= {
+        glass: createCocoonGlassMaterial(),
+        lattice: new THREE.MeshStandardMaterial({ color: 0xf1f1ee, roughness: 0.45, side: THREE.DoubleSide }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x5a5e63, roughness: 0.6 }),
+      };
+      const parts = buildCocoonTower(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof CocoonParts>) {
+        group.add(new THREE.Mesh(parts[key], cocoonShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // NTTドコモ代々木ビル（PLATEAU の箱を消して置く）
     gmlId: 'bldg_52945d0d-a897-4d55-b35c-a8bcca773e53',
@@ -376,6 +396,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
 
 let metroGovShared: Record<keyof MetroGovParts, THREE.Material> | null = null;
