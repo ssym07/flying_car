@@ -20,6 +20,7 @@ import {
   createLouverMaterial,
   createScrambleGlassMaterial,
 } from './shibuyaScrambleSquare';
+import { type HikarieParts, buildHikarie, createHikarieGlassMaterial, createHikarieTowerMaterial } from './shibuyaHikarie';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -64,6 +65,26 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 渋谷ヒカリエ（PLATEAU の箱を消して置く）。長い向きは東西、正面は西（駅側）
+    gmlId: 'bldg_9ad5b600-360f-4627-8a89-fca39aad5576',
+    ...around(35.65925, 139.70366, 15),
+    front: -1,
+    build: (length) => {
+      hikarieShared ??= {
+        glass: createHikarieGlassMaterial(),
+        tower: createHikarieTowerMaterial(),
+        white: new THREE.MeshStandardMaterial({ color: 0xe2e5e7, roughness: 0.5 }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x3f454d, roughness: 0.6 }),
+      };
+      const parts = buildHikarie(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof HikarieParts>) {
+        group.add(new THREE.Mesh(parts[key], hikarieShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 渋谷スクランブルスクエア（PLATEAU の箱を消して置く）。正面（えぐれのある面）は駅側
     gmlId: 'bldg_7b006717-e9e6-4a94-8843-1f4ce13b2509',
@@ -226,6 +247,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let hikarieShared: Record<keyof HikarieParts, THREE.Material> | null = null;
 
 let scrambleShared: Record<keyof ScrambleParts, THREE.Material> | null = null;
 
