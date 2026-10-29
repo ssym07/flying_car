@@ -28,6 +28,7 @@ import {
   createSakuraPinkMaterial,
   createSakuraResidenceMaterial,
 } from './shibuyaSakuraStage';
+import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUpperMaterial } from './shibuyaAxsh';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -72,6 +73,31 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 渋谷アクシュ（PLATEAU の建設中の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_07a23c05-99d6-439c-bd98-f0f873f8a470',
+    ...around(35.6591, 139.7045, 0),
+    front: -1,
+    build: (length) => {
+      axshShared ??= {
+        upper: createAxshUpperMaterial(),
+        lower: createAxshLowerMaterial(),
+        white: new THREE.MeshStandardMaterial({ color: 0xe6e8ea, roughness: 0.5 }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x3b4148, roughness: 0.6 }),
+        plant: new THREE.MeshStandardMaterial({ color: 0x5f9444, roughness: 0.95 }),
+        leaves: new THREE.MeshStandardMaterial({ color: 0x3f7a3a, roughness: 0.9 }),
+        trunk: new THREE.MeshStandardMaterial({ color: 0x6b4b36, roughness: 0.9 }),
+        wood: new THREE.MeshStandardMaterial({ color: 0x8a5a3c, roughness: 0.8 }),
+        paving: new THREE.MeshStandardMaterial({ color: 0xb9b4ab, roughness: 0.85 }),
+      };
+      const parts = buildShibuyaAxsh(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof AxshParts>) {
+        group.add(new THREE.Mesh(parts[key], axshShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 渋谷サクラステージ（PLATEAU には建設中の大きな箱しか無いので、それを消して4つの棟を置く）。
     // 長い向きは線路に沿って、駅の側（北西）から南東へ
@@ -278,6 +304,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let axshShared: Record<keyof AxshParts, THREE.Material> | null = null;
 
 let sakuraShared: Record<keyof SakuraParts, THREE.Material> | null = null;
 
