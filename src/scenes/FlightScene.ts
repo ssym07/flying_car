@@ -4,6 +4,7 @@ import type { GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Hud } from '../ui/hud';
+import { Instruments } from '../ui/instruments';
 import { LocationLabel } from '../ui/locationLabel';
 import { Minimap } from '../ui/minimap';
 import { StationSearch } from '../ui/stationSearch';
@@ -16,6 +17,11 @@ export class FlightScene implements GameScene {
   private collision!: Collision;
   private chase!: ChaseCamera;
   private hud!: Hud;
+  private instruments!: Instruments;
+  /** 計器に出す機首の上下・傾き (rad)。急に動かないよう、なめらかに追わせる */
+  private pitch = 0;
+  private roll = 0;
+  private lastYaw = 0;
   private location!: LocationLabel;
   private minimap!: Minimap;
   private search!: StationSearch;
@@ -50,6 +56,8 @@ export class FlightScene implements GameScene {
 
     this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
     this.hud = new Hud(this.ctx.overlay);
+    this.instruments = new Instruments(this.ctx.overlay);
+    this.lastYaw = this.vehicle.state.yaw;
     this.location = new LocationLabel(this.ctx.overlay);
     this.minimap = new Minimap(this.ctx.overlay);
     this.search = new StationSearch(
@@ -68,6 +76,7 @@ export class FlightScene implements GameScene {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
     this.hud.dispose();
+    this.instruments.dispose();
     this.location.dispose();
     this.minimap.dispose();
     this.search.dispose();
@@ -143,7 +152,9 @@ export class FlightScene implements GameScene {
       const ahead = world.toLatLon(this.ahead.set(position.x + fwd.x * 20, position.y, position.z + fwd.z * 20))!;
       const east = (ahead.lon - latLon.lon) * Math.cos(latLon.lat * THREE.MathUtils.DEG2RAD);
       const north = ahead.lat - latLon.lat;
-      this.minimap.update(latLon.lat, latLon.lon, Math.atan2(east, north));
+      const heading = Math.atan2(east, north);
+      this.minimap.update(latLon.lat, latLon.lon, heading);
+      this.updateInstruments(heading, bottom - seaLevel, frameDt);
 
       // 現在地の文字表示は 0.5 秒ごとで十分
       this.sinceLocation += frameDt;
@@ -154,5 +165,31 @@ export class FlightScene implements GameScene {
     }
 
     world.render(frameDt);
+  }
+
+  /**
+   * 計器盤：機首の上下は進む向きの上り・下りの角度、傾きは旋回の速さと速度から（旋回で外へ振られないように傾ける角度の半分）
+   */
+  private updateInstruments(heading: number, altitude: number, frameDt: number): void {
+    const s = this.vehicle.state;
+    const yaw = this.vehicle.mesh.rotation.y;
+    if (frameDt > 0) {
+      const horizontal = Math.hypot(s.velocity.x, s.velocity.z);
+      const pitch = horizontal + Math.abs(s.velocity.y) > 1 ? Math.atan2(s.velocity.y, Math.max(horizontal, 1)) : 0;
+      // 右旋回で yaw は減る
+      const rate = -Math.atan2(Math.sin(yaw - this.lastYaw), Math.cos(yaw - this.lastYaw)) / frameDt;
+      const roll = THREE.MathUtils.clamp(Math.atan((horizontal * rate) / PHYSICS.gravity) * 0.5, -0.8, 0.8);
+      const k = Math.min(1, frameDt * 4);
+      this.pitch += (THREE.MathUtils.clamp(pitch, -0.6, 0.6) - this.pitch) * k;
+      this.roll += (roll - this.roll) * k;
+    }
+    this.lastYaw = yaw;
+    this.instruments.update({
+      speed: speed(s.velocity) * 3.6,
+      altitude,
+      pitch: this.pitch,
+      roll: this.roll,
+      heading,
+    });
   }
 }

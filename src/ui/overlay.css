@@ -310,3 +310,42 @@ body {
   color: var(--fg-dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* 計器盤：下中央。上の段に速度計・姿勢指示器・高度計、姿勢指示器の下に方位計 */
+.instruments {
+  --gauge: clamp(84px, 9.5vw, 132px);
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, var(--gauge));
+  grid-template-rows: repeat(2, var(--gauge));
+  grid-template-areas:
+    'speed attitude altitude'
+    '. heading .';
+  gap: 6px;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+
+.instrument {
+  width: var(--gauge);
+  height: var(--gauge);
+}
+
+.instrument-speed {
+  grid-area: speed;
+}
+
+.instrument-attitude {
+  grid-area: attitude;
+}
+
+.instrument-altitude {
+  grid-area: altitude;
+}
+
+.instrument-heading {
+  grid-area: heading;
+}

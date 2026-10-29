@@ -23,8 +23,8 @@ export const PHYSICS = {
   gravity: 9.8,
   /** ホバー推力の重力に対する比率（1で無入力時に高度を保つ） */
   hoverRatio: 1.0,
-  /** 前進推力 (m/s^2) */
-  thrust: 30,
+  /** 前進推力 (m/s^2)。最高速 = thrust / dragForward ≒ 83 m/s（300 km/h） */
+  thrust: 37.5,
   /** 後退推力 (m/s^2) */
   reverseThrust: 20,
   /** 上昇・下降推力 (m/s^2) */
