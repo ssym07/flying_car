@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { LANDUSE, ROADS } from '../core/config';
-import { RoadClass, roadLayout } from './roadTemplates';
+import { LANDUSE } from '../core/config';
+import { roadMask } from './roadMask';
 
 /**
  * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場。
@@ -114,7 +114,7 @@ const MAX_GRAVES = 30000;
  * 区画の中心が「墓地」の画素で、道路から離れていれば置く
  */
 async function placeGraves(data: LanduseTile, pixels: Uint8Array, x: number, y: number, z: number): Promise<GraveSpot[]> {
-  const roads = await roadMask(x, y, z);
+  const roads = await roadMask(x, y, z, SIZE);
   const n = 2 ** z;
   const K = Math.PI / 180;
   const MY = 111320;
@@ -168,47 +168,6 @@ async function placeGraves(data: LanduseTile, pixels: Uint8Array, x: number, y: 
     }
   }
   return graves;
-}
-
-/** 同じタイルの道路（車道と歩道の幅 + 1m）を塗った画像（行 0 が北）。道路データが無ければ null */
-async function roadMask(x: number, y: number, z: number): Promise<Uint8Array | null> {
-  let tile: { w: Array<[RoadClass, number, 0 | 1, number[]]> };
-  try {
-    const res = await fetch(`${import.meta.env.BASE_URL}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
-    if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
-    tile = await res.json();
-  } catch {
-    return null;
-  }
-  const canvas = new OffscreenCanvas(SIZE, SIZE);
-  const g = canvas.getContext('2d')!;
-  const n = 2 ** z;
-  // 1px あたりの m
-  const metersPerPx = (40075016 * Math.cos(((tileLat(y + 0.5, z) * Math.PI) / 180))) / n / SIZE;
-  g.strokeStyle = '#fff';
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-  for (const [cls, lanes, oneway, coords] of tile.w) {
-    const layout = roadLayout(cls, lanes, oneway === 1);
-    g.lineWidth = (layout.width + layout.sidewalk * 2 + 2) / metersPerPx;
-    g.beginPath();
-    decode(coords).forEach(([lat, lon], i) => {
-      const px = (((lon + 180) / 360) * n - x) * SIZE;
-      const py = (((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n - y) * SIZE;
-      if (i === 0) g.moveTo(px, py);
-      else g.lineTo(px, py);
-    });
-    g.stroke();
-  }
-  const image = g.getImageData(0, 0, SIZE, SIZE).data;
-  const mask = new Uint8Array(SIZE * SIZE);
-  for (let i = 0; i < mask.length; i++) mask[i] = image[i * 4 + 3] > 0 ? 1 : 0;
-  return mask;
-}
-
-/** タイルの行 ty（ズーム z）の緯度（度） */
-function tileLat(ty: number, z: number): number {
-  return (Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / 2 ** z))) * 180) / Math.PI;
 }
 
 let graveMaterial: THREE.MeshStandardMaterial | null = null;

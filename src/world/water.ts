@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WATER } from '../core/config';
+import { roadMask } from './roadMask';
 
 /**
  * 海・川などの水域。
@@ -47,7 +48,7 @@ export async function fetchWaterMask(
   );
   if (!results.some(Boolean)) return null;
 
-  // 水色の画素（文字のふちのにじみも拾えるよう少し幅を持たせる）
+  // 水色の画素：水面の色（#bed2ff）と、細い川の縁取りの青（#145aff）とその間の色（文字のふちのにじみも拾えるよう幅を持たせる）
   const { data } = ctx.getImageData(0, 0, size, size);
   let mask: Uint8Array = new Uint8Array(size * size);
   let any = false;
@@ -55,15 +56,21 @@ export async function fetchWaterMask(
     const r = data[p * 4];
     const g = data[p * 4 + 1];
     const b = data[p * 4 + 2];
-    if (Math.abs(r - 0xbe) < 18 && Math.abs(g - 0xd2) < 18 && b > 0xf0) {
+    if (b > 0xf0 && r < 0xd0 && g < 0xe2 && g > r && b - r > 40) {
       mask[p] = 1;
       any = true;
     }
   }
   if (!any) return null;
 
-  // 川の上の文字ラベルなどの小さな穴を埋める（膨らませてから縮める）
+  // 川の上の文字ラベル・線路などの小さな穴を埋める（膨らませてから縮める）
   mask = erode(dilate(mask, size, WATER.closeRadius), size, WATER.closeRadius);
+  // 橋の下：地図では橋の道路が水の上に描かれて水が途切れるので、橋の所だけ大きく閉じて両岸の水をつなぐ
+  const bridges = await roadMask(x, y, z, size, { margin: 3, bridgesOnly: true });
+  if (bridges) {
+    const closed = erode(dilate(mask, size, WATER.bridgeCloseRadius), size, WATER.bridgeCloseRadius);
+    for (let p = 0; p < mask.length; p++) if (bridges[p] && closed[p]) mask[p] = 1;
+  }
 
   const distance = shoreDistance(mask, size);
   // 岸の線が画素の階段にならないよう、水域をぼかして（シェーダーで 0.5 を境に切る）なめらかにする
@@ -138,7 +145,8 @@ export function flattenWater(heights: Float32Array, mask: Uint8Array, maskSize: 
     // 岸の無い水域（チャンク全体が海など）は海面の高さ。川がチャンクをまたぐ所は隣と多少ずれるが、
     // 海面まで下げると高台の川が深い溝になるので、岸に合わせる方を選ぶ
     const level = Number.isFinite(shore) ? Math.max(WATER.surfaceHeight, shore - 0.5) : WATER.surfaceHeight;
-    for (const p of members) heights[p] = Math.min(heights[p], level);
+    // 水域の中は岸の高さまで平らに満たす（川の護岸の斜面が水面から出て、水が細く見えないように）
+    for (const p of members) heights[p] = level;
     id++;
   }
 }
