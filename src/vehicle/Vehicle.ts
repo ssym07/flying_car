@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { VehicleState } from './physics';
 
 /**
@@ -186,6 +187,63 @@ function buildMesh(): THREE.Group {
   }
 
   return group;
+}
+
+/**
+ * 空を流れる車（たくさん並べる）用の軽い車体：自機と同じ形を、断面の数と1周の点を間引いて作る。
+ * paint = ボディ、glass = 窓、lights = 前の白いライトバーと後ろの赤いテールバー（頂点の色）
+ */
+export function buildTrafficCarGeometry(): {
+  paint: THREE.BufferGeometry;
+  glass: THREE.BufferGeometry;
+  lights: THREE.BufferGeometry;
+} {
+  const sections = 22;
+  const ringStep = 3;
+  const ring = RING / ringStep;
+  const positions: number[] = [];
+  const glassFlags: boolean[] = [];
+  for (let j = 0; j <= sections; j++) {
+    const section = sectionPoints(-1 + (2 * j) / sections);
+    for (let i = 0; i < RING; i += ringStep) {
+      const { point, glass } = section[i];
+      positions.push(point.x, point.y, point.z);
+      glassFlags.push(glass);
+    }
+  }
+  const paintIndex: number[] = [];
+  const glassIndex: number[] = [];
+  for (let j = 0; j < sections; j++) {
+    for (let i = 0; i < ring; i++) {
+      const a = j * ring + i;
+      const b = j * ring + ((i + 1) % ring);
+      const c = a + ring;
+      const d = b + ring;
+      const glass = glassFlags[a] && glassFlags[b] && glassFlags[c] && glassFlags[d];
+      (glass ? glassIndex : paintIndex).push(a, b, c, b, d, c);
+    }
+  }
+  const part = (index: number[]) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setIndex(index);
+    g.computeVertexNormals();
+    return g;
+  };
+  const bar = (z: number, color: THREE.Color) => {
+    const g = new THREE.BoxGeometry(WIDTH * 0.8, 0.08, 0.06).translate(0, 0.12, z).toNonIndexed();
+    const colors = new Float32Array(g.getAttribute('position').count * 3);
+    for (let i = 0; i < colors.length; i += 3) color.toArray(colors, i);
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.deleteAttribute('uv');
+    return g;
+  };
+  const front = bar(-LENGTH / 2 + 0.05, new THREE.Color(0xdff6ff));
+  const rear = bar(LENGTH / 2 - 0.05, new THREE.Color(0xff3040));
+  const lights = mergeGeometries([front, rear])!;
+  front.dispose();
+  rear.dispose();
+  return { paint: part(paintIndex), glass: part(glassIndex), lights };
 }
 
 /** 前後 t（-1=鼻先, 1=テール）での肩（ボンネット・トランクの面）の高さ */

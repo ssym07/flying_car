@@ -8,6 +8,7 @@ import { Labels } from './Labels';
 import { Landmarks } from './landmarks/Landmarks';
 import { RailNetwork } from './RailNetwork';
 import { RoadNetwork } from './RoadNetwork';
+import { SkyTraffic } from './SkyTraffic';
 import { StationRoofs } from './StationRoofs';
 import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
@@ -30,6 +31,8 @@ export class World {
   readonly stationRoofs: StationRoofs;
   /** 作り込んだ建物（東京駅丸の内駅舎など） */
   readonly landmarks: Landmarks;
+  /** 空を流れる車の列 */
+  readonly skyTraffic: SkyTraffic;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
@@ -73,6 +76,7 @@ export class World {
     this.expressways = new ExpresswayNetwork(this.terrain);
     this.stationRoofs = new StationRoofs(this.terrain);
     this.landmarks = new Landmarks(this.terrain);
+    this.skyTraffic = new SkyTraffic(this.terrain);
     this.scene.add(
       ...this.layers.map((l) => l.group),
       this.terrain.group,
@@ -82,6 +86,7 @@ export class World {
       this.expressways.group,
       this.stationRoofs.group,
       this.landmarks.group,
+      this.skyTraffic.group,
     );
     this.colliders = [
       ...this.layers.map((l) => l.group),
@@ -133,6 +138,7 @@ export class World {
     for (const layer of this.layers) layer.update(this.camera);
     this.terrain.update(this.camera.position);
     this.atmosphere.update(this.camera, dt);
+    this.skyTraffic.update(this.camera.position, dt);
     this.labels.update(this.camera, dt);
     this.renderer.render(this.scene, this.camera);
   }
