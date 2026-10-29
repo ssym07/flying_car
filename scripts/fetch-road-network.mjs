@@ -39,10 +39,14 @@ const CLASS = {
 /** 区画ごとの取得結果のキャッシュ（途中で止まっても、取れた区画は取り直さない） */
 const CACHE_DIR = new URL('../data/cache/roads/', import.meta.url);
 
-async function overpass(query) {
+/** 同時に取る区画の数（区画ごとに接続先の順をずらして、サーバーの負担を分ける） */
+const CONCURRENCY = 3;
+
+async function overpass(query, offset = 0) {
   // 混んでいる時は、待ちながら何度も試す
   for (let attempt = 0; attempt < 20; attempt++) {
-    for (const endpoint of ENDPOINTS) {
+    for (let k = 0; k < ENDPOINTS.length; k++) {
+      const endpoint = ENDPOINTS[(k + offset) % ENDPOINTS.length];
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -79,32 +83,51 @@ function tileOf(lat, lon) {
 const ways = [];
 const crossings = new Set();
 const pointKey = (p) => `${p.lat.toFixed(7)},${p.lon.toFixed(7)}`;
+const parts = [];
 for (let i = 0; i < SPLIT; i++) {
   for (let j = 0; j < SPLIT; j++) {
     const s = SOUTH + ((NORTH - SOUTH) * j) / SPLIT;
     const n = SOUTH + ((NORTH - SOUTH) * (j + 1)) / SPLIT;
     const w = WEST + ((EAST - WEST) * i) / SPLIT;
     const e = WEST + ((EAST - WEST) * (i + 1)) / SPLIT;
-    const bbox = `${s},${w},${n},${e}`;
-    // 道は「タグと形」だけ、横断歩道は「位置」だけ取る（ノード番号は使わず、座標の一致で交差点を探す）
-    const cacheFile = new URL(`${bbox}.json`, CACHE_DIR);
-    let elements = await readFile(cacheFile, 'utf8').then(JSON.parse, () => null);
-    if (!elements) {
-      elements = await overpass(`[out:json][timeout:180];
-        way["highway"~"^(${Object.keys(CLASS).join('|')})$"]["tunnel"!~"yes|building_passage"]["area"!="yes"](${bbox});
-        out tags geom qt;
-        node["highway"="crossing"](${bbox});
-        out skel qt;`);
-      await mkdir(CACHE_DIR, { recursive: true });
-      await writeFile(cacheFile, JSON.stringify(elements));
-    }
-    for (const el of elements) {
-      if (el.type === 'way') ways.push(el);
-      else crossings.add(pointKey(el));
-    }
-    console.log(`part ${i * SPLIT + j + 1}/${SPLIT * SPLIT}: ${ways.length} ways, ${crossings.size} crossings`);
+    parts.push(`${s},${w},${n},${e}`);
   }
 }
+const results = new Array(parts.length);
+let next = 0;
+let done = 0;
+await Promise.all(
+  Array.from({ length: CONCURRENCY }, async (_, worker) => {
+    while (next < parts.length) {
+      const index = next++;
+      const bbox = parts[index];
+      // 道は「タグと形」だけ、横断歩道は「位置」だけ取る（ノード番号は使わず、座標の一致で交差点を探す）
+      const cacheFile = new URL(`${bbox}.json`, CACHE_DIR);
+      let elements = await readFile(cacheFile, 'utf8').then(JSON.parse, () => null);
+      if (!elements) {
+        elements = await overpass(
+          `[out:json][timeout:180];
+          way["highway"~"^(${Object.keys(CLASS).join('|')})$"]["tunnel"!~"yes|building_passage"]["area"!="yes"](${bbox});
+          out tags geom qt;
+          node["highway"="crossing"](${bbox});
+          out skel qt;`,
+          worker,
+        );
+        await mkdir(CACHE_DIR, { recursive: true });
+        await writeFile(cacheFile, JSON.stringify(elements));
+      }
+      results[index] = elements;
+      console.log(`part ${++done}/${parts.length}`);
+    }
+  }),
+);
+for (const elements of results) {
+  for (const el of elements) {
+    if (el.type === 'way') ways.push(el);
+    else crossings.add(pointKey(el));
+  }
+}
+console.log(`${ways.length} ways, ${crossings.size} crossings`);
 
 // 範囲の境目で同じ道を2回取ることがあるので、形の同じ道を除く
 const seen = new Set();
