@@ -30,6 +30,7 @@ import {
 } from './shibuyaSakuraStage';
 import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUpperMaterial } from './shibuyaAxsh';
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
+import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -74,6 +75,28 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京都庁舎（第一本庁舎・第二本庁舎・都議会議事堂と都民広場）。PLATEAU の2つの庁舎の箱を消して置く
+    // （第二本庁舎の箱は別に消す）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_94caaf2f-dec2-41a7-8b0f-06ecd0fac6c7',
+    ...around(35.6896, 139.6917, 0),
+    front: -1,
+    build: (length) => {
+      metroGovShared ??= {
+        stone: createMetroGovStoneMaterial(),
+        dark: new THREE.MeshStandardMaterial({ color: 0x3e4349, roughness: 0.7 }),
+        glass: new THREE.MeshStandardMaterial({ color: 0x8fa9b8, roughness: 0.2, metalness: 0.4 }),
+        paving: new THREE.MeshStandardMaterial({ color: 0xa8a6a2, roughness: 0.85 }),
+        antenna: new THREE.MeshStandardMaterial({ color: 0xd8433a, roughness: 0.6 }),
+      };
+      const parts = buildMetroGov(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof MetroGovParts>) {
+        group.add(new THREE.Mesh(parts[key], metroGovShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // セルリアンタワー（PLATEAU の塔の箱を消して置く。西の低層部の箱は別に消す）
     gmlId: 'bldg_9c42ff7c-c8bf-456a-ada2-4c416a2dc965',
@@ -327,6 +350,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let metroGovShared: Record<keyof MetroGovParts, THREE.Material> | null = null;
 
 let ceruleanShared: Record<keyof CeruleanParts, THREE.Material> | null = null;
 
