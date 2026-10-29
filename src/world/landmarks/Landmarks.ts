@@ -31,6 +31,7 @@ import {
 import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUpperMaterial } from './shibuyaAxsh';
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
+import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -75,6 +76,30 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // NTTドコモ代々木ビル（PLATEAU の箱を消して置く）
+    gmlId: 'bldg_52945d0d-a897-4d55-b35c-a8bcca773e53',
+    ...around(35.6844, 139.70312, 100),
+    front: -1,
+    build: (length) => {
+      docomoShared ??= {
+        shaft: createDocomoShaftMaterial(),
+        tier: createDocomoTierMaterial(),
+        glass: new THREE.MeshStandardMaterial({ color: 0x7fb4cc, roughness: 0.15, metalness: 0.4 }),
+        fin: new THREE.MeshStandardMaterial({ color: 0x7a6a62, roughness: 0.5, metalness: 0.3 }),
+        clock: new THREE.MeshStandardMaterial({ color: 0x5f524c, roughness: 0.5, side: THREE.DoubleSide }),
+        hands: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.4 }),
+        red: new THREE.MeshStandardMaterial({ color: 0xd8433a, roughness: 0.6 }),
+        white: new THREE.MeshStandardMaterial({ color: 0xeeeeec, roughness: 0.5 }),
+      };
+      const parts = buildDocomoYoyogi(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof DocomoParts>) {
+        group.add(new THREE.Mesh(parts[key], docomoShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 東京都庁舎（第一本庁舎・第二本庁舎・都議会議事堂と都民広場）。PLATEAU の2つの庁舎の箱を消して置く
     // （第二本庁舎の箱は別に消す）。建物の座標は x = 東、z = 南
@@ -350,6 +375,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
 
 let metroGovShared: Record<keyof MetroGovParts, THREE.Material> | null = null;
 
