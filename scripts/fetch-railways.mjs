@@ -1,4 +1,4 @@
-// 東京23区まわりの線路（1本ずつの線路の中心線）を OpenStreetMap (Overpass API) から取得し、
+// 東京23区と横浜市・川崎市まわりの線路（1本ずつの線路の中心線）を OpenStreetMap (Overpass API) から取得し、
 // 地形チャンクと同じタイル（ズーム15）ごとに data/osm/railways/15/{x}/{y}.json に書き出す（元データ）。
 // ゲームで使う形（高さ付き）は scripts/build-rail-heights.mjs で作る。
 // トンネル・地下の区間は除く。ただし屋根付き・建物の下の区間（駅ビル・人工地盤の下）は普通の線路として使い、
@@ -11,9 +11,9 @@
 // 出力の形式（1タイル）: [[高架(0/1), layer（負なら掘割）, 軌間(mm), [緯度,経度,...（1e-6度、先頭以外は前の点との差）], 地下鉄(0/1)], ...]
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
+const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number);
 const partial = process.argv[2] !== undefined;
-const SPLIT = Number(process.argv[3] ?? 4);
+const SPLIT = Number(process.argv[3] ?? 6);
 const ZOOM = 15;
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',

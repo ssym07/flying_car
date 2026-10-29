@@ -1,4 +1,4 @@
-// 東京23区まわりの「道路・公園・水以外の地面」の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場）の形を
+// 東京23区と横浜市・川崎市まわりの「道路・公園・水以外の地面」の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場）の形を
 // OpenStreetMap (Overpass API) から取得し、地形チャンクと同じタイル（ズーム15）ごとに public/landuse/15/{x}/{y}.json に書き出す。
 // ゲームは地形チャンクごとにこの形で「地面の種類」の画像を作り、種類ごとのテンプレート（アスファルトと白線・砂利など）で塗る。
 // 形はタイルにかかるもの全部を入れる（タイルごとに画像を作るため）。
@@ -10,10 +10,14 @@
 //   種類は KIND（src/core/config.ts の LANDUSE と同じ番号）。向きは一番長い辺の向き（駐車場の白線をそろえるのに使う）
 //   重なった時に上に塗るものほど後ろに並べる（PRIORITY）
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { snapBbox, tileInBbox } from './lib/tiles.mjs';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
 const partial = process.argv[2] !== undefined;
-const SPLIT = Number(process.argv[3] ?? 8);
+// 範囲を指定した時は、タイルの境目まで外へ広げ、範囲の中に丸ごと入るタイルだけを書き出す（まわりのタイルは触らない）
+const [SOUTH, WEST, NORTH, EAST] = ((b) => (partial ? snapBbox(b, 15) : b))(
+  (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number),
+);
+const SPLIT = Number(process.argv[3] ?? 12);
 const ZOOM = 15;
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -260,6 +264,7 @@ for (const a of sorted) {
 if (!partial) await rm(OUT_DIR, { recursive: true, force: true });
 let bytes = 0;
 for (const [key, data] of tiles) {
+  if (partial && !tileInBbox(key, [SOUTH, WEST, NORTH, EAST], ZOOM)) continue;
   const [x, y] = key.split('/');
   await mkdir(new URL(`${x}/`, OUT_DIR), { recursive: true });
   const json = JSON.stringify(data);

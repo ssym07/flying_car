@@ -1,4 +1,4 @@
-// 東京23区まわりの高速道路（首都高・湾岸線・外環道など。本線と連絡路）を OpenStreetMap (Overpass API) から取得し、
+// 東京23区と横浜市・川崎市まわりの高速道路（首都高・湾岸線・外環道など。本線と連絡路）を OpenStreetMap (Overpass API) から取得し、
 // data/osm/expressways.json に書き出す（元データ）。トンネル区間は除く。
 // ゲームで使う形（高さ付き・タイル分け）は scripts/build-expressways.mjs で作る。
 // 使い方: node scripts/fetch-expressways.mjs [南,西,北,東] [分割数]
@@ -8,8 +8,8 @@
 // 出力の形式: [[連絡路(0/1), 高架(0/1), 掘割(0/1), layer, 車線数, 名前, [[緯度,経度], ...]], ...]
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
-const SPLIT = Number(process.argv[3] ?? 4);
+const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number);
+const SPLIT = Number(process.argv[3] ?? 6);
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',

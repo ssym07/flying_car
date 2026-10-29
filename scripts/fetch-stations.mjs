@@ -1,11 +1,15 @@
-// 東京23区まわりの駅一覧を OpenStreetMap (Overpass API) から取得し、src/data/stations.json に書き出す。
+// 東京23区と横浜市・川崎市まわりの駅一覧を OpenStreetMap (Overpass API) から取得し、src/data/stations.json に書き出す。
 // 使い方: node scripts/fetch-stations.mjs
 // データ: © OpenStreetMap contributors (ODbL)
 import { writeFile } from 'node:fs/promises';
 
-const BBOX = '35.52,139.56,35.82,139.92'; // 南,西,北,東
+const BBOX = '35.30,139.46,35.82,139.92'; // 南,西,北,東
 // 混んでいるとエラーを返すので、順に試す
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const ENDPOINTS = [
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 /** 同じ名前の駅をまとめる距離 (m) */
 const MERGE_DISTANCE = 800;
 

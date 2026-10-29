@@ -38,7 +38,7 @@ export function describeStation(name: string, distance: number, nearThreshold: n
   return `${name}駅から${(distance / 1000).toFixed(1)}km`;
 }
 
-/** 市区町村コード → 区名（23区以外は null） */
+/** 市区町村コード → 区名（建物を読む区（src/data/wards.ts）以外は null） */
 export function wardName(code: string): string | null {
   return WARD_NAMES.get(code) ?? null;
 }

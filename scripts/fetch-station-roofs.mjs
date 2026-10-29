@@ -1,4 +1,4 @@
-// 東京23区まわりの駅の屋根（駅舎・ホームの上屋）の形を OpenStreetMap (Overpass API) から取得し、
+// 東京23区と横浜市・川崎市まわりの駅の屋根（駅舎・ホームの上屋）の形を OpenStreetMap (Overpass API) から取得し、
 // 地形チャンクと同じタイル（ズーム15）ごとに public/station-roofs/15/{x}/{y}.json に書き出す。
 // 駅（src/data/stations.json）から一定距離以内のものだけ残す（ガソリンスタンドの屋根などを除くため）。
 // ホームが線で描かれているもの（東京駅の JR など）は、両脇の線路（data/osm/railways）から
@@ -16,7 +16,7 @@
 //   上屋・ホームの高さは仮の値。scripts/build-platforms.mjs が線路の高さに合わせて書き換える
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
+const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number);
 const partial = process.argv[2] !== undefined;
 const SPLIT = Number(process.argv[3] ?? 4);
 const ZOOM = 15;

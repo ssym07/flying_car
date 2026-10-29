@@ -28,6 +28,7 @@ export class FlightScene implements GameScene {
   /** 地形の読込を待っているジャンプ先 */
   private pendingJump: { lat: number; lon: number } | null = null;
   private readonly ahead = new THREE.Vector3();
+  private readonly seaPoint = new THREE.Vector3();
   private sinceLocation = Infinity;
   private groundHeight = 0;
   private readonly control: ControlInput = { throttle: 0, turn: 0, lift: 0 };
@@ -123,6 +124,8 @@ export class FlightScene implements GameScene {
     this.control.turn = input.axis(KEYS.left, KEYS.right);
     this.control.lift = input.axis(KEYS.down, KEYS.up);
 
+    // 地形の外側の平面は、地球の丸みに合わせて高さが変わる
+    this.collision.groundY = this.ctx.world.groundY;
     const prev = this.vehicle.state;
     const next = step(prev, this.control, PHYSICS, dt);
     const result = this.collision.resolve(prev, next);
@@ -140,12 +143,13 @@ export class FlightScene implements GameScene {
 
     const s = this.vehicle.state;
     const bottom = s.position.y - VEHICLE.halfHeight;
-    // ローカル座標の y=0 は原点の楕円体高。ジオイド高を引くと標高（海抜）になる
-    const seaLevel = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight;
-    this.hud.set(speed(s.velocity), bottom - seaLevel, bottom - this.groundHeight);
-
     const position = this.vehicle.mesh.position;
     const latLon = world.toLatLon(position);
+    // 標高（海抜）：真下の海面（標高 0m）の高さから測る（地球の丸みで、原点から離れるほど海面は下がる）
+    const seaLevel = latLon
+      ? world.terrain.toLocal(latLon.lat, latLon.lon, 0, this.seaPoint).y
+      : TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight;
+    this.hud.set(speed(s.velocity), bottom - seaLevel, bottom - this.groundHeight);
     if (latLon) {
       // 進行方向の方位：少し前の地点も緯度経度にして、北からの角度を出す
       const fwd = forwardOf(this.vehicle.mesh.rotation.y);

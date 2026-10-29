@@ -34,7 +34,7 @@ const OVERLAP_SHARE = 0.4;
 /** 道をつなぐ時の、曲がる角度の上限 (度) */
 const JOIN_ANGLE = 35;
 /** 主要駅（名前は data/stations/structure.json と同じ）と、格子の円の半径・線の間隔 (m) */
-const HUBS = ['新宿', '渋谷', '池袋', '東京', '品川', '上野', '秋葉原', '新橋'];
+const HUBS = ['新宿', '渋谷', '池袋', '東京', '品川', '上野', '秋葉原', '新橋', '横浜', '川崎', '新横浜'];
 const HUB_RADIUS = 750;
 /** 都心（東京駅から CENTER_RADIUS m 以内と、駅の格子の円から HUB_MARGIN m 以内） */
 const CENTER = [35.6812, 139.7671];

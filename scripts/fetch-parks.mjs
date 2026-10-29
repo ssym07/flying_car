@@ -1,4 +1,4 @@
-// 東京23区まわりの公園・緑地の形と、その中の園路を OpenStreetMap (Overpass API) から取得し、
+// 東京23区と横浜市・川崎市まわりの公園・緑地の形と、その中の園路を OpenStreetMap (Overpass API) から取得し、
 // 地形チャンクと同じタイル（ズーム15）ごとに public/parks/15/{x}/{y}.json に書き出す。
 // 形はタイルにかかるもの全部を入れる（タイルごとに芝生の画像を作るため）。
 // 使い方: node scripts/fetch-parks.mjs [南,西,北,東] [分割数]
@@ -9,10 +9,14 @@
 // { "a": [[種類, [緯度,経度,...（1e-6度、先頭以外は前の点との差）]], ...],   // 種類 0=公園・庭園 1=林 2=グラウンド
 //   "p": [[幅(m), [緯度,経度,...]], ...] }                                // 公園の中の園路
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { snapBbox, tileInBbox } from './lib/tiles.mjs';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
 const partial = process.argv[2] !== undefined;
-const SPLIT = Number(process.argv[3] ?? 8);
+// 範囲を指定した時は、タイルの境目まで外へ広げ、範囲の中に丸ごと入るタイルだけを書き出す（まわりのタイルは触らない）
+const [SOUTH, WEST, NORTH, EAST] = ((b) => (partial ? snapBbox(b, 15) : b))(
+  (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number),
+);
+const SPLIT = Number(process.argv[3] ?? 12);
 const ZOOM = 15;
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -246,6 +250,7 @@ for (const p of parkPaths) addTo(p.line, 'p', [p.width, encode(p.line)]);
 if (!partial) await rm(OUT_DIR, { recursive: true, force: true });
 let bytes = 0;
 for (const [key, data] of tiles) {
+  if (partial && !tileInBbox(key, [SOUTH, WEST, NORTH, EAST], ZOOM)) continue;
   const [x, y] = key.split('/');
   await mkdir(new URL(`${x}/`, OUT_DIR), { recursive: true });
   const json = JSON.stringify(data);

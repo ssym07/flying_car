@@ -13,6 +13,9 @@ import { StationRoofs } from './StationRoofs';
 import { Terrain } from './Terrain';
 import { Tiles } from './Tiles';
 
+/** 地形の外側の平面の標高 (m) */
+const GROUND_ELEVATION = -30;
+
 /**
  * シーン間で共有する描画まわり（Three.js のシーン・カメラ・タイル・地形）。
  */
@@ -39,6 +42,7 @@ export class World {
   private readonly ground: THREE.Group;
   private readonly atmosphere: Atmosphere;
   private readonly labels: Labels;
+  private readonly groundPoint = new THREE.Vector3();
 
   /**
    * @param localWards 手元に加工済みの建物データがある区のコード（scripts/build-local-buildings.mjs で作る）。
@@ -96,9 +100,9 @@ export class World {
       this.landmarks.group,
     ];
 
-    // 地形の外側の平面（ローカル座標の y=0 は原点の楕円体高）。
-    // ゼロメートル地帯（標高 -4m 前後）の地形より上に出ないよう、十分低くする
-    this.groundY = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight - 30;
+    // 地形の外側の平面：標高 GROUND_ELEVATION m（ゼロメートル地帯（標高 -4m 前後）の地形より上に出ないよう、十分低くする）。
+    // 地球の丸みで原点から離れるほど地面は下がるので、毎フレーム自機の真下の高さに合わせる（render）
+    this.groundY = TERRAIN.geoidHeight - WORLD.origin.ellipsoidHeight + GROUND_ELEVATION;
 
     // 地形・ラベルはタイルと同じ座標変換で作る
     const ecefToLocal = computeEcefToLocal();
@@ -128,6 +132,16 @@ export class World {
     return this.buildings;
   }
 
+  /** 地形の外側の平面を、カメラの真下へ動かし、その場所の標高 GROUND_ELEVATION m の高さにする */
+  private followGround(): void {
+    const camera = this.camera.position;
+    const latLon = this.terrain.toLatLon(camera);
+    if (!latLon) return;
+    const y = this.terrain.toLocal(latLon.lat, latLon.lon, GROUND_ELEVATION, this.groundPoint).y;
+    // 格子の線が滑って見えないよう、横は格子の間隔に揃えて動かす
+    this.ground.position.set(Math.round(camera.x / 50) * 50, y, Math.round(camera.z / 50) * 50);
+  }
+
   /** ローカル座標 → 緯度経度（度）。座標変換が決まる前は null */
   toLatLon(position: THREE.Vector3): { lat: number; lon: number } | null {
     return this.terrain.toLatLon(position);
@@ -135,6 +149,7 @@ export class World {
 
   /** @param dt 前のフレームからの秒数（雲やラベルの更新に使う） */
   render(dt: number): void {
+    this.followGround();
     for (const layer of this.layers) layer.update(this.camera);
     this.terrain.update(this.camera.position);
     this.atmosphere.update(this.camera, dt);

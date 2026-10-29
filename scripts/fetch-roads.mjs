@@ -1,12 +1,16 @@
-// 東京23区まわりの主要な通りの名前と位置を OpenStreetMap (Overpass API) から取得し、
+// 東京23区と横浜市・川崎市まわりの主要な通りの名前と位置を OpenStreetMap (Overpass API) から取得し、
 // ミニマップに通り名を置くための「ラベル位置」を src/data/roadLabels.json に書き出す。
 // 使い方: node scripts/fetch-roads.mjs
 // データ: © OpenStreetMap contributors (ODbL)
 import { writeFile } from 'node:fs/promises';
 
-const BBOX = '35.52,139.56,35.82,139.92'; // 南,西,北,東
+const BBOX = '35.30,139.46,35.82,139.92'; // 南,西,北,東
 // 混んでいるとエラーを返すので、順に試す
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const ENDPOINTS = [
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 /** ラベルを置く間隔 (m) */
 const LABEL_SPACING = 350;
 /** これより短い道（名前付きの区間の合計）はラベルを付けない (m) */

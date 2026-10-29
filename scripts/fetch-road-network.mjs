@@ -1,7 +1,7 @@
-// 東京23区まわりの道路（中心線）と横断歩道を OpenStreetMap (Overpass API) から取得し、
+// 東京23区と横浜市・川崎市まわりの道路（中心線）と横断歩道を OpenStreetMap (Overpass API) から取得し、
 // 地形チャンクと同じタイル（ズーム15）ごとに public/roads/15/{x}/{y}.json に書き出す。
 // 使い方: node scripts/fetch-road-network.mjs [南,西,北,東] [分割数]
-//   範囲を省くと23区全体（1時間ほどかかる）。範囲を指定した時は、既存のタイルを消さずに追加・上書きする
+//   範囲を省くと全体（2時間ほどかかる）。範囲を指定した時は、範囲の中に丸ごと入るタイルだけを追加・上書きする
 // データ: © OpenStreetMap contributors (ODbL)
 //
 // 出力の形式（1タイル）:
@@ -11,14 +11,22 @@
 //        （タイルの境目で分かれた橋の区間どうしが同じ高さでつながるよう、橋全体の両端を持たせる）
 //   "c": [[緯度, 経度, 道の方位(rad, 北から時計回り), 道の種別], ...]   // 横断歩道
 // }
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { snapBbox, tileInBbox } from './lib/tiles.mjs';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.52,139.56,35.82,139.92').split(',').map(Number);
 const partial = process.argv[2] !== undefined;
+// 範囲を指定した時は、タイルの境目まで外へ広げ、範囲の中に丸ごと入るタイルだけを書き出す（まわりのタイルは触らない）
+const [SOUTH, WEST, NORTH, EAST] = ((b) => (partial ? snapBbox(b, 15) : b))(
+  (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number),
+);
 /** Overpass への問い合わせを分割する数（縦横）。大きすぎると応答が遅く、失敗しやすい */
-const SPLIT = Number(process.argv[3] ?? 10);
+const SPLIT = Number(process.argv[3] ?? 15);
 const ZOOM = 15;
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const ENDPOINTS = [
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 const OUT_DIR = new URL('../public/roads/15/', import.meta.url);
 
 /** 種別：0=幹線（国道など） 1=2車線の道路 2=生活道路 */
@@ -28,8 +36,12 @@ const CLASS = {
   unclassified: 2, residential: 2, living_street: 2,
 };
 
+/** 区画ごとの取得結果のキャッシュ（途中で止まっても、取れた区画は取り直さない） */
+const CACHE_DIR = new URL('../data/cache/roads/', import.meta.url);
+
 async function overpass(query) {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // 混んでいる時は、待ちながら何度も試す
+  for (let attempt = 0; attempt < 20; attempt++) {
     for (const endpoint of ENDPOINTS) {
       try {
         const res = await fetch(endpoint, {
@@ -43,7 +55,7 @@ async function overpass(query) {
         console.warn(`${endpoint} → ${e.message}`);
       }
     }
-    await new Promise((r) => setTimeout(r, 10000));
+    await new Promise((r) => setTimeout(r, 20000));
   }
   throw new Error('Overpass API から取得できませんでした');
 }
@@ -75,11 +87,17 @@ for (let i = 0; i < SPLIT; i++) {
     const e = WEST + ((EAST - WEST) * (i + 1)) / SPLIT;
     const bbox = `${s},${w},${n},${e}`;
     // 道は「タグと形」だけ、横断歩道は「位置」だけ取る（ノード番号は使わず、座標の一致で交差点を探す）
-    const elements = await overpass(`[out:json][timeout:180];
-      way["highway"~"^(${Object.keys(CLASS).join('|')})$"]["tunnel"!~"yes|building_passage"]["area"!="yes"](${bbox});
-      out tags geom qt;
-      node["highway"="crossing"](${bbox});
-      out skel qt;`);
+    const cacheFile = new URL(`${bbox}.json`, CACHE_DIR);
+    let elements = await readFile(cacheFile, 'utf8').then(JSON.parse, () => null);
+    if (!elements) {
+      elements = await overpass(`[out:json][timeout:180];
+        way["highway"~"^(${Object.keys(CLASS).join('|')})$"]["tunnel"!~"yes|building_passage"]["area"!="yes"](${bbox});
+        out tags geom qt;
+        node["highway"="crossing"](${bbox});
+        out skel qt;`);
+      await mkdir(CACHE_DIR, { recursive: true });
+      await writeFile(cacheFile, JSON.stringify(elements));
+    }
     for (const el of elements) {
       if (el.type === 'way') ways.push(el);
       else crossings.add(pointKey(el));
@@ -164,6 +182,7 @@ for (const way of unique) {
 if (!partial) await rm(OUT_DIR, { recursive: true, force: true });
 let bytes = 0;
 for (const [key, data] of tiles) {
+  if (partial && !tileInBbox(key, [SOUTH, WEST, NORTH, EAST], ZOOM)) continue;
   const [x, y] = key.split('/');
   await mkdir(new URL(`${x}/`, OUT_DIR), { recursive: true });
   const json = JSON.stringify(data);
