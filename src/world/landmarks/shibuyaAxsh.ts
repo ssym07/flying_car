@@ -11,6 +11,8 @@ import { cap, extrudeWalls, facadeMaterial, roundedRect } from './azabudaiHills'
  * - 下半身（0〜28m）：銀色の縦のフィンのガラス。正面の中央に白い門の枠、
  *   10m と 22m の高さに斜めに折れた白い庇の帯
  * - ガーデン：塔の前から南の角（交差点）へ下りる段々の植え込みと木、木の大階段、芝生
+ * - 歩道橋（明治通りをまたぐ、渋谷クロスタワーへの橋）：屋根付きの茶色い橋と、両端の六角形の東屋、
+ *   アクシュ側で南北へ下りる階段と、クロスタワー側で南へ下りる階段。位置は OpenStreetMap の歩道橋の線
  */
 export interface AxshParts {
   upper: THREE.BufferGeometry;
@@ -25,6 +27,10 @@ export interface AxshParts {
   wood: THREE.BufferGeometry;
   /** 敷地の舗装 */
   paving: THREE.BufferGeometry;
+  /** 歩道橋の床・手すり・柱（茶色） */
+  bridge: THREE.BufferGeometry;
+  /** 歩道橋の屋根・東屋の屋根（こげ茶） */
+  bridgeRoof: THREE.BufferGeometry;
 }
 
 /** 塔の長い向き（東から北へ、度）と中心（東・北, m） */
@@ -59,6 +65,8 @@ export function buildShibuyaAxsh(cx: number): AxshParts {
     trunk: [],
     wood: [],
     paving: [],
+    bridge: [],
+    bridgeRoof: [],
   };
   const a = (ANGLE * Math.PI) / 180;
   /** 塔の座標（u = 長い向き、w = 正面（南東）へ +）→ 東・北 */
@@ -138,6 +146,8 @@ export function buildShibuyaAxsh(cx: number): AxshParts {
   }
   // 正面の細い植え込み（塔と明治通りの間）
   L.plant.push(place(new THREE.BoxGeometry(LEN - 10, 0.5, 2).translate(4, 0.65, DEP / 2 + 2)));
+  buildFootbridge(L, cx);
+
   // 塔の脇の芝生と木（北西側）
   L.plant.push(place(new THREE.BoxGeometry(LEN - 8, 0.4, 6).translate(0, 0.6, -DEP / 2 - 5)));
   for (let u = -22; u <= 22; u += 11) tree(L, place, u, -DEP / 2 - 5, 0.4);
@@ -157,6 +167,84 @@ export function buildShibuyaAxsh(cx: number): AxshParts {
     return g;
   };
   return Object.fromEntries(Object.entries(L).map(([k, v]) => [k, merge(v)])) as unknown as AxshParts;
+}
+
+/** 歩道橋の床の高さ (m)、幅 (m) */
+const DECK = 6.5;
+const BRIDGE_W = 4;
+
+/** 歩道橋（敷地の座標：東・北, m） */
+function buildFootbridge(L: Record<keyof AxshParts, THREE.BufferGeometry[]>, cx: number): void {
+  const P = (e: number, n: number, y: number) => new THREE.Vector3(cx + e, y, -n);
+  const A = [13.6, -27.2] as const; // アクシュ側の東屋
+  const B = [33.3, -42.0] as const; // クロスタワー側の東屋
+  /** a から b への床の板（幅 w、厚み t）と、両側の手すり。屋根付きなら上に屋根 */
+  const span = (a: THREE.Vector3, b: THREE.Vector3, w: number, roof: boolean, steps = 0) => {
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const yaw = Math.atan2(-(b.z - a.z), b.x - a.x);
+    const pitch = Math.atan2(b.y - a.y, len);
+    const mid = a.clone().add(b).multiplyScalar(0.5);
+    const at = (g: THREE.BufferGeometry) => g.rotateZ(pitch).rotateY(yaw).translate(mid.x, mid.y, mid.z);
+    const slen = Math.hypot(len, b.y - a.y);
+    if (steps > 0) {
+      // 階段：段の板を並べる
+      for (let k = 0; k < steps; k++) {
+        const t = (k + 0.5) / steps;
+        const p = a.clone().lerp(b, t);
+        L.bridge.push(new THREE.BoxGeometry(len / steps + 0.05, 0.25, w).rotateY(yaw).translate(p.x, p.y - 0.12, p.z));
+      }
+    } else L.bridge.push(at(new THREE.BoxGeometry(slen, 0.5, w).translate(0, -0.25, 0)));
+    for (const s of [-1, 1]) {
+      L.bridge.push(at(new THREE.BoxGeometry(slen, 1.1, 0.12).translate(0, 0.55, (s * w) / 2)));
+      L.bridge.push(at(new THREE.BoxGeometry(slen, 0.1, 0.2).translate(0, 1.1, (s * w) / 2)));
+    }
+    if (roof) {
+      // 切妻の屋根（こげ茶）と、屋根を支える柱
+      for (const s of [-1, 1]) {
+        L.bridgeRoof.push(
+          at(new THREE.BoxGeometry(slen, 0.15, w / 2 + 0.9).translate(0, 0, (s * (w / 2 + 0.9)) / 2).rotateX(s * -0.35).translate(0, 3.2, 0)),
+        );
+      }
+      const n = Math.max(2, Math.round(slen / 4));
+      for (let k = 0; k <= n; k++) {
+        const p = a.clone().lerp(b, k / n);
+        for (const s of [-1, 1]) {
+          const o = new THREE.Vector3(0, 0, (s * w) / 2).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+          L.bridge.push(new THREE.BoxGeometry(0.2, 3, 0.2).translate(p.x + o.x, p.y + 1.5, p.z + o.z));
+        }
+      }
+    }
+  };
+  /** 東屋：六角形の床と、6本の柱、六角すいの屋根と頂部の飾り */
+  const pavilion = (e: number, n: number) => {
+    const c = P(e, n, DECK);
+    L.bridge.push(new THREE.CylinderGeometry(4, 4, 0.6, 6).translate(c.x, DECK - 0.3, c.z));
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      L.bridge.push(new THREE.BoxGeometry(0.3, 3.4, 0.3).translate(c.x + Math.cos(a) * 3.6, DECK + 1.7, c.z + Math.sin(a) * 3.6));
+    }
+    L.bridgeRoof.push(new THREE.ConeGeometry(5, 2.6, 6).translate(c.x, DECK + 3.4 + 1.3, c.z));
+    L.bridgeRoof.push(new THREE.ConeGeometry(0.4, 1.4, 6).translate(c.x, DECK + 3.4 + 2.6 + 0.6, c.z));
+    // 床の下の柱
+    L.paving.push(new THREE.CylinderGeometry(0.8, 0.8, DECK, 12).translate(c.x, DECK / 2, c.z));
+  };
+  pavilion(...A);
+  pavilion(...B);
+  // 橋（明治通りをまたぐ）
+  span(P(...A, DECK), P(...B, DECK), BRIDGE_W, true);
+  // アクシュ側の階段：東屋から北東と南西へ、敷地の縁に沿って下りる
+  span(P(...A, DECK), P(21.9, -16.3, 0.3), 2.6, false, 22);
+  span(P(...A, DECK), P(2.4, -42.6, 0.3), 2.6, false, 22);
+  // クロスタワー側：東屋から南へ下りる階段（途中の踊り場で折れる）と、北東のクロスタワーのデッキへの短い通路
+  span(P(...B, DECK), P(29.4, -47.2, DECK - 2.2), 2.6, false, 8);
+  L.bridge.push(new THREE.BoxGeometry(3, 0.4, 3).translate(cx + 30.5, DECK - 2.4, 49));
+  span(P(31.6, -49.5, DECK - 2.2), P(32.6, -58.5, 0.3), 2.6, false, 14);
+  span(P(...B, DECK), P(37.4, -36.3, DECK), 3, true);
+  // 橋の下の柱（道路の両側）
+  for (const t of [0.3, 0.7]) {
+    const p = P(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, 0);
+    L.paving.push(new THREE.BoxGeometry(0.8, DECK - 0.5, 0.8).translate(p.x, (DECK - 0.5) / 2, p.z));
+  }
 }
 
 function tree(

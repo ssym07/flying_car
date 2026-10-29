@@ -89,6 +89,8 @@ const LANDMARKS: Landmark[] = [
         trunk: new THREE.MeshStandardMaterial({ color: 0x6b4b36, roughness: 0.9 }),
         wood: new THREE.MeshStandardMaterial({ color: 0x8a5a3c, roughness: 0.8 }),
         paving: new THREE.MeshStandardMaterial({ color: 0xb9b4ab, roughness: 0.85 }),
+        bridge: new THREE.MeshStandardMaterial({ color: 0x8a5a40, roughness: 0.8, side: THREE.DoubleSide }),
+        bridgeRoof: new THREE.MeshStandardMaterial({ color: 0x4e3a2e, roughness: 0.7, side: THREE.DoubleSide }),
       };
       const parts = buildShibuyaAxsh(length / 2);
       const group = new THREE.Group();
