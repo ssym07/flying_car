@@ -21,6 +21,13 @@ import {
   createScrambleGlassMaterial,
 } from './shibuyaScrambleSquare';
 import { type HikarieParts, buildHikarie, createHikarieGlassMaterial, createHikarieTowerMaterial } from './shibuyaHikarie';
+import {
+  type SakuraParts,
+  buildSakuraStage,
+  createSakuraGlassMaterial,
+  createSakuraPinkMaterial,
+  createSakuraResidenceMaterial,
+} from './shibuyaSakuraStage';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -65,6 +72,30 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 渋谷サクラステージ（PLATEAU には建設中の大きな箱しか無いので、それを消して4つの棟を置く）。
+    // 長い向きは線路に沿って、駅の側（北西）から南東へ
+    gmlId: 'bldg_9442d303-7a48-4f81-aa67-b6ef05dbd43b',
+    ...around(35.656425, 139.702265, -41),
+    front: -1,
+    build: (length) => {
+      sakuraShared ??= {
+        glass: createSakuraGlassMaterial(),
+        pink: createSakuraPinkMaterial(),
+        green: new THREE.MeshStandardMaterial({ color: 0x7fb8a8, roughness: 0.15, metalness: 0.4, side: THREE.DoubleSide }),
+        residence: createSakuraResidenceMaterial(),
+        white: new THREE.MeshStandardMaterial({ color: 0xe2e5e7, roughness: 0.5 }),
+        podium: new THREE.MeshStandardMaterial({ color: 0xcfc6b6, roughness: 0.8 }),
+        plant: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
+      };
+      const parts = buildSakuraStage(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof SakuraParts>) {
+        if (parts[key].getAttribute('position').count > 0) group.add(new THREE.Mesh(parts[key], sakuraShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 渋谷ヒカリエ（PLATEAU の箱を消して置く）。長い向きは東西、正面は西（駅側）
     gmlId: 'bldg_9ad5b600-360f-4627-8a89-fca39aad5576',
@@ -247,6 +278,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let sakuraShared: Record<keyof SakuraParts, THREE.Material> | null = null;
 
 let hikarieShared: Record<keyof HikarieParts, THREE.Material> | null = null;
 
