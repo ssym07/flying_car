@@ -32,6 +32,7 @@ import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUp
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import { type SompoParts, buildSompoJapan, createSompoCoreMaterial, createSompoFinMaterial } from './sompoJapan';
 import { type CocoonParts, buildCocoonTower, createCocoonGlassMaterial } from './cocoonTower';
 import { buildSkytree } from './tokyoSkytree';
 import {
@@ -77,6 +78,26 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 損保ジャパン本社ビル（PLATEAU の箱を消して置く）。長い向きは北北東
+    gmlId: 'bldg_81cf4164-d885-4134-81f8-5356472517ee',
+    ...around(35.69269, 139.69612, 70),
+    front: 1,
+    build: (length) => {
+      sompoShared ??= {
+        fin: createSompoFinMaterial(),
+        core: createSompoCoreMaterial(),
+        dark: new THREE.MeshStandardMaterial({ color: 0x3b3331, roughness: 0.6, side: THREE.DoubleSide }),
+        glass: new THREE.MeshStandardMaterial({ color: 0x5f7684, roughness: 0.2, metalness: 0.4 }),
+      };
+      const parts = buildSompoJapan(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof SompoParts>) {
+        group.add(new THREE.Mesh(parts[key], sompoShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // モード学園コクーンタワー（PLATEAU の、東の広場まで含んだ箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_4e9cedb2-e1b8-48f6-9c04-b862aca365f1',
@@ -396,6 +417,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
 
