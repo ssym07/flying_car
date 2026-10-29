@@ -24,7 +24,7 @@ interface View {
 }
 
 /**
- * 画面右下のミニマップ。北が上で、中心が現在地。自機の向きを矢印で示す。
+ * 画面下中央のミニマップ。進行方向が上で、中心が現在地（地図を回す）。北の向きは縁の「N」で示す。
  * 地図は国土地理院の淡色地図を CSS フィルタで暗くして、街の配色に合わせる。
  * 地図と、通り名・矢印は別のキャンバスに描く（フィルタが文字や矢印にかからないように）。
  * 右上の ＋/− ボタンか、ミニマップの上でのホイールで拡大率を変えられる
@@ -39,6 +39,7 @@ export class Minimap {
   private readonly labels: RoadLabel[];
   private readonly textWidths = new Map<string, number>();
   private readonly scaleLabel: HTMLDivElement;
+  private readonly north: HTMLDivElement;
   /** 表示の拡大率（地図タイルのズームと同じ尺度。小数も可） */
   private zoom = MINIMAP.zoom;
 
@@ -54,6 +55,7 @@ export class Minimap {
     const north = document.createElement('div');
     north.className = 'minimap-north';
     north.textContent = 'N';
+    this.north = north;
     const controls = document.createElement('div');
     controls.className = 'minimap-zoom';
     controls.innerHTML = `<button type="button" data-zoom="1" aria-label="拡大">＋</button><button type="button" data-zoom="-1" aria-label="縮小">−</button>`;
@@ -93,11 +95,15 @@ export class Minimap {
       cy: center.y * TILE_PX,
       scale: this.pixelRatio * 2 ** (this.zoom - tileZoom),
     };
-    this.drawMap(view);
+    this.drawMap(view, bearing);
     this.markerCtx.clearRect(0, 0, this.markerCtx.canvas.width, this.markerCtx.canvas.height);
-    this.drawLabels(view);
-    this.drawMarker(bearing);
+    this.drawLabels(view, bearing);
+    this.drawMarker();
     this.updateScaleLabel(lat);
+    // 「N」は縁の、北の向きに置く
+    const r = MINIMAP.size / 2 - 14;
+    this.north.style.left = `${MINIMAP.size / 2 - Math.sin(bearing) * r}px`;
+    this.north.style.top = `${MINIMAP.size / 2 - Math.cos(bearing) * r}px`;
   }
 
   private changeZoom(delta: number): void {
@@ -125,13 +131,19 @@ export class Minimap {
     return canvas;
   }
 
-  private drawMap({ tileZoom: z, cx, cy, scale }: View): void {
+  /** 地図：進行方向が上になるよう、中心のまわりに -bearing 回して描く */
+  private drawMap({ tileZoom: z, cx, cy, scale }: View, bearing: number): void {
     const ctx = this.mapCtx;
     const size = ctx.canvas.width;
-    const half = size / 2 / scale;
+    // 回すと四隅まで要るので、対角線の半分まで読む
+    const half = (size / 2 / scale) * Math.SQRT2;
 
     ctx.fillStyle = '#e8e8e8';
     ctx.fillRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    ctx.rotate(-bearing);
+    ctx.translate(-size / 2, -size / 2);
     const x0 = Math.floor((cx - half) / TILE_PX);
     const x1 = Math.floor((cx + half) / TILE_PX);
     const y0 = Math.floor((cy - half) / TILE_PX);
@@ -145,10 +157,11 @@ export class Minimap {
         ctx.drawImage(image, dx, dy, TILE_PX * scale, TILE_PX * scale);
       }
     }
+    ctx.restore();
   }
 
   /** 範囲内の通り名を、道に沿った向きで、重ならないように描く */
-  private drawLabels({ tileZoom, cx, cy, scale }: View): void {
+  private drawLabels({ tileZoom, cx, cy, scale }: View, bearing: number): void {
     const ctx = this.markerCtx;
     const size = ctx.canvas.width;
     const r = this.pixelRatio;
@@ -165,9 +178,14 @@ export class Minimap {
     // 中心に近いものから置く
     const margin = 4 * r;
     const visible: Array<{ label: RoadLabel; sx: number; sy: number; d: number }> = [];
+    // 地図と同じく -bearing 回す
+    const cos = Math.cos(-bearing);
+    const sin = Math.sin(-bearing);
     for (const label of this.labels) {
-      const sx = (label.x * world - cx) * scale + size / 2;
-      const sy = (label.y * world - cy) * scale + size / 2;
+      const ux = (label.x * world - cx) * scale;
+      const uy = (label.y * world - cy) * scale;
+      const sx = ux * cos - uy * sin + size / 2;
+      const sy = ux * sin + uy * cos + size / 2;
       if (sx < margin || sy < margin || sx > size - margin || sy > size - margin) continue;
       visible.push({ label, sx, sy, d: Math.hypot(sx - size / 2, sy - size / 2) });
     }
@@ -180,11 +198,15 @@ export class Minimap {
     placed.push([size / 2 - keepOut, size / 2 - keepOut, size / 2 + keepOut, size / 2 + keepOut]);
     for (const { label, sx, sy } of visible) {
       if ((perName.get(label.name) ?? 0) >= MINIMAP.maxLabelsPerName) continue;
+      // 文字が逆さにならないよう ±90° に収める
+      let angle = label.angle - bearing;
+      while (angle > Math.PI / 2) angle -= Math.PI;
+      while (angle <= -Math.PI / 2) angle += Math.PI;
       const w = this.textWidth(ctx, label.name) + 4 * r;
       const h = fontSize + 4 * r;
       // 回転した文字を囲む軸平行の箱
-      const c = Math.abs(Math.cos(label.angle));
-      const s = Math.abs(Math.sin(label.angle));
+      const c = Math.abs(Math.cos(angle));
+      const s = Math.abs(Math.sin(angle));
       const hw = (w * c + h * s) / 2;
       const hh = (w * s + h * c) / 2;
       const box: [number, number, number, number] = [sx - hw, sy - hh, sx + hw, sy + hh];
@@ -194,7 +216,7 @@ export class Minimap {
       perName.set(label.name, (perName.get(label.name) ?? 0) + 1);
       ctx.save();
       ctx.translate(sx, sy);
-      ctx.rotate(label.angle);
+      ctx.rotate(angle);
       ctx.strokeText(label.name, 0, 0);
       ctx.fillText(label.name, 0, 0);
       ctx.restore();
@@ -210,13 +232,13 @@ export class Minimap {
     return w;
   }
 
-  private drawMarker(bearing: number): void {
+  /** 自機の矢印と視野の扇形（いつも上向き） */
+  private drawMarker(): void {
     const ctx = this.markerCtx;
     const size = ctx.canvas.width;
     const r = this.pixelRatio;
     ctx.save();
     ctx.translate(size / 2, size / 2);
-    ctx.rotate(bearing);
 
     // 視野の扇形
     const cone = ctx.createRadialGradient(0, 0, 0, 0, 0, 60 * r);

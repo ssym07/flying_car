@@ -1,9 +1,11 @@
+import { MINIMAP } from '../core/config';
+
 /**
- * 飛行機のような計器盤（画面の下中央）。Canvas に毎フレーム描く。
+ * 飛行機のような計器（画面の下中央のミニマップの左右）。Canvas に毎フレーム描く。
  *
- * - 上の段：左 = 速度計（km/h、最高速 300 から先は赤い帯）、中央 = 姿勢指示器（上が空・下が地面、傾きの目盛りと機体の印）、右 = 高度計（m）
- * - 下の段：姿勢指示器の下に方位計（回る方位盤と、固定した機体の印・現在の方位の数字）
- * 表示はクリーム色の目盛りに黒い文字盤、まわりに暗い灰色の枠とねじ
+ * - 左：上 = 速度計（km/h、最高速 300 から先は赤い帯）、下 = 姿勢指示器（上が空・下が地面、傾きの目盛りと機体の印）
+ * - 右：上 = 高度計（m）、下 = 方位計（北が上の方位盤。中央の車の形と矢印が進む向きへ回る・方位の数字）
+ * 表示はクリーム色の目盛りに黒い丸い文字盤（四角い枠は無し）
  */
 export interface InstrumentValues {
   /** 速度 (km/h) */
@@ -34,6 +36,7 @@ export class Instruments {
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'instruments';
+    this.root.style.setProperty('--map', `${MINIMAP.size}px`);
     const make = (name: string) => {
       const canvas = document.createElement('canvas');
       canvas.className = `instrument instrument-${name}`;
@@ -58,12 +61,11 @@ export class Instruments {
       if (canvas.width !== size) canvas.width = canvas.height = size;
       g.setTransform(size / 200, 0, 0, size / 200, 0, 0);
       g.clearRect(0, 0, 200, 200);
-      bezel(g);
+      face(g);
       if (name === 'speed') drawSpeed(g, v.speed);
       else if (name === 'attitude') drawAttitude(g, v.pitch, v.roll);
       else if (name === 'altitude') drawAltitude(g, v.altitude);
       else drawHeading(g, v.heading);
-      screws(g);
     }
   }
 
@@ -74,43 +76,20 @@ export class Instruments {
 
 // ---- 共通：座標は 200 × 200、中心 (100, 100) ----
 
-/** 四角い枠と、丸い文字盤（ふちに橙色の照明のにじみ） */
-function bezel(g: CanvasRenderingContext2D): void {
+/** 丸い文字盤：暗い縁取りと、ふちに橙色の照明のにじみ */
+function face(g: CanvasRenderingContext2D): void {
   g.fillStyle = BEZEL;
-  roundRect(g, 4, 4, 192, 192, 18);
+  g.beginPath();
+  g.arc(100, 100, 97, 0, Math.PI * 2);
   g.fill();
-  g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-  g.lineWidth = 2;
-  g.stroke();
-  const glow = g.createRadialGradient(100, 100, 70, 100, 100, 88);
+  const glow = g.createRadialGradient(100, 100, 74, 100, 100, 92);
   glow.addColorStop(0, FACE);
   glow.addColorStop(0.85, '#191513');
   glow.addColorStop(1, 'rgba(242, 154, 58, 0.55)');
   g.fillStyle = glow;
   g.beginPath();
-  g.arc(100, 100, 86, 0, Math.PI * 2);
+  g.arc(100, 100, 91, 0, Math.PI * 2);
   g.fill();
-}
-
-/** 枠の四隅のねじ */
-function screws(g: CanvasRenderingContext2D): void {
-  for (const [x, y] of [
-    [16, 16],
-    [184, 16],
-    [16, 184],
-    [184, 184],
-  ]) {
-    g.fillStyle = '#1a1c1f';
-    g.beginPath();
-    g.arc(x, y, 5, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = '#4a4e55';
-    g.lineWidth = 1.2;
-    g.beginPath();
-    g.moveTo(x - 3.5, y);
-    g.lineTo(x + 3.5, y);
-    g.stroke();
-  }
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -312,58 +291,54 @@ function drawAltitude(g: CanvasRenderingContext2D, altitude: number): void {
   hub(g);
 }
 
-// ---- 方位計：方位盤が回り、上の印が今の向き ----
+// ---- 方位計：北が上の方位盤。中央の車の形と、外側の矢印が進む向きへ回る ----
 function drawHeading(g: CanvasRenderingContext2D, heading: number): void {
-  g.save();
-  g.translate(100, 100);
-  g.rotate(-heading);
-  g.translate(-100, -100);
   for (let k = 0; k < 72; k++) {
     const a = (k / 72) * Math.PI * 2;
     const major = k % 2 === 0;
     tick(g, a, major ? 66 : 71, 78, major ? 2 : 1.2);
     if (k % 6 === 0) {
       const n = (k / 6) * 3;
+      const cardinal = n % 9 === 0;
       const text = n === 0 ? 'N' : n === 9 ? 'E' : n === 18 ? 'S' : n === 27 ? 'W' : `${n}`;
-      g.save();
-      g.translate(100 + Math.sin(a) * 54, 100 - Math.cos(a) * 54);
-      g.rotate(a);
-      label(g, text, 0, 0, text.length === 1 && n % 9 === 0 ? 16 : 13, n % 9 === 0 ? ACCENT : INK);
-      g.restore();
+      label(g, text, 100 + Math.sin(a) * 54, 100 - Math.cos(a) * 54, cardinal ? 16 : 12, cardinal ? ACCENT : INK);
     }
   }
-  g.restore();
-  // 上の固定の印（今の向き）と、中央の機体の印
-  triangle(g, 0, 80, 90, INK);
-  g.fillStyle = INK;
   g.save();
   g.translate(100, 100);
+  g.rotate(heading);
+  // 矢印：車の前から目盛りまで伸びる針と、後ろの短い尾
+  g.fillStyle = ACCENT;
   g.beginPath();
-  g.moveTo(0, -22);
-  g.lineTo(3, -12);
-  g.lineTo(3, -4);
-  g.lineTo(20, 4);
-  g.lineTo(20, 8);
-  g.lineTo(3, 4);
-  g.lineTo(3, 14);
-  g.lineTo(8, 18);
-  g.lineTo(8, 21);
-  g.lineTo(0, 19);
-  g.lineTo(-8, 21);
-  g.lineTo(-8, 18);
-  g.lineTo(-3, 14);
-  g.lineTo(-3, 4);
-  g.lineTo(-20, 8);
-  g.lineTo(-20, 4);
-  g.lineTo(-3, -4);
-  g.lineTo(-3, -12);
+  g.moveTo(0, -80);
+  g.lineTo(7, -64);
+  g.lineTo(2.2, -64);
+  g.lineTo(2.2, -30);
+  g.lineTo(-2.2, -30);
+  g.lineTo(-2.2, -64);
+  g.lineTo(-7, -64);
   g.closePath();
   g.fill();
+  g.fillRect(-2.2, 28, 4.4, 30);
+  // 車の形（上から見た姿：丸みのある車体と、前後の窓）
+  g.fillStyle = INK;
+  roundRect(g, -10, -24, 20, 48, 8);
+  g.fill();
+  g.fillStyle = '#2a3442';
+  roundRect(g, -7.5, -13, 15, 9, 3);
+  g.fill();
+  roundRect(g, -7, 9, 14, 6, 2.5);
+  g.fill();
+  // 前の白い光と、後ろの赤い光
+  g.fillStyle = '#dff6ff';
+  g.fillRect(-7, -24, 14, 2);
+  g.fillStyle = '#ff4a5a';
+  g.fillRect(-7, 22, 14, 2);
   g.restore();
   // 方位の数字（3桁）
   const degrees = Math.round(((((heading * 180) / Math.PI) % 360) + 360) % 360) % 360;
   g.fillStyle = '#050505';
-  roundRect(g, 76, 124, 48, 18, 3);
+  roundRect(g, 78, 128, 44, 16, 3);
   g.fill();
-  label(g, `${degrees}`.padStart(3, '0'), 100, 134, 13, ACCENT);
+  label(g, `${degrees}`.padStart(3, '0'), 100, 136.5, 12, ACCENT);
 }

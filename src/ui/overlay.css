@@ -97,6 +97,8 @@ body {
   position: absolute;
   left: 16px;
   bottom: 16px;
+  /* 下中央の計器にかからないよう、操作の説明は数値の箱の幅で折り返す */
+  max-width: 440px;
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
@@ -178,8 +180,9 @@ body {
 .minimap {
   pointer-events: auto;
   position: absolute;
-  right: 16px;
+  left: 50%;
   bottom: 16px;
+  transform: translateX(-50%);
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -203,7 +206,7 @@ body {
   position: absolute;
   top: 6px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -311,20 +314,22 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 計器盤：下中央。上の段に速度計・姿勢指示器・高度計、姿勢指示器の下に方位計 */
+/* 計器盤：下中央のミニマップの左右に2つずつ。左 = 速度計（上）・姿勢指示器（下）、右 = 高度計（上）・方位計（下） */
 .instruments {
-  --gauge: clamp(84px, 9.5vw, 132px);
+  --gauge: 112px;
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: 16px;
+  height: var(--map);
   transform: translateX(-50%);
   display: grid;
-  grid-template-columns: repeat(3, var(--gauge));
-  grid-template-rows: repeat(2, var(--gauge));
+  grid-template-columns: var(--gauge) var(--map) var(--gauge);
+  grid-template-rows: var(--gauge) var(--gauge);
   grid-template-areas:
-    'speed attitude altitude'
-    '. heading .';
-  gap: 6px;
+    'speed . altitude'
+    'attitude . heading';
+  align-content: space-evenly;
+  column-gap: 8px;
   pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
 }
