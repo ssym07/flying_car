@@ -20,7 +20,6 @@ export interface CeruleanParts {
   dark: THREE.BufferGeometry;
   /** 足元の宴会棟・低層棟 */
   podium: THREE.BufferGeometry;
-  plant: THREE.BufferGeometry;
 }
 
 const LOW_TOP = 80;
@@ -96,7 +95,7 @@ function lid(cx: number, pts: THREE.Vector2[], y: number, scale = 1): THREE.Buff
 }
 
 export function buildCeruleanTower(cx: number): CeruleanParts {
-  const L: Record<keyof CeruleanParts, THREE.BufferGeometry[]> = { stone: [], glass: [], dark: [], podium: [], plant: [] };
+  const L: Record<keyof CeruleanParts, THREE.BufferGeometry[]> = { stone: [], glass: [], dark: [], podium: [] };
 
   // ---- 低層部 ----
   const low = steppedRect(54, 46, 3);
@@ -132,10 +131,9 @@ export function buildCeruleanTower(cx: number): CeruleanParts {
   L.stone.push(lid(cx, up, H - 3, 0.82));
   L.stone.push(walls(cx, up, H - 3, H, 0.84, 0.84));
 
-  // ---- 足元：正面（-z）の円筒の宴会棟と、西の段々の低層棟 ----
+  // ---- 足元：正面（-z）の円筒の宴会棟（屋上は石の面のまま）と、西の段々の低層棟 ----
   L.podium.push(new THREE.CylinderGeometry(26, 26, 22, 48).translate(cx - 6, 11, -44));
   L.podium.push(new THREE.CylinderGeometry(27, 27, 1.2, 48).translate(cx - 6, 22.6, -44));
-  L.plant.push(new THREE.CylinderGeometry(24, 24, 0.5, 48).translate(cx - 6, 23.4, -44));
   for (const [x0, x1, z0, z1, h] of [
     [-70, -27, -30, 30, 26],
     [-70, -45, 30, 44, 18],

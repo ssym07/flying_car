@@ -85,7 +85,6 @@ const LANDMARKS: Landmark[] = [
         glass: new THREE.MeshStandardMaterial({ color: 0x3e5f86, roughness: 0.15, metalness: 0.5 }),
         dark: new THREE.MeshStandardMaterial({ color: 0x4a4540, roughness: 0.6 }),
         podium: new THREE.MeshStandardMaterial({ color: 0xb3a897, roughness: 0.8 }),
-        plant: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
       };
       const parts = buildCeruleanTower(length / 2);
       const group = new THREE.Group();
