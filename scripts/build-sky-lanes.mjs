@@ -1,14 +1,14 @@
 /**
  * 空飛ぶ車の航路を作る → public/sky-lanes.json
  *
- * - 幹線道路：道路データの幹線（種別 0）をつないで長い線にし、短いもの・上下線の重なりを除いて本数を絞る。
+ * - 道の上：道路データの幹線（種別 0）と準幹線（種別 1）をつないで長い線にし、短いもの・上下線の重なりを除く。
  *   道の向きで段を分ける（南北寄り = 0・2 段、東西寄り = 1・3 段）
  * - 主要駅のまわり：駅を中心とする円の中に、街の道路の向きに合わせた格子の航路を張る（幹線の航路は円の中では消す）。
  *   格子の片方の向きは 0・2 段、もう片方は 1・3 段
  * - 高さ：段の高さ（地面からの m）を、均した地面の上に置く。高い建物の上では、その段を建物の上まで持ち上げ（ゆるい坂でつなぐ）、
  *   持ち上げる量が大きすぎる所（スカイツリーなど）は線を切る
  *
- * 出力：{ tiers: [段の高さ], lanes: [[段, 格子なら 1, [緯度, 経度（1e-6度）, 標高（ジオイド基準, 0.1m）, ...]]] }
+ * 出力：{ tiers: [段の高さ], lanes: [[段, 種類（0 = 都心の外の道・1 = 駅の格子・2 = 都心の道）, [緯度, 経度（1e-6度）, 標高（ジオイド基準, 0.1m）, ...]]] }
  * 使い方：node scripts/build-sky-lanes.mjs
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
@@ -24,8 +24,11 @@ const OUT = new URL('../public/sky-lanes.json', import.meta.url);
 
 /** 段の高さ（地面から, m）。src/world/SkyTraffic.ts と同じ順 */
 const TIERS = [80, 130, 190, 260];
-/** 幹線の航路の最短の長さ (m) と、ほかの航路にこの距離 (m) 以内で重なる割合がこれより多ければ捨てる */
-const MIN_LENGTH = 1500;
+/**
+ * 道の上の航路の最短の長さ (m)：幹線と準幹線。ほかの航路にこの距離 (m) 以内で重なる割合がこれより多ければ捨てる
+ */
+const MIN_LENGTH = 1000;
+const MIN_LENGTH_COLLECTOR = 800;
 const OVERLAP_RADIUS = 60;
 const OVERLAP_SHARE = 0.4;
 /** 道をつなぐ時の、曲がる角度の上限 (度) */
@@ -33,7 +36,11 @@ const JOIN_ANGLE = 35;
 /** 主要駅（名前は data/stations/structure.json と同じ）と、格子の円の半径・線の間隔 (m) */
 const HUBS = ['新宿', '渋谷', '池袋', '東京', '品川', '上野', '秋葉原', '新橋'];
 const HUB_RADIUS = 750;
-const GRID_STEP = 150;
+/** 都心（東京駅から CENTER_RADIUS m 以内と、駅の格子の円から HUB_MARGIN m 以内） */
+const CENTER = [35.6812, 139.7671];
+const CENTER_RADIUS = 3000;
+const HUB_MARGIN = 750;
+const GRID_STEP = 200;
 /** 建物の上に空ける高さ (m)、坂の勾配、持ち上げてよい量の上限 (m) */
 const CLEARANCE = 25;
 const SLOPE = 0.15;
@@ -92,6 +99,7 @@ const polyLength = (pts) => pts.reduce((sum, p, i) => (i > 0 ? sum + dist(pts[i 
 
 // ---- 道路データを読む ----
 const majors = [];
+const collectors = [];
 /** 駅のまわりの道の向きを見るための線分（幹線・準幹線） */
 const segments = [];
 const demKeys = new Set();
@@ -103,61 +111,66 @@ for (const x of await readdir(ROADS)) {
     for (const [cls, , , coords] of tile.w) {
       if (cls > 1) continue;
       const pts = decode(coords);
-      if (cls === 0) majors.push(pts);
+      (cls === 0 ? majors : collectors).push(pts);
       for (let i = 1; i < pts.length; i++) segments.push([pts[i - 1], pts[i]]);
     }
   }
 }
-console.log(`${majors.length} major ways, ${await prepareDem(demKeys)} elevation tiles`);
+console.log(`${majors.length} major / ${collectors.length} collector ways, ${await prepareDem(demKeys)} elevation tiles`);
 
-// ---- 幹線をつないで長い線にする ----
+// ---- 道をつないで長い線にする（種別ごと） ----
 const CELL = 8;
 const keyOf = ([lat, lon]) => `${Math.round((lon * MX) / CELL)},${Math.round((lat * MY) / CELL)}`;
-const ends = new Map();
-const addEnd = (p, i) => {
-  const [kx, ky] = keyOf(p).split(',').map(Number);
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      const k = `${kx + dx},${ky + dy}`;
-      if (!ends.has(k)) ends.set(k, []);
-      ends.get(k).push(i);
-    }
-  }
-};
-majors.forEach((pts, i) => {
-  addEnd(pts[0], i);
-  addEnd(pts[pts.length - 1], i);
-});
-const used = new Uint8Array(majors.length);
-const chains = [];
-for (let start = 0; start < majors.length; start++) {
-  if (used[start]) continue;
-  used[start] = 1;
-  let chain = majors[start].slice();
-  // 末尾の先へ、まっすぐ続く道をつなぐ（両方向）
-  for (let pass = 0; pass < 2; pass++) {
-    for (;;) {
-      const tail = chain[chain.length - 1];
-      const dir = bearing(chain[Math.max(0, chain.length - 3)], tail);
-      let best = null;
-      for (const j of ends.get(keyOf(tail)) ?? []) {
-        if (used[j]) continue;
-        const w = majors[j];
-        for (const pts of [w, w.slice().reverse()]) {
-          if (dist(pts[0], tail) > CELL * 1.5) continue;
-          let turn = Math.abs(bearing(pts[0], pts[Math.min(2, pts.length - 1)]) - dir);
-          turn = Math.min(turn, Math.PI * 2 - turn) / K;
-          if (turn < JOIN_ANGLE && (!best || turn < best.turn)) best = { j, pts, turn };
-        }
+function chainWays(ways) {
+  const ends = new Map();
+  const addEnd = (p, i) => {
+    const [kx, ky] = keyOf(p).split(',').map(Number);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const k = `${kx + dx},${ky + dy}`;
+        if (!ends.has(k)) ends.set(k, []);
+        ends.get(k).push(i);
       }
-      if (!best) break;
-      used[best.j] = 1;
-      chain = chain.concat(best.pts.slice(1));
     }
-    chain.reverse();
+  };
+  ways.forEach((pts, i) => {
+    addEnd(pts[0], i);
+    addEnd(pts[pts.length - 1], i);
+  });
+  const used = new Uint8Array(ways.length);
+  const chains = [];
+  for (let start = 0; start < ways.length; start++) {
+    if (used[start]) continue;
+    used[start] = 1;
+    let chain = ways[start].slice();
+    // 末尾の先へ、まっすぐ続く道をつなぐ（両方向）
+    for (let pass = 0; pass < 2; pass++) {
+      for (;;) {
+        const tail = chain[chain.length - 1];
+        const dir = bearing(chain[Math.max(0, chain.length - 3)], tail);
+        let best = null;
+        for (const j of ends.get(keyOf(tail)) ?? []) {
+          if (used[j]) continue;
+          const w = ways[j];
+          for (const pts of [w, w.slice().reverse()]) {
+            if (dist(pts[0], tail) > CELL * 1.5) continue;
+            let turn = Math.abs(bearing(pts[0], pts[Math.min(2, pts.length - 1)]) - dir);
+            turn = Math.min(turn, Math.PI * 2 - turn) / K;
+            if (turn < JOIN_ANGLE && (!best || turn < best.turn)) best = { j, pts, turn };
+          }
+        }
+        if (!best) break;
+        used[best.j] = 1;
+        chain = chain.concat(best.pts.slice(1));
+      }
+      chain.reverse();
+    }
+    chains.push(chain);
   }
-  chains.push(chain);
+  return chains;
 }
+const majorChains = chainWays(majors);
+const collectorChains = chainWays(collectors);
 
 /** Douglas-Peucker で点を減らす (m) */
 function simplify(pts, tol) {
@@ -221,19 +234,21 @@ const hubs = HUBS.map((name) => {
 });
 const inHub = (p) => hubs.some((h) => dist(p, h.center) < HUB_RADIUS);
 
-// ---- 幹線の航路：駅の円の中を消し、短いもの・重なるものを捨てる ----
-const pieces = [];
-for (const chain of chains) {
-  let cur = [];
-  for (const p of densify(chain, STEP)) {
-    if (inHub(p)) {
-      if (cur.length > 1) pieces.push(cur);
-      cur = [];
-    } else cur.push(p);
+// ---- 道の上の航路：駅の円の中を消し、短いもの・重なるものを捨てる（幹線を先に選び、準幹線はその隙間を埋める） ----
+function piecesOf(chains) {
+  const pieces = [];
+  for (const chain of chains) {
+    let cur = [];
+    for (const p of densify(chain, STEP)) {
+      if (inHub(p)) {
+        if (cur.length > 1) pieces.push(cur);
+        cur = [];
+      } else cur.push(p);
+    }
+    if (cur.length > 1) pieces.push(cur);
   }
-  if (cur.length > 1) pieces.push(cur);
+  return pieces.sort((a, b) => polyLength(b) - polyLength(a));
 }
-pieces.sort((a, b) => polyLength(b) - polyLength(a));
 const OCELL = OVERLAP_RADIUS;
 const occupied = new Map();
 const cellOf = ([lat, lon]) => [Math.floor((lon * MX) / OCELL), Math.floor((lat * MY) / OCELL)];
@@ -247,18 +262,23 @@ const near = (p) => {
   return false;
 };
 const arterials = [];
-for (const piece of pieces) {
-  if (polyLength(piece) < MIN_LENGTH) break;
-  const probe = piece.filter((_, i) => i % 2 === 0);
-  if (probe.filter(near).length / probe.length > OVERLAP_SHARE) continue;
-  for (const p of probe) {
-    const k = cellOf(p).join(',');
-    if (!occupied.has(k)) occupied.set(k, []);
-    occupied.get(k).push(p);
+for (const [pieces, minLength] of [
+  [piecesOf(majorChains), MIN_LENGTH],
+  [piecesOf(collectorChains), MIN_LENGTH_COLLECTOR],
+]) {
+  for (const piece of pieces) {
+    if (polyLength(piece) < minLength) break;
+    const probe = piece.filter((_, i) => i % 2 === 0);
+    if (probe.filter(near).length / probe.length > OVERLAP_SHARE) continue;
+    for (const p of probe) {
+      const k = cellOf(p).join(',');
+      if (!occupied.has(k)) occupied.set(k, []);
+      occupied.get(k).push(p);
+    }
+    arterials.push(simplify(piece, 8));
   }
-  arterials.push(simplify(piece, 8));
+  console.log(`→ ${arterials.length} lanes on roads`);
 }
-console.log(`${chains.length} chains → ${arterials.length} arterial lanes`);
 
 // ---- 格子の航路 ----
 const grids = [];
@@ -477,6 +497,8 @@ const groundAt = (p) => {
   if (!ground.has(k)) ground.set(k, smoothGround(p[0], p[1], 400) ?? heightAt(p[0], p[1]) ?? 0);
   return ground.get(k);
 };
+/** 航路の種類：0 = 都心の外の道の上、1 = 駅のまわりの格子、2 = 都心の道の上（車の間隔は src/world/SkyTraffic.ts で決める） */
+const isCentral = (p) => dist(p, CENTER) < CENTER_RADIUS || hubs.some((h) => dist(p, h.center) < HUB_RADIUS + HUB_MARGIN);
 function addLane(tier, grid, pts) {
   const samples = densify(pts, STEP);
   const base = samples.map((p) => groundAt(p) + TIERS[tier]);
@@ -486,17 +508,29 @@ function addLane(tier, grid, pts) {
   for (let i = 1; i < alt.length; i++) alt[i] = Math.max(alt[i], alt[i - 1] - SLOPE * STEP);
   for (let i = alt.length - 2; i >= 0; i--) alt[i] = Math.max(alt[i], alt[i + 1] - SLOPE * STEP);
   let cur = [];
+  let kind = -1;
   const flush = () => {
     if (cur.length >= 2 && (cur.length - 1) * STEP >= 300) {
       // 高さの変わらない所は点を間引く
       const out = cur.filter((q, i) => i === 0 || i === cur.length - 1 || i % 5 === 0 || Math.abs(q[2] - cur[i - 1][2]) > 0.5);
-      lanes.push([tier, grid ? 1 : 0, out.flatMap(([lat, lon, h]) => [Math.round(lat * 1e6), Math.round(lon * 1e6), Math.round(h * 10)])]);
+      lanes.push([tier, kind, out.flatMap(([lat, lon, h]) => [Math.round(lat * 1e6), Math.round(lon * 1e6), Math.round(h * 10)])]);
     }
     cur = [];
   };
   for (let i = 0; i < samples.length; i++) {
-    if (need[i] - base[i] > MAX_RAISE) flush();
-    else cur.push([samples[i][0], samples[i][1], alt[i]]);
+    const k = grid ? 1 : isCentral(samples[i]) ? 2 : 0;
+    if (need[i] - base[i] > MAX_RAISE) {
+      flush();
+      continue;
+    }
+    if (k !== kind && cur.length > 0) {
+      // 種類が変わる所で分ける（境目の点は両方に入れて続ける）
+      const last = cur[cur.length - 1];
+      flush();
+      cur.push(last);
+    }
+    cur.push([samples[i][0], samples[i][1], alt[i]]);
+    kind = k;
   }
   flush();
 }
