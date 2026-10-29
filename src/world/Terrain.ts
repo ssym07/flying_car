@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { PARKS, RAILWAYS, TERRAIN } from '../core/config';
-import { addLanduse, fetchLanduse } from './landuse';
+import { addLanduse, buildGraves, fetchLanduse } from './landuse';
 import { addParks, buildTrees, fetchParks } from './parks';
 import { addWater, fetchWaterMask, flattenWater, waterTime } from './water';
 
@@ -337,27 +337,43 @@ export class Terrain {
         map?.dispose();
         water?.dispose();
         parks?.texture.dispose();
-        landuse?.dispose();
+        landuse?.texture.dispose();
         this.chunks.delete(key(chunk));
         return;
       }
       // 地面の種類（データが無くても住宅地の敷地のテンプレートで塗る）があるので、チャンクごとに材質を作る
-      chunk.mesh = new THREE.Mesh(geometry, createMaterials(map, water, parks?.texture ?? null, landuse));
+      chunk.mesh = new THREE.Mesh(geometry, createMaterials(map, water, parks?.texture ?? null, landuse?.texture ?? null));
       applyCarves(chunk.mesh, [...this.carves.values()], false);
       geometry.computeBoundingBox();
       this.updateTrenchMask(chunk);
       geometry.computeBoundsTree();
       chunk.heights = heights;
       this.group.add(chunk.mesh);
-      if (parks && parks.trees.length > 0) {
-        chunk.trees = buildTrees(parks.trees, (u, v) => {
-          const lonLat = tileToLonLat(chunk.x + u, chunk.y + v, z);
-          const lat = lonLat.lat * THREE.MathUtils.RAD2DEG;
-          const lon = lonLat.lon * THREE.MathUtils.RAD2DEG;
-          const h = this.surfaceHeightAt(lat, lon);
-          return h === null ? null : this.toLocal(lat, lon, h - 0.2);
-        });
-        this.trees.add(chunk.trees);
+      // 木と墓石（近くのチャンクだけ描く）
+      const groundAt = (u: number, v: number) => {
+        const lonLat = tileToLonLat(chunk.x + u, chunk.y + v, z);
+        const lat = lonLat.lat * THREE.MathUtils.RAD2DEG;
+        const lon = lonLat.lon * THREE.MathUtils.RAD2DEG;
+        const h = this.surfaceHeightAt(lat, lon);
+        return h === null ? null : this.toLocal(lat, lon, h - 0.2);
+      };
+      const props = parks && parks.trees.length > 0 ? buildTrees(parks.trees, groundAt) : new THREE.Group();
+      const graves = landuse
+        ? buildGraves(landuse.graves, groundAt, (u, v, angle) => {
+            // 区画の並ぶ向き（東が 0、北へ回る）の 1m 先の点との差
+            const lonLat = tileToLonLat(chunk.x + u, chunk.y + v, z);
+            const lat = lonLat.lat * THREE.MathUtils.RAD2DEG;
+            const lon = lonLat.lon * THREE.MathUtils.RAD2DEG;
+            const a = angle * THREE.MathUtils.DEG2RAD;
+            const p0 = this.toLocal(lat, lon, 0);
+            const p1 = this.toLocal(lat + Math.sin(a) / 111320, lon + Math.cos(a) / (111320 * Math.cos(lonLat.lat)), 0);
+            return p1.sub(p0);
+          })
+        : null;
+      if (graves) props.add(graves);
+      if (props.children.length > 0) {
+        chunk.trees = props;
+        this.trees.add(props);
       }
       for (const l of this.listeners) l.onChunkAdded(chunk.x, chunk.y);
     } catch (e) {

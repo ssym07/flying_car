@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { LANDUSE } from '../core/config';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { LANDUSE, ROADS } from '../core/config';
+import { RoadClass, roadLayout } from './roadTemplates';
 
 /**
  * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場。
@@ -8,6 +10,7 @@ import { LANDUSE } from '../core/config';
  * データの無い所は「住宅地の敷地」のテンプレートで塗る（航空写真のぼやけと、写り込んだ屋根を見せない）。
  * ただし写真が緑っぽい所（印の無い河川敷・芝など）は草地にする。
  * どの種類も航空写真の色を少しだけ混ぜて、場所ごとの違いを残す。
+ * 墓地には立体の墓石（台石・上台・竿石）を、墓地の向きに合わせた格子に並べる（通路・空き区画を空け、道路の上には置かない）。
  */
 
 /** 地面の種類データ1タイル：[種類, 向き(度, 0〜179。東が 0、北へ回る), 座標（1e-6度、先頭以外は差分）] */
@@ -16,12 +19,27 @@ interface LanduseTile {
 }
 
 const SIZE = 512;
+/** 墓地の種類の番号（scripts/fetch-landuse.mjs と同じ） */
+const CEMETERY = 2;
+
+/** 墓石1基：タイルの中の位置（u = 東へ、v = 南へ、0〜1）、区画の並ぶ向き（度、東が 0、北へ回る）、色の明るさ */
+export interface GraveSpot {
+  u: number;
+  v: number;
+  angle: number;
+  shade: number;
+}
+
+export interface LanduseData {
+  texture: THREE.Texture;
+  graves: GraveSpot[];
+}
 
 /**
- * チャンク (x, y, z) の地面の種類の画像（R = 種類 + 1 を 20 倍した値（0 はデータ無し）、G = 向き / 180）。
+ * チャンク (x, y, z) の地面の種類の画像（R = 種類 + 1 を 20 倍した値（0 はデータ無し）、G = 向き / 180）と、墓地の墓石の位置。
  * データが無ければ null（全体を住宅地の敷地で塗る）
  */
-export async function fetchLanduse(x: number, y: number, z: number): Promise<THREE.Texture | null> {
+export async function fetchLanduse(x: number, y: number, z: number): Promise<LanduseData | null> {
   let data: LanduseTile;
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}${LANDUSE.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
@@ -71,13 +89,178 @@ export async function fetchLanduse(x: number, y: number, z: number): Promise<THR
       }
     }
   }
+  const graves = data.a.some(([kind]) => kind === CEMETERY) ? await placeGraves(data, pixels, x, y, z) : [];
   const texture = new THREE.DataTexture(pixels, SIZE, SIZE);
   texture.needsUpdate = true;
   // 種類の番号が隣と混ざらないよう、補間しない
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
   texture.generateMipmaps = false;
-  return texture;
+  return { texture, graves };
+}
+
+/** 墓石の区画の大きさ (m)：並ぶ向き（along）と、それに直角（across）。この区画ごとに通路を空ける */
+const PLOT_ALONG = 2.4;
+const PLOT_ACROSS = 3.0;
+const AISLE_EVERY_ALONG = 6;
+const AISLE_EVERY_ACROSS = 4;
+/** 空き区画の割合 */
+const EMPTY = 0.1;
+/** 1チャンクの墓石の上限 */
+const MAX_GRAVES = 30000;
+
+/**
+ * 墓地の墓石の位置。区画の格子は世界で共通の座標で作る（タイルの境目で墓地が分かれても列がずれない）。
+ * 区画の中心が「墓地」の画素で、道路から離れていれば置く
+ */
+async function placeGraves(data: LanduseTile, pixels: Uint8Array, x: number, y: number, z: number): Promise<GraveSpot[]> {
+  const roads = await roadMask(x, y, z);
+  const n = 2 ** z;
+  const K = Math.PI / 180;
+  const MY = 111320;
+  const MX = 111320 * Math.cos(35.6 * K);
+  const graves: GraveSpot[] = [];
+  const hash = (a: number, b: number) => {
+    const h = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+    return h - Math.floor(h);
+  };
+  for (const [kind, angle, coords] of data.a) {
+    if (kind !== CEMETERY) continue;
+    const pts = decode(coords);
+    const c = Math.cos(angle * K);
+    const s = Math.sin(angle * K);
+    // 形の範囲を、区画の格子の座標（along, across）にする
+    let a0 = Infinity;
+    let a1 = -Infinity;
+    let b0 = Infinity;
+    let b1 = -Infinity;
+    for (const [lat, lon] of pts) {
+      const e = lon * MX;
+      const nn = lat * MY;
+      const along = e * c + nn * s;
+      const across = -e * s + nn * c;
+      a0 = Math.min(a0, along);
+      a1 = Math.max(a1, along);
+      b0 = Math.min(b0, across);
+      b1 = Math.max(b1, across);
+    }
+    for (let i = Math.floor(a0 / PLOT_ALONG); i <= Math.ceil(a1 / PLOT_ALONG); i++) {
+      // 通路の列
+      if (((i % AISLE_EVERY_ALONG) + AISLE_EVERY_ALONG) % AISLE_EVERY_ALONG === AISLE_EVERY_ALONG - 1) continue;
+      for (let j = Math.floor(b0 / PLOT_ACROSS); j <= Math.ceil(b1 / PLOT_ACROSS); j++) {
+        if (((j % AISLE_EVERY_ACROSS) + AISLE_EVERY_ACROSS) % AISLE_EVERY_ACROSS === AISLE_EVERY_ACROSS - 1) continue;
+        if (hash(i, j) < EMPTY) continue;
+        const along = (i + 0.5) * PLOT_ALONG;
+        const across = (j + 0.5) * PLOT_ACROSS;
+        const lon = (along * c - across * s) / MX;
+        const lat = (along * s + across * c) / MY;
+        const tx = ((lon + 180) / 360) * n - x;
+        const ty = ((1 - Math.asinh(Math.tan(lat * K)) / Math.PI) / 2) * n - y;
+        if (tx < 0 || tx >= 1 || ty < 0 || ty >= 1) continue;
+        const col = Math.floor(tx * SIZE);
+        const row = Math.floor(ty * SIZE);
+        // 画素は行 0 が南（上下を入れ替えて塗っている）
+        if (pixels[((SIZE - 1 - row) * SIZE + col) * 4] !== (CEMETERY + 1) * 20) continue;
+        if (roads && roads[row * SIZE + col]) continue;
+        graves.push({ u: tx, v: ty, angle, shade: hash(j, i) });
+        if (graves.length >= MAX_GRAVES) return graves;
+      }
+    }
+  }
+  return graves;
+}
+
+/** 同じタイルの道路（車道と歩道の幅 + 1m）を塗った画像（行 0 が北）。道路データが無ければ null */
+async function roadMask(x: number, y: number, z: number): Promise<Uint8Array | null> {
+  let tile: { w: Array<[RoadClass, number, 0 | 1, number[]]> };
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
+    if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
+    tile = await res.json();
+  } catch {
+    return null;
+  }
+  const canvas = new OffscreenCanvas(SIZE, SIZE);
+  const g = canvas.getContext('2d')!;
+  const n = 2 ** z;
+  // 1px あたりの m
+  const metersPerPx = (40075016 * Math.cos(((tileLat(y + 0.5, z) * Math.PI) / 180))) / n / SIZE;
+  g.strokeStyle = '#fff';
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  for (const [cls, lanes, oneway, coords] of tile.w) {
+    const layout = roadLayout(cls, lanes, oneway === 1);
+    g.lineWidth = (layout.width + layout.sidewalk * 2 + 2) / metersPerPx;
+    g.beginPath();
+    decode(coords).forEach(([lat, lon], i) => {
+      const px = (((lon + 180) / 360) * n - x) * SIZE;
+      const py = (((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n - y) * SIZE;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    });
+    g.stroke();
+  }
+  const image = g.getImageData(0, 0, SIZE, SIZE).data;
+  const mask = new Uint8Array(SIZE * SIZE);
+  for (let i = 0; i < mask.length; i++) mask[i] = image[i * 4 + 3] > 0 ? 1 : 0;
+  return mask;
+}
+
+/** タイルの行 ty（ズーム z）の緯度（度） */
+function tileLat(ty: number, z: number): number {
+  return (Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / 2 ** z))) * 180) / Math.PI;
+}
+
+let graveMaterial: THREE.MeshStandardMaterial | null = null;
+let graveGeometry: THREE.BufferGeometry | null = null;
+
+/**
+ * 墓石を InstancedMesh にまとめる。position(u, v) は地面の上の点、along(u, v, angle) はその点での区画の並ぶ向き（ローカル座標）。
+ * 墓石は和型：台石（1.5m 角）・上台・竿石（高さ 1.7m）。正面は区画の並ぶ向きに直角
+ */
+export function buildGraves(
+  graves: GraveSpot[],
+  position: (u: number, v: number) => THREE.Vector3 | null,
+  along: (u: number, v: number, angle: number) => THREE.Vector3 | null,
+): THREE.InstancedMesh | null {
+  if (graves.length === 0) return null;
+  graveMaterial ??= new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.05 });
+  graveGeometry ??= (() => {
+    const parts = [
+      new THREE.BoxGeometry(1.5, 0.3, 1.5).translate(0, 0.15, 0),
+      new THREE.BoxGeometry(1.05, 0.32, 0.9).translate(0, 0.46, 0.1),
+      new THREE.BoxGeometry(0.55, 1.08, 0.42).translate(0, 1.16, 0.12),
+    ];
+    const g = mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
+    for (const p of parts) p.dispose();
+    return g;
+  })();
+  const mesh = new THREE.InstancedMesh(graveGeometry, graveMaterial, graves.length);
+  const matrix = new THREE.Matrix4();
+  const quat = new THREE.Quaternion();
+  const unitX = new THREE.Vector3(1, 0, 0);
+  const scale = new THREE.Vector3(1, 1, 1);
+  const color = new THREE.Color();
+  let count = 0;
+  for (const grave of graves) {
+    const p = position(grave.u, grave.v);
+    const dir = along(grave.u, grave.v, grave.angle);
+    if (!p || !dir) continue;
+    quat.setFromUnitVectors(unitX, dir.setY(0).normalize());
+    // 墓石ごとの高さのばらつき
+    scale.set(1, 0.9 + grave.shade * 0.25, 1);
+    matrix.compose(p, quat, scale);
+    mesh.setMatrixAt(count, matrix);
+    // 明るい灰色の御影石を中心に、ところどころ黒っぽい石
+    const k = grave.shade < 0.12 ? 0.32 + grave.shade : 0.62 + grave.shade * 0.25;
+    mesh.setColorAt(count, color.setRGB(k, k, k * 0.98));
+    count++;
+  }
+  mesh.count = count;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  return mesh;
 }
 
 /** データの無いチャンク用（全体を住宅地の敷地に） */
@@ -164,14 +347,13 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
             // 線路の敷地：砂利
             col = lu_ballast * (0.7 + luHash(floor(w * 6.0)) * 0.45) * (0.9 + big * 0.15);
           } else if (kind < 2.5) {
-            // 墓地：石畳に墓石の並び。6区画ごとに通路を空け、ところどころ空き区画にする
-            col = lu_stone * (0.92 + fine * 0.1);
-            vec2 cell = floor(vec2(along / 2.2, across / 2.6));
-            vec2 g = vec2(mod(along, 2.2), mod(across, 2.6));
-            float aisle = step(5.0, mod(cell.x, 6.0)) + step(3.0, mod(cell.y, 4.0));
-            float grave = step(0.4, g.x) * step(g.x, 1.4) * step(0.5, g.y) * step(g.y, 1.7);
-            grave *= (1.0 - clamp(aisle, 0.0, 1.0)) * step(0.12, luHash(cell + 7.0));
-            col = mix(col, lu_grave * (0.8 + luHash(cell) * 0.4), grave);
+            // 墓地：白っぽい石張り（不揃いな丸い石の目地）。墓石は立体で並べる（buildGraves）
+            col = lu_stone * (0.95 + fine * 0.08);
+            vec2 q = w / 0.6;
+            vec2 cell = floor(q);
+            vec2 f = fract(q) - 0.5 + (vec2(luHash(cell), luHash(cell + 3.1)) - 0.5) * 0.3;
+            float joint = smoothstep(0.32, 0.5, max(abs(f.x), abs(f.y)));
+            col *= 1.0 - joint * 0.12 * (1.0 - clamp(fwidth(q.x), 0.0, 1.0));
           } else if (kind < 3.5) {
             // 寺社の境内：白い玉砂利
             col = lu_gravel * (0.85 + luHash(floor(w * 8.0)) * 0.25);
