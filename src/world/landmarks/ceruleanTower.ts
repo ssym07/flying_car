@@ -10,7 +10,7 @@ import { FLOOR, facadeMaterial } from './azabudaiHills';
  * - 切り替え（80〜90m）：四隅がのこぎりの歯のように段々に引っ込む
  * - 上層部（90〜170m）：一回り細い平面（44×36m）。四隅に暗い縦の溝。正面と背面の中央に青いガラスの帯
  * - 最上層部（170〜184m）：上へ向かって細くなる台形（側面が内へ傾く）の冠と、上の縁
- * - 足元：正面の円筒の宴会棟（ホテルの入口）と、段々の低層棟
+ * - 足元：段々の低層棟
  */
 export interface CeruleanParts {
   stone: THREE.BufferGeometry;
@@ -131,9 +131,7 @@ export function buildCeruleanTower(cx: number): CeruleanParts {
   L.stone.push(lid(cx, up, H - 3, 0.82));
   L.stone.push(walls(cx, up, H - 3, H, 0.84, 0.84));
 
-  // ---- 足元：正面（-z）の円筒の宴会棟（屋上は石の面のまま）と、西の段々の低層棟 ----
-  L.podium.push(new THREE.CylinderGeometry(26, 26, 22, 48).translate(cx - 6, 11, -44));
-  L.podium.push(new THREE.CylinderGeometry(27, 27, 1.2, 48).translate(cx - 6, 22.6, -44));
+  // ---- 足元：西と東の段々の低層棟（正面の円筒の宴会棟は、国道246号と重なるので置かない） ----
   for (const [x0, x1, z0, z1, h] of [
     [-70, -27, -30, 30, 26],
     [-70, -45, 30, 44, 18],
