@@ -361,7 +361,7 @@ function drawHeading(g: CanvasRenderingContext2D, heading: number): void {
   g.fill();
   g.restore();
   // 方位の数字（3桁）
-  const degrees = Math.round((((heading * 180) / Math.PI) % 360 + 360) % 360) % 360;
+  const degrees = Math.round(((((heading * 180) / Math.PI) % 360) + 360) % 360) % 360;
   g.fillStyle = '#050505';
   roundRect(g, 76, 124, 48, 18, 3);
   g.fill();
