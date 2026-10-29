@@ -67,6 +67,8 @@ export class RoadNetwork implements ChunkListener {
   private readonly roadMaterial = createRoadMaterial();
   private readonly sidewalkMaterial = createSidewalkMaterial();
   private readonly crosswalkMaterial = createCrosswalkMaterial();
+  /** 中央分離帯（植え込み） */
+  private readonly medianMaterial = new THREE.MeshStandardMaterial({ color: ROADS.medianColor, roughness: 0.9 });
   private readonly concreteMaterial = new THREE.MeshStandardMaterial({
     color: BRIDGES.concreteColor,
     roughness: 0.85,
@@ -129,19 +131,29 @@ export class RoadNetwork implements ChunkListener {
     const crosswalk = new MeshBuilder();
     const bridge: BridgeParts = { body: new MeshBuilder(), railing: new MeshBuilder(), steel: new MeshBuilder() };
     const ways = data.w.map(([cls, lanes, oneway, coords, junctions, bridgeInfo]) => ({
+      cls,
+      oneway: oneway === 1,
       layout: roadLayout(cls, lanes, oneway === 1),
       points: decode(coords),
       junctions,
       bridge: bridgeInfo || null,
     }));
     const intersections = findIntersections(ways);
-    for (const way of ways) {
+    const median = new MeshBuilder();
+    // 上下線が別の道になっている大通り（幹線・2車線の一方通行）：相方を探して中央分離帯にするための線（ローカル座標の xz）
+    const divided = ways.map((w) =>
+      w.oneway && w.cls !== RoadClass.Local && !w.bridge
+        ? w.points.map(([lat, lon]) => this.terrain.toLocal(lat, lon, 0))
+        : null,
+    );
+    for (const [index, way] of ways.entries()) {
+      const partners = divided[index] ? divided.filter((d, j): d is THREE.Vector3[] => d !== null && j !== index) : [];
       // この道の上の交差点（点の番号と、交差点の半径）
       const stops = way.junctions.flatMap((i) => {
         const j = intersections.get(pointKey(way.points[i]));
         return j ? [{ index: i, radius: j.radius }] : [];
       });
-      this.buildWay(way.layout, way.points, stops, way.bridge, road, sidewalk, bridge);
+      this.buildWay(way.layout, way.points, stops, way.bridge, road, sidewalk, bridge, partners, median);
     }
     for (const j of intersections.values()) this.buildIntersection(j, road, sidewalk);
     for (const [lat, lon, bearing, cls] of data.c) {
@@ -154,6 +166,7 @@ export class RoadNetwork implements ChunkListener {
     add(road.build('roadAttr'), this.roadMaterial);
     add(sidewalk.build(), this.sidewalkMaterial);
     add(crosswalk.build(), this.crosswalkMaterial);
+    add(median.build(), this.medianMaterial);
     add(bridge.body.build(), this.concreteMaterial);
     add(bridge.railing.build(), this.railingMaterial);
     add(bridge.steel.build(), this.steelMaterial);
@@ -169,6 +182,8 @@ export class RoadNetwork implements ChunkListener {
     road: MeshBuilder,
     sidewalk: MeshBuilder,
     bridgeParts: BridgeParts,
+    partners: THREE.Vector3[][] = [],
+    median: MeshBuilder | null = null,
   ): void {
     // 細かく区切った点の緯度経度と、中心線に沿った距離 s
     const samples: Array<[number, number]> = [];
@@ -234,17 +249,39 @@ export class RoadNetwork implements ChunkListener {
 
     if (deck && bridge) this.buildBridgeParts(bridge, layout, pts, sides, s, samples, bridgeParts);
 
-    // 歩道：交差点のまわりは途切れさせる
-    if (layout.sidewalk <= 0) return;
+    // 上下線が別の道の大通り：各点で、反対向きに並ぶ相方の道までの横の距離（左が +、無ければ 0）
+    const partnerOffset = partners.length > 0 ? this.partnerOffsets(pts, sides, partners) : null;
+
+    // 歩道：交差点のまわりは途切れさせる。相方の道のある側は、歩道の代わりに中央分離帯（相方との真ん中まで）
     for (const dir of [1, -1]) {
       let prevSw: [number, number] | null = null;
+      let prevMd: [number, number] | null = null;
       for (let i = 0; i < pts.length; i++) {
+        const offset = partnerOffset ? partnerOffset[i] * dir : 0;
         if (outside(s[i]) < 0) {
-          prevSw = null;
+          prevSw = prevMd = null;
           continue;
         }
         side.copy(sides[i]).multiplyScalar(dir);
         const base = tmp.copy(pts[i]).setY(pts[i].y + layout.lift + ROADS.curbHeight);
+        if (offset > 0) {
+          prevSw = null;
+          // 真ん中まで（相方の道と重なるほど近ければ作らない）
+          const reach = offset / 2;
+          if (!median || reach < half + 0.3) {
+            prevMd = null;
+            continue;
+          }
+          const inner = base.clone().addScaledVector(side, half);
+          const outer = base.clone().addScaledVector(side, reach + 0.05);
+          const a = median.vertex(dir === 1 ? outer : inner, 0, 0);
+          const b = median.vertex(dir === 1 ? inner : outer, 0, 0);
+          if (prevMd) median.quad(prevMd[0], prevMd[1], a, b);
+          prevMd = [a, b];
+          continue;
+        }
+        prevMd = null;
+        if (layout.sidewalk <= 0) continue;
         const inner = base.clone().addScaledVector(side, half);
         const outer = base.clone().addScaledVector(side, half + layout.sidewalk);
         const v = s[i] / 2.4;
@@ -254,6 +291,47 @@ export class RoadNetwork implements ChunkListener {
         prevSw = [a, b];
       }
     }
+  }
+
+  /**
+   * 各点から、反対向きに並んで走る相方の道（中心線）までの横の距離。左（sides の向き）が +、見つからなければ 0。
+   * 向きが逆（なす角 135° 以上）で、横に MEDIAN_SEARCH m 以内の一番近いものを選ぶ
+   */
+  private partnerOffsets(pts: THREE.Vector3[], sides: THREE.Vector3[], partners: THREE.Vector3[][]): Float32Array {
+    const out = new Float32Array(pts.length);
+    const t = new THREE.Vector3();
+    const seg = new THREE.Vector3();
+    const w = new THREE.Vector3();
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      t.subVectors(pts[Math.min(i + 1, pts.length - 1)], pts[Math.max(i - 1, 0)]).setY(0).normalize();
+      let best = Infinity;
+      let lateral = 0;
+      for (const line of partners) {
+        for (let k = 1; k < line.length; k++) {
+          const a = line[k - 1];
+          const b = line[k];
+          seg.subVectors(b, a).setY(0);
+          const len = seg.length();
+          if (len < 0.1) continue;
+          seg.divideScalar(len);
+          if (seg.dot(t) > -0.7) continue;
+          // 線分の上の一番近い点
+          w.subVectors(p, a).setY(0);
+          const along = THREE.MathUtils.clamp(w.dot(seg), 0, len);
+          w.set(a.x + seg.x * along - p.x, 0, a.z + seg.z * along - p.z);
+          const d = w.length();
+          if (d >= best || d > ROADS.medianSearch) continue;
+          // 横に並んでいる（前後にずれていない）ものだけ
+          const across = w.dot(sides[i]);
+          if (Math.abs(across) < d * 0.9) continue;
+          best = d;
+          lateral = across;
+        }
+      }
+      out[i] = lateral;
+    }
+    return out;
   }
 
   /**

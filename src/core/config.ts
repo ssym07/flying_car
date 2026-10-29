@@ -333,6 +333,9 @@ export const ROADS = {
   junctionMargin: 1.5,
   /** 歩道の高さ（車道より上, m） */
   curbHeight: 0.15,
+  /** 上下線が別の道の大通りで、相方の道を探す横の距離 (m) と、中央分離帯（植え込み）の色 */
+  medianSearch: 45,
+  medianColor: 0x6f8a5a,
   /** 横断歩道の長さ（道に沿った方向, m） */
   crosswalkLength: 4,
 };
