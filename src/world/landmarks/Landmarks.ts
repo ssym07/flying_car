@@ -29,6 +29,7 @@ import {
   createSakuraResidenceMaterial,
 } from './shibuyaSakuraStage';
 import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUpperMaterial } from './shibuyaAxsh';
+import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -73,6 +74,27 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // セルリアンタワー（PLATEAU の塔の箱を消して置く。西の低層部の箱は別に消す）
+    gmlId: 'bldg_9c42ff7c-c8bf-456a-ada2-4c416a2dc965',
+    ...around(35.65643, 139.69958, 22),
+    front: -1,
+    build: (length) => {
+      ceruleanShared ??= {
+        stone: createCeruleanStoneMaterial(),
+        glass: new THREE.MeshStandardMaterial({ color: 0x3e5f86, roughness: 0.15, metalness: 0.5 }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x4a4540, roughness: 0.6 }),
+        podium: new THREE.MeshStandardMaterial({ color: 0xb3a897, roughness: 0.8 }),
+        plant: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
+      };
+      const parts = buildCeruleanTower(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof CeruleanParts>) {
+        group.add(new THREE.Mesh(parts[key], ceruleanShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 渋谷アクシュ（PLATEAU の建設中の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_07a23c05-99d6-439c-bd98-f0f873f8a470',
@@ -306,6 +328,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
+
+let ceruleanShared: Record<keyof CeruleanParts, THREE.Material> | null = null;
 
 let axshShared: Record<keyof AxshParts, THREE.Material> | null = null;
 
