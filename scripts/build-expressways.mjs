@@ -7,7 +7,7 @@
 // - 短い橋（川をまたぐだけの地上区間の橋）は地上扱い
 // - 掘割（cutting、または layer が負）は高さ 0（地形を削って底に置くのは描画側）
 // - 地上・掘割と高架の間は勾配 GRADE の坂でつなぐ（つながりをたどって高さを決める）
-// - 出入口（連絡路）の行き止まりと、一般道の点につながる行き止まりは地上（0m）に固定し、
+// - 出入口（連絡路）の行き止まり、一般道の点につながる行き止まり、トンネルの入口は地上（0m）に固定し、
 //   そこから勾配 GRADE で上がるよう高さを抑える（高架のまま空中で途切れないように）
 // - 一般道・線路と交わる所は橋脚を立てない（x）
 //
@@ -63,10 +63,20 @@ const encode = (pts) => {
 
 // ---- 道と点のグラフ ----
 const raw = JSON.parse(await readFile(RAW, 'utf8'));
+/** トンネルの端（fetch-expressways.mjs）。ここで終わる道はトンネルの入口へ下りる */
+const tunnelEnds = new Set(
+  JSON.parse(await readFile(new URL('../data/osm/expressway-tunnels.json', import.meta.url), 'utf8').catch(() => '[]')).map(
+    (p) => `${Math.round(p[0] * 1e6)},${Math.round(p[1] * 1e6)}`,
+  ),
+);
 const ways = raw.map(([link, bridge, cutting, layer, lanes, name, pts]) => ({
   link,
   bridge,
-  cut: cutting === 1 || (layer < 0 && !bridge),
+  // トンネルの入口につながる地上の道は掘割にする（地形を削って入口へ下りる）
+  cut:
+    cutting === 1 ||
+    (layer < 0 && !bridge) ||
+    (!bridge && [pts[0], pts[pts.length - 1]].some((p) => tunnelEnds.has(key(p)))),
   layer,
   lanes,
   name,
@@ -139,7 +149,9 @@ for (const w of ways) for (const k of w.keys) usage.set(k, (usage.get(k) ?? 0) +
 const pinned = new Set();
 for (const w of ways) {
   for (const k of [w.keys[0], w.keys[w.keys.length - 1]]) {
-    if (usage.get(k) === 1 && (w.link || roadPoints.has(k))) pinned.add(k);
+    if (usage.get(k) === 1 && (w.link || roadPoints.has(k) || tunnelEnds.has(k))) pinned.add(k);
+    // トンネルの入口は掘割の底（坂で高架から下りてくる）
+    if (tunnelEnds.has(k)) nodes.get(k).cut = true;
   }
 }
 

@@ -17,6 +17,7 @@ const ENDPOINTS = [
 ];
 const CACHE_DIR = new URL('../data/cache/expressways/', import.meta.url);
 const OUT = new URL('../data/osm/expressways.json', import.meta.url);
+const TUNNEL_OUT = new URL('../data/osm/expressway-tunnels.json', import.meta.url);
 
 async function overpass(query) {
   // 通信が不安定でも粘る（約10分）
@@ -60,6 +61,24 @@ for (let i = 0; i < SPLIT; i++) {
     console.log(`part ${i * SPLIT + j + 1}/${SPLIT * SPLIT}: ${ways.size} ways`);
   }
 }
+
+// ---- トンネルの端（全体を1回で取る）：トンネルに入る手前の高速道路を、地面（掘割）まで下ろすのに使う ----
+const tunnelCache = new URL('../data/cache/expressway-tunnels.json', import.meta.url);
+let tunnelElements = await readFile(tunnelCache, 'utf8').then(JSON.parse, () => null);
+if (!tunnelElements) {
+  tunnelElements = await overpass(`[out:json][timeout:250];
+    way["highway"~"^(motorway|motorway_link)$"]["tunnel"~"^(yes|building_passage|covered)$"](${SOUTH},${WEST},${NORTH},${EAST});
+    out geom qt;`);
+  await writeFile(tunnelCache, JSON.stringify(tunnelElements));
+}
+const tunnelEnds = [];
+for (const el of tunnelElements) {
+  const g = el.geometry;
+  if (!g || g.length < 2) continue;
+  for (const p of [g[0], g[g.length - 1]]) tunnelEnds.push([+p.lat.toFixed(7), +p.lon.toFixed(7)]);
+}
+await writeFile(TUNNEL_OUT, JSON.stringify(tunnelEnds));
+console.log(`${tunnelEnds.length} tunnel ends → data/osm/expressway-tunnels.json`);
 
 const out = [];
 for (const way of ways.values()) {
