@@ -1,4 +1,4 @@
-// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の13市（2025）と、横浜市・川崎市の各区。
+// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の15市（2025）、横浜市・川崎市の各区と、埼玉県の6市。
 // データカタログ API（https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets）から作成。
 // どの区も軽い LOD1（LOD1 が無い台東区はテクスチャ無し LOD2）に外壁テンプレートを貼る。
 // kind: 'lod2-texture' にすると配信データのテクスチャのまま表示する（1区で100MB超と重い）。
@@ -62,7 +62,7 @@ export const WARDS: Ward[] = [
   { code: '14135', name: '川崎市多摩区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/91/53db04-831f-4d05-a906-4d0419201285/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14135_tama-ku_lod1/tileset.json' },
   { code: '14136', name: '川崎市宮前区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/60/33ccc8-8727-475e-946e-88c6020cc2f6/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14136_miyamae-ku_lod1/tileset.json' },
   { code: '14137', name: '川崎市麻生区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/de/d9ebc6-0fe4-4cb1-94b0-1affded44d42/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14137_asao-ku_lod1/tileset.json' },
-  // 多摩地域（2025）：武蔵野市・三鷹市・調布市・西東京市・小金井市・狛江市・立川市・府中市・小平市・東村山市・国分寺市・清瀬市・国立市
+  // 多摩地域（2025）：武蔵野市・三鷹市・調布市・西東京市・小金井市・狛江市・立川市・府中市・小平市・東村山市・国分寺市・清瀬市・国立市・東久留米市・東大和市
   { code: '13203', name: '武蔵野市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/20/609c62-a978-4692-a056-83b33b55e3c1/13203_musashino-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13204', name: '三鷹市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/fe/bebf67-6c9f-4c61-820a-e3b97c7dd0a4/13204_mitaka-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13208', name: '調布市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/34/f83e90-493a-4d23-bd6c-8e2824befd11/13208_chofu-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
@@ -76,4 +76,13 @@ export const WARDS: Ward[] = [
   { code: '13214', name: '国分寺市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/cb/030869-6e9d-44d2-86f4-f629e9679e12/13214_kokubunji-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13221', name: '清瀬市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a5/db7903-1280-4052-b63a-0eed46bda83a/13221_kiyose-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13215', name: '国立市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/0f/f87610-5670-41eb-bbed-5c48960ba6e1/13215_kunitachi-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13222', name: '東久留米市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/dd/6ecce9-9b95-4391-a4a8-8c7c4d44d545/13222_higashikurume-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13220', name: '東大和市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d8/2e3bd6-37dd-4ebf-9565-9a9edcaf0f70/13220_higashiyamato-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  // 埼玉県（2022〜2025）：川口市・蕨市・戸田市・朝霞市・新座市・所沢市
+  { code: '11203', name: '川口市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/cc/de35e6-86f8-43fc-8376-35db690b8008/11203_kawaguchi-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11223', name: '蕨市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/70/a3a85b-3a0c-488e-8d41-06de4c95fb8c/11223_warabi-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11224', name: '戸田市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/f6/629f9a-6b42-4257-a59c-65a615ddb73e/11224_toda-shi_city_2022_citygml_4_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11227', name: '朝霞市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/33/9f65fb-3794-4894-9a6b-3213ce6e9f10/11227_asaka-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11230', name: '新座市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/0d/0cbe85-fe8d-4111-8200-7447ffa0f3cf/11230_niiza-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11208', name: '所沢市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/f9/ef5384-f5a8-4f4d-95ec-77abe3e47910/11208_tokorozawa-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
 ];
