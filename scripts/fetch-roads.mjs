@@ -4,7 +4,7 @@
 // データ: © OpenStreetMap contributors (ODbL)
 import { writeFile } from 'node:fs/promises';
 
-const BBOX = '35.30,139.34,35.89,139.92'; // 南,西,北,東
+const BBOX = '35.30,139.34,36.01,140.01'; // 南,西,北,東
 // 混んでいるとエラーを返すので、順に試す
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',

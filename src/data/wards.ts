@@ -1,4 +1,4 @@
-// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の15市（2025）、横浜市・川崎市の各区と、埼玉県の6市。
+// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の15市（2025）、横浜市・川崎市の各区と、埼玉県の11市。
 // データカタログ API（https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets）から作成。
 // どの区も軽い LOD1（LOD1 が無い台東区はテクスチャ無し LOD2）に外壁テンプレートを貼る。
 // kind: 'lod2-texture' にすると配信データのテクスチャのまま表示する（1区で100MB超と重い）。
@@ -85,4 +85,22 @@ export const WARDS: Ward[] = [
   { code: '11227', name: '朝霞市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/33/9f65fb-3794-4894-9a6b-3213ce6e9f10/11227_asaka-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '11230', name: '新座市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/0d/0cbe85-fe8d-4111-8200-7447ffa0f3cf/11230_niiza-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '11208', name: '所沢市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/f9/ef5384-f5a8-4f4d-95ec-77abe3e47910/11208_tokorozawa-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  // 埼玉県（2023〜2025）：さいたま市（10区）・草加市・八潮市・三郷市・越谷市
+  { code: '11101', name: 'さいたま市西区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e6/0f2355-9fb1-4f95-9e25-d35162886e96/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11101_nishi-ku_lod1/tileset.json' },
+  { code: '11102', name: 'さいたま市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/79/1cbe42-c931-49e9-b87e-47d7a8434ae5/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11102_kita-ku_lod1/tileset.json' },
+  { code: '11103', name: 'さいたま市大宮区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/3e/15c0d4-30df-4e7e-aea9-031acd9e2a1e/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11103_omiya-ku_lod1/tileset.json' },
+  { code: '11104', name: 'さいたま市見沼区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/56/c73954-9c10-4220-a584-ae00e058cd10/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11104_minuma-ku_lod1/tileset.json' },
+  { code: '11105', name: 'さいたま市中央区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/65/764a2b-72b3-4a0d-8005-265cf38f6698/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11105_chuo-ku_lod1/tileset.json' },
+  { code: '11106', name: 'さいたま市桜区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/cc/7b691c-47c4-47f5-ba6e-ef56848b545d/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11106_sakura-ku_lod1/tileset.json' },
+  { code: '11107', name: 'さいたま市浦和区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/ea/2102eb-ab6c-405e-9968-23b9a8b43491/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11107_urawa-ku_lod1/tileset.json' },
+  { code: '11108', name: 'さいたま市南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/13/907203-33d1-4cda-892e-c811af81e8f9/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11108_minami-ku_lod1/tileset.json' },
+  { code: '11109', name: 'さいたま市緑区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e8/f0b09c-871d-4ca5-8bfd-f8eaac87aa7f/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11109_midori-ku_lod1/tileset.json' },
+  { code: '11110', name: 'さいたま市岩槻区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/45/06c81c-9561-4761-883d-8fe8555f9a18/11100_saitama-shi_city_2025_citygml_1_op_bldg_3dtiles_11110_iwatsuki-ku_lod1/tileset.json' },
+  { code: '11221', name: '草加市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/30/67dc09-79e8-468d-9243-b2a7253e416d/11221_soka-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11234', name: '八潮市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/df/dde754-6752-4f64-b05b-be645fa773df/11234_yashio-shi_pref_2023_citygml_2_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11237', name: '三郷市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d8/2194b4-5998-49f6-b733-5beb70dcab6b/11237_misato-shi_pref_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '11222', name: '越谷市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/52/697228-ba16-4281-b194-4e7cd038ad38/11222_koshigaya-shi_pref_2023_citygml_2_op_bldg_3dtiles_lod1/tileset.json' },
+  // 千葉県：PLATEAU の建物データが無いので、国土地理院の建物の形から作る（scripts/build-gsi-buildings.mjs。手元のデータだけ）
+  { code: '12207', name: '松戸市', kind: 'lod1', url: '' },
+  { code: '12220', name: '流山市', kind: 'lod1', url: '' },
 ];
