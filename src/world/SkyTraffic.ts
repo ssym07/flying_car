@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { regionUrl } from '../core/region';
 import { buildTrafficCarGeometry } from '../vehicle/Vehicle';
 import type { Terrain } from './Terrain';
 
@@ -153,7 +154,7 @@ export class SkyTraffic {
     this.trail.frustumCulled = false;
     this.group.add(this.trail);
 
-    fetch(`${import.meta.env.BASE_URL}sky-lanes.json`)
+    fetch(regionUrl('sky-lanes.json'))
       .then((res) => (res.ok ? (res.json() as Promise<LaneFile>) : null))
       .then((data) => {
         if (data) this.lanes = this.buildLanes(data);

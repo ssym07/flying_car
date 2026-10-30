@@ -1,4 +1,5 @@
 // 調整したい数値はすべてここに集める
+import { REGION } from './region';
 
 export const LOOP = {
   /** 固定時間刻み（秒） */
@@ -108,8 +109,8 @@ export const WORLD = {
    * 512 で高度60mから街を見渡しても約450MBに収まる（1024 だと 1GB を超える）
    */
   maxTextureSize: 512,
-  /** 飛行開始地点（東京駅 丸の内側）。ここがローカル原点になる */
-  origin: { latDeg: 35.6812, lonDeg: 139.7671, ellipsoidHeight: 40 },
+  /** 飛行開始地点（地域ごと：東京は東京駅 丸の内側、大阪は大阪駅）。ここがローカル原点になる */
+  origin: REGION.origin,
   /** 建物タイルの同時ダウンロード数・同時解析数（3d-tiles-renderer の既定は 25・5） */
   downloadConcurrency: 6,
   parseConcurrency: 2,
@@ -154,8 +155,8 @@ export const TERRAIN = {
   segments: 64,
   /** チャンクの継ぎ目の隙間を隠すため、縁から下に垂らす壁の深さ (m) */
   skirtDepth: 8,
-  /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。東京駅付近の値（23区内の差は1m未満） */
-  geoidHeight: 36.76,
+  /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。開始地点付近の値（地域の中の差は1m前後） */
+  geoidHeight: REGION.geoidHeight,
 };
 
 export const LOCATION = {

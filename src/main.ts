@@ -3,6 +3,7 @@ import './ui/overlay.css';
 import type { GameContext } from './core/context';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
+import { takeAutoStart } from './core/region';
 import { SceneManager } from './core/SceneManager';
 import { FlightScene } from './scenes/FlightScene';
 import { LoadingScene } from './scenes/LoadingScene';
@@ -55,7 +56,9 @@ const ctx: GameContext = {
 // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
 if (import.meta.env.DEV) Object.assign(window, { __ctx: ctx });
 
-ctx.go.title();
+// 地域を選んで読み込み直した直後は、タイトルを飛ばして読込へ
+if (takeAutoStart()) ctx.go.loading();
+else ctx.go.title();
 new GameLoop(
   (dt) => scenes.update(dt),
   (alpha, frameDt) => scenes.render(alpha, frameDt),

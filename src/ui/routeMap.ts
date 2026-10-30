@@ -1,3 +1,4 @@
+import { REGION, regionUrl } from '../core/region';
 import { distanceMeters } from '../world/places';
 
 /** 路線図のデータ（scripts/fetch-route-map.mjs の public/route-map.json） */
@@ -60,7 +61,7 @@ export class RouteMap {
   private drag: { x: number; y: number; cx: number; cy: number; moved: boolean } | null = null;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private pinch: { distance: number; scale: number } | null = null;
-  private lat0 = 35.68;
+  private lat0 = REGION.origin.latDeg;
   private dirty = true;
   private opened = false;
 
@@ -98,7 +99,7 @@ export class RouteMap {
     parent.append(this.button, this.panel);
     this.bindPointer();
 
-    fetch(`${import.meta.env.BASE_URL}route-map.json`)
+    fetch(regionUrl('route-map.json'))
       .then((res) => (res.ok ? (res.json() as Promise<RouteMapData>) : null))
       .then((data) => data && this.setData(data))
       .catch((e) => console.warn('[RouteMap] 読込に失敗しました', e));
@@ -131,7 +132,7 @@ export class RouteMap {
   }
 
   private setData(data: RouteMapData): void {
-    this.lat0 = 35.68;
+    this.lat0 = REGION.origin.latDeg;
     this.stops = data.stations.map(([name, lat, lon, x, y]) => {
       const g = this.project(lat, lon);
       return { name, lat, lon, x, y, gx: g.x, gy: g.y, lines: [] };

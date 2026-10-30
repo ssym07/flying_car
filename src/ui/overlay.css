@@ -78,6 +78,38 @@ body {
   background: rgba(102, 204, 255, 0.35);
 }
 
+.screen .regions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+.screen button.region {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 180px;
+  padding: 16px 28px;
+  border-radius: 16px;
+}
+
+.screen button.region .name {
+  font-size: 26px;
+  letter-spacing: 0.1em;
+}
+
+.screen button.region .desc {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fg-dim);
+}
+
+.screen button.region.current {
+  background: rgba(102, 204, 255, 0.3);
+}
+
 .progress {
   width: min(360px, 80vw);
   height: 6px;

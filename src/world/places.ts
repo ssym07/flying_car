@@ -1,4 +1,4 @@
-import stations from '../data/stations.json';
+import { STATIONS as stations } from '../data/regionData';
 import { WARDS } from '../data/wards';
 
 export interface Station {

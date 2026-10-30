@@ -1,5 +1,5 @@
 import { MINIMAP } from '../core/config';
-import roadLabels from '../data/roadLabels.json';
+import { ROAD_LABELS as roadLabels } from '../data/regionData';
 import { lonLatToTile } from '../world/Terrain';
 
 const TILE_PX = 256;

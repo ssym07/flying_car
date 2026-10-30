@@ -1,6 +1,7 @@
 import { SEARCH } from '../core/config';
 import { distanceMeters, type Station } from '../world/places';
-import stations from '../data/stations.json';
+import { REGION } from '../core/region';
+import { STATIONS as stations } from '../data/regionData';
 
 /**
  * 画面右上の駅検索。駅名を入力すると候補を下に出し、選ぶと onSelect を呼ぶ。
@@ -25,7 +26,7 @@ export class StationSearch {
     this.root = document.createElement('div');
     this.root.className = 'search';
     this.root.innerHTML = `
-      <input type="search" placeholder="駅名で検索（例：品川）" autocomplete="off" spellcheck="false" />
+      <input type="search" placeholder="駅名で検索（例：${REGION.searchExample}）" autocomplete="off" spellcheck="false" />
       <ul class="search-results" role="listbox"></ul>
     `;
     this.input = this.root.querySelector('input')!;

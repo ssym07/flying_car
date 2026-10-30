@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA, TERRAIN, WORLD } from '../core/config';
+import { REGION } from '../core/region';
 import { WARDS } from '../data/wards';
 import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
@@ -64,7 +65,11 @@ export class World {
     this.ground = buildGround();
     this.scene.add(this.ground);
 
-    this.buildings = WARDS.map(
+    // 選んだ地域の区だけ。手元のデータが無く配信元も無い区（国土地理院から作る市の作る前）は飛ばす
+    const wards = WARDS.filter(
+      (w) => REGION.prefectures.some((p) => w.code.startsWith(p)) && (localWards.has(w.code) || w.url !== ''),
+    );
+    this.buildings = wards.map(
       (ward) =>
         new Tiles(
           localWards.has(ward.code) ? `${import.meta.env.BASE_URL}plateau/${ward.code}/tileset.json` : ward.url,

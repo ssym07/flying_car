@@ -2,6 +2,7 @@
  * 駅の形（OpenStreetMap の駅舎・上屋）。PLATEAU の建物が駅かどうかの判定に使う。
  * public/station-footprints.json（scripts/build-station-footprints.mjs で作る）を1回だけ読む。
  */
+import { regionUrl } from '../core/region';
 
 interface Footprint {
   south: number;
@@ -20,7 +21,7 @@ let loading: Promise<void> | null = null;
 
 /** 読み込みを始め、終わったら解決する（何回呼んでもよい。失敗しても解決する） */
 export function loadStationFootprints(): Promise<void> {
-  loading ??= fetch(`${import.meta.env.BASE_URL}station-footprints.json`)
+  loading ??= fetch(regionUrl('station-footprints.json'))
     .then((res) => (res.ok ? (res.json() as Promise<Array<[number, number, number, number, number[]]>>) : []))
     .then((data) => {
       for (const [s, w, n, e, coords] of data) {

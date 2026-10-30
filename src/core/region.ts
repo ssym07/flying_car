@@ -1,0 +1,81 @@
+/**
+ * 遊ぶ地域（ワールド）。URL の ?region=osaka で選ぶ（無ければ東京）。
+ * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
+ *
+ * 道路・線路・地面の種類などのタイルは位置ごとのファイルなので地域で分けない。
+ * 地域ごとにひとまとまりのファイル（建物の区の一覧を除く）は dataDir の下に置く
+ */
+export interface Region {
+  id: 'tokyo' | 'osaka';
+  name: string;
+  /** タイトルの説明 */
+  subtitle: string;
+  /** 飛行開始地点。ここがローカル原点になる */
+  origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
+  /** 開始地点まわりのジオイド高 (m)。標高 = 楕円体高 - ジオイド高 */
+  geoidHeight: number;
+  /** public の下の、この地域のファイルの置き場所（route-map.json・sky-lanes.json・station-footprints.json） */
+  dataDir: string;
+  /** この地域の建物の区のコードの頭（都道府県コード） */
+  prefectures: string[];
+  /** 駅名の検索欄の例 */
+  searchExample: string;
+}
+
+export const REGIONS: Record<Region['id'], Region> = {
+  tokyo: {
+    id: 'tokyo',
+    name: '東京',
+    subtitle: '東京・横浜・川崎・埼玉・千葉',
+    // 東京駅 丸の内側
+    origin: { latDeg: 35.6812, lonDeg: 139.7671, ellipsoidHeight: 40 },
+    geoidHeight: 36.76,
+    dataDir: '',
+    prefectures: ['11', '12', '13', '14'],
+    searchExample: '品川',
+  },
+  osaka: {
+    id: 'osaka',
+    name: '大阪',
+    subtitle: '大阪市',
+    // 大阪駅（うめきた側）
+    origin: { latDeg: 34.7025, lonDeg: 135.4959, ellipsoidHeight: 41 },
+    geoidHeight: 37.59,
+    dataDir: 'osaka/',
+    prefectures: ['27'],
+    searchExample: '梅田',
+  },
+};
+
+function pick(): Region {
+  const id = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('region');
+  return id === 'osaka' ? REGIONS.osaka : REGIONS.tokyo;
+}
+
+export const REGION: Region = pick();
+
+/** この地域のひとまとまりのファイルの URL */
+export function regionUrl(file: string): string {
+  return `${import.meta.env.BASE_URL}${REGION.dataDir}${file}`;
+}
+
+/** 別の地域でページを読み込み直す（start なら、タイトルを飛ばして読込へ進む） */
+export function switchRegion(id: Region['id'], start: boolean): void {
+  const params = new URLSearchParams(location.search);
+  if (id === 'tokyo') params.delete('region');
+  else params.set('region', id);
+  if (start) params.set('start', '1');
+  else params.delete('start');
+  const q = params.toString();
+  location.search = q ? `?${q}` : '';
+}
+
+/** 読み込み直した直後に、タイトルを飛ばして読込へ進むか（一度使ったら URL から消す） */
+export function takeAutoStart(): boolean {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('start')) return false;
+  params.delete('start');
+  const q = params.toString();
+  history.replaceState(null, '', `${location.pathname}${q ? `?${q}` : ''}`);
+  return true;
+}

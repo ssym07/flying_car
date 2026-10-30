@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { LABELS, TERRAIN } from '../core/config';
-import roadLabels from '../data/roadLabels.json';
-import stations from '../data/stations.json';
+import { ROAD_LABELS as roadLabels, STATIONS as stations } from '../data/regionData';
 
 interface Place {
   kind: 'station' | 'road';
