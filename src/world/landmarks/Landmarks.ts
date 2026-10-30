@@ -44,6 +44,14 @@ import {
 } from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import {
+  type TokiaParts,
+  buildTokyoBuilding,
+  createTokiaFinMaterial,
+  createTokiaGlassMaterial,
+  createTokiaPodiumMaterial,
+  createTokiaStoneMaterial,
+} from './tokyoBuilding';
+import {
   type JpTowerParts,
   buildJpTower,
   createJpBandMaterial,
@@ -114,6 +122,34 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京ビル TOKIA（PLATEAU の低い箱を消して置く）。x = 線路に沿って北北東、z = 線路の側
+    gmlId: 'bldg_5d5dd52d-bfdd-4bb6-9cbf-f865fb6946fb',
+    ...around(35.67856, 139.76494, 73),
+    front: -1,
+    build: (length) => {
+      tokiaShared ??= {
+        glass: createTokiaGlassMaterial(),
+        fins: createTokiaFinMaterial(),
+        stone: createTokiaStoneMaterial(),
+        podium: createTokiaPodiumMaterial(),
+        dark: new THREE.MeshStandardMaterial({
+          color: 0x2f363d,
+          roughness: 0.4,
+          metalness: 0.3,
+          side: THREE.DoubleSide,
+        }),
+        white: new THREE.MeshStandardMaterial({ color: 0xe4e4e0, roughness: 0.6, side: THREE.DoubleSide }),
+        green: new THREE.MeshStandardMaterial({ color: 0x55843d, roughness: 0.9 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8a8c8e, roughness: 0.8 }),
+      };
+      const parts = buildTokyoBuilding(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof TokiaParts>)
+        group.add(new THREE.Mesh(parts[key], tokiaShared[key]));
+      return group;
+    },
+  },
   {
     // JPタワーと旧東京中央郵便局（KITTE）（PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_f0028aa3-e666-4608-8b70-4e981a45d6b5',
@@ -620,6 +656,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let tokiaShared: Record<keyof TokiaParts, THREE.Material> | null = null;
 let jpShared: Record<keyof JpTowerParts, THREE.Material> | null = null;
 let maruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
 let shinMaruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
