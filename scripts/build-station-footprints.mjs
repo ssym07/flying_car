@@ -4,8 +4,9 @@
 //
 // 出力の形式: [[南, 西, 北, 東（1e-6度）, [緯度,経度,...（1e-6度、先頭以外は前の点との差）]], ...]
 import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { regionPath } from './lib/region.mjs';
 
-const DIR = new URL('../public/station-roofs/15/', import.meta.url);
+const DIR = regionPath('public/station-roofs/15/');
 const out = [];
 for (const x of await readdir(DIR)) {
   for (const f of await readdir(new URL(`${x}/`, DIR))) {
@@ -29,5 +30,5 @@ for (const x of await readdir(DIR)) {
   }
 }
 const json = JSON.stringify(out);
-await writeFile(new URL('../public/station-footprints.json', import.meta.url), json);
+await writeFile(regionPath('public/station-footprints.json'), json);
 console.log(`${out.length} footprints, ${(json.length / 1e6).toFixed(2)} MB`);

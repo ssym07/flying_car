@@ -12,10 +12,11 @@
 // 書き換えた後の形式: [種類, 地面からの高さ(m)（描かないものは -1）, 駅の番号, 座標, 基準点の緯度, 経度（1e-6度）, 掘割(0/1)]
 //   基準点の3つは、駅にまとまったホーム・上屋だけ
 import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { regionPath, SETTINGS } from './lib/region.mjs';
 
-const ROOF_DIR = new URL('../public/station-roofs/15/', import.meta.url);
-const RAIL_DIR = new URL('../public/rail-tracks/15/', import.meta.url);
-const STRUCTURE = new URL('../data/stations/structure.json', import.meta.url);
+const ROOF_DIR = regionPath('public/station-roofs/15/');
+const RAIL_DIR = regionPath('public/rail-tracks/15/');
+const STRUCTURE = regionPath('data/stations/structure.json');
 /** 道床の上面の、地面からの高さ (m)。src/core/config.ts の RAILWAYS.lift と同じ */
 const BALLAST = 0.3;
 /** ホームの床の、道床の上面からの高さ (m) */
@@ -30,7 +31,7 @@ const TRIM_NEAR = 3;
 const SEARCH = 12;
 
 const K = Math.PI / 180;
-const MX = 111320 * Math.cos(35.68 * K);
+const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
 const MY = 111320;
 const decode = (c) => {
   const out = [];

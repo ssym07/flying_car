@@ -15,11 +15,12 @@
 // { "w": [[連絡路(0/1), 車線数, 掘割(0/1), 名前, [緯度,経度,...（1e-6度、先頭以外は差分）], [各点の高さ（0.1m）...]], ...],
 //   "x": [[緯度, 経度（1e-6度）, 半径(m)], ...] }
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { regionPath } from './lib/region.mjs';
 
-const RAW = new URL('../data/osm/expressways.json', import.meta.url);
-const ROAD_DIR = new URL('../public/roads/15/', import.meta.url);
-const RAIL_DIR = new URL('../public/rail-tracks/15/', import.meta.url);
-const OUT_DIR = new URL('../public/expressways/15/', import.meta.url);
+const RAW = regionPath('data/osm/expressways.json');
+const ROAD_DIR = regionPath('public/roads/15/');
+const RAIL_DIR = regionPath('public/rail-tracks/15/');
+const OUT_DIR = regionPath('public/expressways/15/');
 
 const VIADUCT = 10;
 const STACK = 7;
@@ -65,7 +66,7 @@ const encode = (pts) => {
 const raw = JSON.parse(await readFile(RAW, 'utf8'));
 /** トンネルの端（fetch-expressways.mjs）。ここで終わる道はトンネルの入口へ下りる */
 const tunnelEnds = new Set(
-  JSON.parse(await readFile(new URL('../data/osm/expressway-tunnels.json', import.meta.url), 'utf8').catch(() => '[]')).map(
+  JSON.parse(await readFile(regionPath('data/osm/expressway-tunnels.json'), 'utf8').catch(() => '[]')).map(
     (p) => `${Math.round(p[0] * 1e6)},${Math.round(p[1] * 1e6)}`,
   ),
 );

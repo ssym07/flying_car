@@ -13,11 +13,12 @@
 // }
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { snapBbox, tileInBbox } from './lib/tiles.mjs';
+import { AREAS, regionPath } from './lib/region.mjs';
 
 const partial = process.argv[2] !== undefined;
 // 範囲を指定した時は、タイルの境目まで外へ広げ、範囲の中に丸ごと入るタイルだけを書き出す（まわりのタイルは触らない）
 const [SOUTH, WEST, NORTH, EAST] = ((b) => (partial ? snapBbox(b, 15) : b))(
-  (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number),
+  (process.argv[2] ?? AREAS[0].join(',')).split(',').map(Number),
 );
 /** Overpass への問い合わせを分割する数（縦横）。大きすぎると応答が遅く、失敗しやすい */
 const SPLIT = Number(process.argv[3] ?? 15);
@@ -27,7 +28,7 @@ const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
-const OUT_DIR = new URL('../public/roads/15/', import.meta.url);
+const OUT_DIR = regionPath('public/roads/15/');
 
 /** 種別：0=幹線（国道など） 1=2車線の道路 2=生活道路 */
 const CLASS = {

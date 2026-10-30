@@ -2,8 +2,9 @@
 // 使い方: node scripts/fetch-stations.mjs
 // データ: © OpenStreetMap contributors (ODbL)
 import { writeFile } from 'node:fs/promises';
+import { BBOX, regionPath } from './lib/region.mjs';
 
-const BBOX = '35.27,139.34,36.06,140.09'; // 南,西,北,東
+// 南,西,北,東（地域ごと。scripts/lib/region.mjs）
 // 混んでいるとエラーを返すので、順に試す
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -63,5 +64,5 @@ for (const el of elements) {
 const out = stations
   .map(({ name, lat, lon }) => ({ name, lat: +lat.toFixed(6), lon: +lon.toFixed(6) }))
   .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-await writeFile(new URL('../src/data/stations.json', import.meta.url), JSON.stringify(out) + '\n');
+await writeFile(regionPath('src/data/stations.json'), JSON.stringify(out) + '\n');
 console.log(`${elements.length} nodes → ${out.length} stations`);

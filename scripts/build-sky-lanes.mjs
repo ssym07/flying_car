@@ -14,13 +14,14 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { prepareDem, heightAt, smoothGround } from './lib/dem.mjs';
+import { REGION_ID, regionPath, SETTINGS } from './lib/region.mjs';
 
 const require = createRequire(import.meta.url);
 const draco3d = require('draco3dgltf');
 
-const ROADS = new URL('../public/roads/15/', import.meta.url);
+const ROADS = regionPath('public/roads/15/');
 const PLATEAU = new URL('../public/plateau/', import.meta.url);
-const OUT = new URL('../public/sky-lanes.json', import.meta.url);
+const OUT = regionPath('public/sky-lanes.json');
 
 /** 段の高さ（地面から, m）。src/world/SkyTraffic.ts と同じ順 */
 const TIERS = [80, 130, 190, 260];
@@ -34,10 +35,10 @@ const OVERLAP_SHARE = 0.4;
 /** 道をつなぐ時の、曲がる角度の上限 (度) */
 const JOIN_ANGLE = 35;
 /** 主要駅（名前は data/stations/structure.json と同じ）と、格子の円の半径・線の間隔 (m) */
-const HUBS = ['新宿', '渋谷', '池袋', '東京', '品川', '上野', '秋葉原', '新橋', '横浜', '川崎', '新横浜', '吉祥寺', '立川', '川口', '所沢', '大宮', '浦和', '越谷', '松戸', '船橋', '津田沼', '舞浜'];
+const HUBS = SETTINGS.hubs;
 const HUB_RADIUS = 750;
 /** 都心（東京駅から CENTER_RADIUS m 以内と、駅の格子の円から HUB_MARGIN m 以内） */
-const CENTER = [35.6812, 139.7671];
+const CENTER = SETTINGS.center;
 const CENTER_RADIUS = 3000;
 const HUB_MARGIN = 750;
 const GRID_STEP = 200;
@@ -54,7 +55,7 @@ const STEP = 20;
 /**
  * 作り込んだ建物（PLATEAU の箱を消したもの）：[緯度, 経度, 半径 (m), 地面からの高さ (m)]
  */
-const LANDMARK_OBSTACLES = [
+const LANDMARK_OBSTACLES = REGION_ID !== 'tokyo' ? [] : [
   [35.71010, 139.81070, 40, 634], // 東京スカイツリー
   [35.65858, 139.74543, 45, 333], // 東京タワー
   [35.6896, 139.6917, 60, 243], // 東京都庁 第一本庁舎
@@ -86,7 +87,7 @@ const LANDMARK_OBSTACLES = [
 ];
 
 const K = Math.PI / 180;
-const MX = 111320 * Math.cos(35.68 * K);
+const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
 const MY = 111320;
 const xy = ([lat, lon]) => [lon * MX, lat * MY];
 
@@ -220,7 +221,7 @@ function densify(pts, step) {
 }
 
 // ---- 主要駅：格子の向き（まわりの道の向きの多い方） ----
-const structure = JSON.parse(await readFile(new URL('../data/stations/structure.json', import.meta.url), 'utf8'));
+const structure = JSON.parse(await readFile(regionPath('data/stations/structure.json'), 'utf8'));
 const hubs = HUBS.map((name) => {
   const refs = structure.filter((s) => s.name === name).map((s) => s.ref);
   const center = [refs.reduce((a, r) => a + r[0], 0) / refs.length, refs.reduce((a, r) => a + r[1], 0) / refs.length];

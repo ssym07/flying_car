@@ -16,6 +16,7 @@
 //   上屋・ホームの高さは仮の値。scripts/build-platforms.mjs が線路の高さに合わせて書き換える
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { AREAS, areaCells } from './lib/tiles.mjs';
+import { regionPath, SETTINGS } from './lib/region.mjs';
 
 const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? AREAS.flat().join(',')).split(',').map(Number);
 const partial = process.argv[2] !== undefined;
@@ -28,11 +29,11 @@ const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
-const OUT_DIR = new URL('../public/station-roofs/15/', import.meta.url);
+const OUT_DIR = regionPath('public/station-roofs/15/');
 const CACHE_DIR = new URL('../data/cache/station-roofs/', import.meta.url);
-const ELEVATED_FILE = new URL('../data/stations/elevated-platforms.json', import.meta.url);
+const ELEVATED_FILE = regionPath('data/stations/elevated-platforms.json');
 const EXTRA_CACHE_DIR = new URL('../data/cache/station-platform-relations/', import.meta.url);
-const RAIL_DIR = new URL('../data/osm/railways/15/', import.meta.url);
+const RAIL_DIR = regionPath('data/osm/railways/15/');
 /** 駅からこの距離 (m) 以内の屋根だけ残す */
 const NEAR_STATION = 300;
 /** 1層（layer）あたりの高さ (m)。高架の線路はおよそこの高さ */
@@ -65,7 +66,7 @@ const BIG_ROOF_STATIONS = ['高輪ゲートウェイ'];
 /** 屋根のデータがこの割合より少なく覆っているホームには、テンプレートの上屋を置く */
 const CANOPY_COVERED = 0.3;
 
-const stations = JSON.parse(await readFile(new URL('../src/data/stations.json', import.meta.url), 'utf8'));
+const stations = JSON.parse(await readFile(regionPath('src/data/stations.json'), 'utf8'));
 
 async function overpass(query) {
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -163,7 +164,7 @@ for (const [index, [s, w, n, e]] of CELLS.entries()) {
 }
 
 // ---- 線で描かれたホームを面にするための線路 ----
-const MX = 111320 * Math.cos(35.68 * K);
+const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
 const MY = 111320;
 const T_CELL = 0.0005;
 const trackGrid = new Map();

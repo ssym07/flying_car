@@ -3,6 +3,7 @@
 // 使い方: await prepareDem(タイルのキー 'x/y' の集合) で読んでから heightAt などを使う
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
+import { SETTINGS } from './region.mjs';
 
 const K = Math.PI / 180;
 const CACHE = new URL('../../data/cache/', import.meta.url);
@@ -12,8 +13,8 @@ const DEM_URLS = [
   'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png',
   'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png',
 ];
-/** src/core/config.ts の TERRAIN.geoidHeight・RAILWAYS（smoothRadius・cutFloorRadius・waterClearance）・WATER.surfaceHeight と同じ */
-export const GEOID = 36.76;
+/** src/core/config.ts の TERRAIN.geoidHeight（地域ごと）・RAILWAYS（smoothRadius・cutFloorRadius・waterClearance）・WATER.surfaceHeight と同じ */
+export const GEOID = SETTINGS.geoid;
 export const SMOOTH_RADIUS = 60;
 export const CUT_RADIUS = 20;
 export const WATER_SURFACE = 0.8;

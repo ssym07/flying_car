@@ -6,9 +6,10 @@
 // 出力: { rings: [[円で描く路線の番号, 中心 x, y, 半径], ...], stations: [[名前, 緯度, 経度, 模式図の x, y（km）], ...], lines: [[路線名, 色（#rrggbb）, [駅の番号, ...]], ...] }
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { AREAS } from './lib/tiles.mjs';
+import { regionPath, SETTINGS } from './lib/region.mjs';
 
-const OUT = new URL('../public/route-map.json', import.meta.url);
-const CACHE = new URL('../data/cache/route-map.json', import.meta.url);
+const OUT = regionPath('public/route-map.json');
+const CACHE = regionPath('data/cache/route-map.json');
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',
@@ -65,7 +66,7 @@ for (const el of elements) {
 }
 
 // 駅（src/data/stations.json）：格子で近いものを探す
-const stations = JSON.parse(await readFile(new URL('../src/data/stations.json', import.meta.url), 'utf8'));
+const stations = JSON.parse(await readFile(regionPath('src/data/stations.json'), 'utf8'));
 const K = Math.PI / 180;
 const CELL = 0.005;
 const grid = new Map();
@@ -164,9 +165,9 @@ for (const { name, colour, stops } of kept) {
 const rings = [];
 // ---- 模式図の位置：路線がなるべくまっすぐ・0/45/90 度の線・同じ間隔になるよう、駅を少しずつ動かす ----
 {
-  const lat0 = 35.68;
+  const lat0 = SETTINGS.lat0;
   // 都心は駅が密なので、東京駅から外へ広げてから整える（中心からの距離 r km を 6 × (r / 6)^0.7 に）
-  const C = [139.7671 * 111.32 * Math.cos(lat0 * K), -35.6812 * 110.95];
+  const C = [SETTINGS.center[1] * 111.32 * Math.cos(lat0 * K), -SETTINGS.center[0] * 110.95];
   const geo = outStations.map(([, lat, lon]) => {
     const x = lon * 111.32 * Math.cos(lat0 * K) - C[0];
     const y = -lat * 110.95 - C[1];
@@ -178,7 +179,7 @@ const rings = [];
   // 環状の路線（山手線）：駅を等間隔で円の上に並べて動かさない。円の中心と半径は駅の地理の位置から
   const fixed = new Set();
   for (const [index, [name, , ids]] of lines.entries()) {
-    if (!/山手線/.test(name)) continue;
+    if (!SETTINGS.ringLine.test(name)) continue;
     const ring = [...new Set(ids)];
     if (ring.length < 8) continue;
     const cx = ring.reduce((a, i) => a + geo[i][0], 0) / ring.length;

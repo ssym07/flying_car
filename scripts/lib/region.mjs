@@ -1,0 +1,83 @@
+/**
+ * データを作る地域。環境変数 REGION=osaka で大阪（無ければ東京）。src/core/region.ts と同じ分け方。
+ *
+ * 地域で作るデータは地域ごとの置き場所に書く：東京は今までどおり public・data・src/data の直下、
+ * 大阪は public/osaka・data/osaka・src/data/osaka の下。出力先を丸ごと作り直すスクリプトがあるので、
+ * 分けておかないと片方を作り直した時にもう片方が消える。
+ * 建物（public/plateau）と取得のキャッシュ（data/cache）は場所ごとなので共通
+ */
+const ROOT = new URL('../../', import.meta.url);
+
+export const REGION_ID = process.env.REGION === 'osaka' ? 'osaka' : 'tokyo';
+
+/**
+ * データを取る範囲：[南, 西, 北, 東] の長方形のならび。
+ * 東京：1つ目は東京23区・横浜・川崎、2つ目は多摩の西の帯、3つ目は埼玉の南の帯、4〜6つ目は埼玉の東・さいたま市・松戸と流山、
+ * 7つ目は船橋・習志野の東の帯、8つ目は市川・船橋の南の隙間、9〜13 個目は藤沢の西と茅ヶ崎・鎌倉と藤沢の海沿い・春日部の北・柏の東・柏の北西の隙間。
+ * 大阪：大阪市（夢洲・咲洲から平野区まで）。
+ * 長方形ごとに区画に分けて取るので、長方形を足しても、前の長方形の区画のキャッシュはそのまま使える
+ */
+const REGION_AREAS = {
+  tokyo: [
+    [35.3, 139.46, 35.82, 139.92],
+    [35.52, 139.34, 35.82, 139.46],
+    [35.82, 139.37, 35.89, 139.79],
+    [35.82, 139.79, 35.89, 139.92],
+    [35.89, 139.54, 36.01, 139.86],
+    [35.74, 139.92, 35.93, 140.01],
+    [35.6, 140.01, 35.8, 140.09],
+    [35.6, 139.92, 35.74, 140.01],
+    [35.27, 139.36, 35.52, 139.46],
+    [35.27, 139.46, 35.3, 139.62],
+    [36.01, 139.66, 36.06, 139.86],
+    [35.8, 140.01, 35.93, 140.09],
+    [35.89, 139.86, 35.93, 139.92],
+  ],
+  osaka: [[34.57, 135.37, 34.77, 135.59]],
+};
+export const AREAS = REGION_AREAS[REGION_ID];
+
+/** 地域ごとの値（東京は今までの値のまま。src/core/region.ts と同じ） */
+const REGION_SETTINGS = {
+  tokyo: {
+    /** 開始地点の駅（都心の中心） */
+    center: [35.6812, 139.7671],
+    /** 東西の長さの計算に使う緯度 */
+    lat0: 35.68,
+    /** ジオイド高 (m)。src/core/region.ts の geoidHeight と同じ */
+    geoid: 36.76,
+    /** 空路の格子を作る大きな駅 */
+    hubs: ['新宿', '渋谷', '池袋', '東京', '品川', '上野', '秋葉原', '新橋', '横浜', '川崎', '新横浜', '吉祥寺', '立川', '川口', '所沢', '大宮', '浦和', '越谷', '松戸', '船橋', '津田沼', '舞浜'],
+    /** 路線図で円に描く環状線 */
+    ringLine: /山手線/,
+  },
+  osaka: {
+    center: [34.7025, 135.4959],
+    lat0: 34.69,
+    geoid: 37.59,
+    hubs: ['大阪', '梅田', '難波', '天王寺', '京橋', '新大阪', '本町', '弁天町', '鶴橋', '十三'],
+    ringLine: /大阪環状線/,
+  },
+};
+export const SETTINGS = REGION_SETTINGS[REGION_ID];
+
+/** 範囲全体を囲む長方形 [南, 西, 北, 東] */
+export const BOUNDS = [
+  Math.min(...AREAS.map((a) => a[0])),
+  Math.min(...AREAS.map((a) => a[1])),
+  Math.max(...AREAS.map((a) => a[2])),
+  Math.max(...AREAS.map((a) => a[3])),
+];
+/** Overpass に渡す範囲の文字列 '南,西,北,東'（東京は今まで使っていた値のまま） */
+export const BBOX = REGION_ID === 'tokyo' ? '35.27,139.34,36.06,140.09' : BOUNDS.join(',');
+
+/**
+ * リポジトリの中のパス（'public/roads/15/' など）を、この地域の置き場所の URL にする。
+ * 大阪：public/X → public/osaka/X、data/X → data/osaka/X、src/data/X → src/data/osaka/X
+ */
+export function regionPath(path) {
+  if (REGION_ID === 'tokyo') return new URL(path, ROOT);
+  const parts = path.split('/');
+  const head = parts[0] === 'src' ? parts.splice(0, 2).join('/') : parts.splice(0, 1)[0];
+  return new URL(`${head}/${REGION_ID}/${parts.join('/')}`, ROOT);
+}

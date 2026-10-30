@@ -11,6 +11,7 @@
 // 出力の形式（1タイル）: [[高架(0/1), layer（負なら掘割）, 軌間(mm), [緯度,経度,...（1e-6度、先頭以外は前の点との差）], 地下鉄(0/1)], ...]
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { AREAS, areaCells } from './lib/tiles.mjs';
+import { regionPath } from './lib/region.mjs';
 
 const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? AREAS.flat().join(',')).split(',').map(Number);
 const partial = process.argv[2] !== undefined;
@@ -23,10 +24,10 @@ const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
-const OUT_DIR = new URL('../data/osm/railways/15/', import.meta.url);
+const OUT_DIR = regionPath('data/osm/railways/15/');
 const CACHE_DIR = new URL('../data/cache/railways/', import.meta.url);
 /** 本当のトンネルの両端（scripts/build-rail-heights.mjs が入口（坑口）を作るのに使う） */
-const TUNNEL_FILE = new URL('../data/osm/rail-tunnels.json', import.meta.url);
+const TUNNEL_FILE = regionPath('data/osm/rail-tunnels.json');
 
 async function overpass(query) {
   for (let attempt = 0; attempt < 20; attempt++) {

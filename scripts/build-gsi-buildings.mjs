@@ -13,13 +13,14 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import Pbf from 'pbf';
 import { GEOID, heightAt, prepareDem } from './lib/dem.mjs';
+import { regionPath } from './lib/region.mjs';
 
 const [CODE, NAME, PREF] = process.argv.slice(2);
 if (!CODE || !NAME) throw new Error('使い方: node scripts/build-gsi-buildings.mjs 市区町村コード 市の名前 都道府県名');
 
 const PLATEAU = new URL('../public/plateau/', import.meta.url);
 const OUT = new URL(`${CODE}/`, PLATEAU);
-const RAIL_DIR = new URL('../public/rail-tracks/15/', import.meta.url);
+const RAIL_DIR = regionPath('public/rail-tracks/15/');
 const CACHE = new URL('../data/cache/gsi-buildings/', import.meta.url);
 const TILE_URL = 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/16/{x}/{y}.pbf';
 /** 書き出すタイルのズーム（地形チャンクと同じ）と、読む地理院タイルのズーム */

@@ -11,11 +11,12 @@
 //   重なった時に上に塗るものほど後ろに並べる（PRIORITY）
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { snapBbox, tileInBbox } from './lib/tiles.mjs';
+import { AREAS, regionPath } from './lib/region.mjs';
 
 const partial = process.argv[2] !== undefined;
 // 範囲を指定した時は、タイルの境目まで外へ広げ、範囲の中に丸ごと入るタイルだけを書き出す（まわりのタイルは触らない）
 const [SOUTH, WEST, NORTH, EAST] = ((b) => (partial ? snapBbox(b, 15) : b))(
-  (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number),
+  (process.argv[2] ?? AREAS[0].join(',')).split(',').map(Number),
 );
 const SPLIT = Number(process.argv[3] ?? 12);
 const ZOOM = 15;
@@ -24,7 +25,7 @@ const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
-const OUT_DIR = new URL('../public/landuse/15/', import.meta.url);
+const OUT_DIR = regionPath('public/landuse/15/');
 /** 取得済みの区画を保存しておく場所（通信が切れても、次に流した時はそこから続ける） */
 const CACHE_DIR = new URL('../data/cache/landuse/', import.meta.url);
 /** これより小さい形 (m²) は使わない */

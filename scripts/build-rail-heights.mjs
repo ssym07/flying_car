@@ -27,15 +27,16 @@
 // あわせて data/stations/structure.json に、駅ごとのホーム・高さ・基準点を書き出す（scripts/build-platforms.mjs が使う）
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { heightAt, prepareDem } from './lib/dem.mjs';
+import { regionPath, SETTINGS } from './lib/region.mjs';
 
-const RAW_DIR = new URL('../data/osm/railways/15/', import.meta.url);
-const ROAD_DIR = new URL('../public/roads/15/', import.meta.url);
-const ROOF_DIR = new URL('../public/station-roofs/15/', import.meta.url);
-const OUT_DIR = new URL('../public/rail-tracks/15/', import.meta.url);
-const STRUCTURE = new URL('../data/stations/structure.json', import.meta.url);
+const RAW_DIR = regionPath('data/osm/railways/15/');
+const ROAD_DIR = regionPath('public/roads/15/');
+const ROOF_DIR = regionPath('public/station-roofs/15/');
+const OUT_DIR = regionPath('public/rail-tracks/15/');
+const STRUCTURE = regionPath('data/stations/structure.json');
 /** 高架の印の付いたホーム（scripts/fetch-station-roofs.mjs が書く） */
 const elevatedPlatforms = new Set(
-  JSON.parse(await readFile(new URL('../data/stations/elevated-platforms.json', import.meta.url), 'utf8')),
+  JSON.parse(await readFile(regionPath('data/stations/elevated-platforms.json'), 'utf8')),
 );
 
 /** 高架の高さ (m) と、上に重なる線路の1段あたりの追加 (m) */
@@ -129,7 +130,7 @@ async function readTiles(dir) {
 
 // ---- 駅のホームを読む ----
 // 平面の座標 (m)。23区の範囲なら経度方向の縮みは一定とみてよい
-const MX = 111320 * Math.cos(35.68 * K);
+const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
 const MY = 111320;
 const xy = (p) => [p[1] * MX, p[0] * MY];
 /** 平面の点の並びの一番広がった向き（角度, ラジアン, 0〜π） */
@@ -348,7 +349,7 @@ for (const [ka, a] of deadEnds) {
 }
 
 // ---- トンネルの入口（坑口）：行き止まりの点が、本当のトンネルの端（data/osm/rail-tunnels.json）と重なる所 ----
-const tunnelEnds = JSON.parse(await readFile(new URL('../data/osm/rail-tunnels.json', import.meta.url), 'utf8'));
+const tunnelEnds = JSON.parse(await readFile(regionPath('data/osm/rail-tunnels.json'), 'utf8'));
 const T_CELL = 0.001;
 const tunnelGrid = new Map();
 for (const [lat, lon, nlat, nlon] of tunnelEnds) {
@@ -985,7 +986,7 @@ for (const [tile, data] of out) {
 }
 
 // ---- 駅のまとめ（ホームの高さを決める scripts/build-platforms.mjs と、駅ビルの加工が使う） ----
-const stationNames = JSON.parse(await readFile(new URL('../src/data/stations.json', import.meta.url), 'utf8'));
+const stationNames = JSON.parse(await readFile(regionPath('src/data/stations.json'), 'utf8'));
 await mkdir(new URL('./', STRUCTURE), { recursive: true });
 await writeFile(
   STRUCTURE,

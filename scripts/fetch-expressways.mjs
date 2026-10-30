@@ -8,6 +8,7 @@
 // 出力の形式: [[連絡路(0/1), 高架(0/1), 掘割(0/1), layer, 車線数, 名前, [[緯度,経度], ...]], ...]
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { AREAS, areaCells } from './lib/tiles.mjs';
+import { regionPath } from './lib/region.mjs';
 
 const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? AREAS.flat().join(',')).split(',').map(Number);
 const SPLIT = Number(process.argv[3] ?? 6);
@@ -19,8 +20,8 @@ const ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
 ];
 const CACHE_DIR = new URL('../data/cache/expressways/', import.meta.url);
-const OUT = new URL('../data/osm/expressways.json', import.meta.url);
-const TUNNEL_OUT = new URL('../data/osm/expressway-tunnels.json', import.meta.url);
+const OUT = regionPath('data/osm/expressways.json');
+const TUNNEL_OUT = regionPath('data/osm/expressway-tunnels.json');
 
 async function overpass(query) {
   // 通信が不安定でも粘る（約10分）

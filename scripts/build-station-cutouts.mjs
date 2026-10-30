@@ -29,14 +29,15 @@ import {
   smoothGround,
   stationGround,
 } from './lib/dem.mjs';
+import { regionPath, SETTINGS } from './lib/region.mjs';
 
 const require = createRequire(import.meta.url);
 const draco3d = require('draco3dgltf');
 
 const PLATEAU = new URL('../public/plateau/', import.meta.url);
 const ORIGINAL = new URL('../data/cache/plateau-original/', import.meta.url);
-const RAIL_DIR = new URL('../public/rail-tracks/15/', import.meta.url);
-const ROOF_DIR = new URL('../public/station-roofs/15/', import.meta.url);
+const RAIL_DIR = regionPath('public/rail-tracks/15/');
+const ROOF_DIR = regionPath('public/station-roofs/15/');
 
 /** 通り道の半分の幅 (m)：車両の半分の幅 + 余裕 */
 const TRACK_HALF = 2.6;
@@ -53,7 +54,7 @@ const MERGE_ANGLE = 3;
 const MERGE_HEIGHT = 0.3;
 
 const K = Math.PI / 180;
-const MX = 111320 * Math.cos(35.68 * K);
+const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
 const MY = 111320;
 
 // ---- 座標の変換（WGS84） ----
