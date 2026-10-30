@@ -27,6 +27,10 @@ const OUT_ZOOM = 15;
 const SRC_ZOOM = 16;
 /** 線路の中心線からこの距離 (m) 以内にかかる建物は除く */
 const RAIL_CLEAR = 3;
+/** 作り込んだ建物（src/world/landmarks）に置き換える所：[緯度, 経度, 半径 (m)]。中心がこの円に入る建物は作らない */
+const LANDMARKS = [
+  [35.63208, 139.88084, 30], // シンデレラ城
+];
 /** 建物の底を地面からこれだけ沈める (m)（斜面で浮かないように） */
 const SINK = 1.5;
 
@@ -463,6 +467,7 @@ await Promise.all(
         clat /= outer.length;
         clon /= outer.length;
         if (!inside(rings, clon, clat)) continue;
+        if (LANDMARKS.some(([la, lo, r]) => Math.hypot((la - clat) * MY, (lo - clon) * MY * Math.cos(clat * K)) < r)) continue;
         // タイルの境目で切れた建物が重ならないよう、同じ形は1回だけ
         const key = outer.map(([a, b]) => `${a.toFixed(6)},${b.toFixed(6)}`).join(';');
         if (seen.has(key)) continue;

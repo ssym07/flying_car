@@ -32,6 +32,7 @@ import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUp
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import { type CastleParts, buildCinderellaCastle } from './cinderellaCastle';
 import { type SompoParts, buildSompoJapan, createSompoCoreMaterial, createSompoFinMaterial } from './sompoJapan';
 import { type CocoonParts, buildCocoonTower, createCocoonGlassMaterial } from './cocoonTower';
 import { buildSkytree } from './tokyoSkytree';
@@ -78,6 +79,27 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // シンデレラ城（浦安市は国土地理院の建物の形から作っていて、城の場所の建物は作らない）。建物の座標は x = 東、z = 南
+    gmlId: '',
+    ...around(35.63208, 139.88084, 0),
+    front: -1,
+    build: (length) => {
+      castleShared ??= {
+        base: new THREE.MeshStandardMaterial({ color: 0xb9b0a0, roughness: 0.9 }),
+        wall: new THREE.MeshStandardMaterial({ color: 0xece5d8, roughness: 0.7 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x2f62b5, roughness: 0.45, metalness: 0.15 }),
+        gold: new THREE.MeshStandardMaterial({ color: 0xe0b44a, roughness: 0.3, metalness: 0.8 }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x343846, roughness: 0.8, side: THREE.DoubleSide }),
+      };
+      const parts = buildCinderellaCastle(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof CastleParts>) {
+        group.add(new THREE.Mesh(parts[key], castleShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 損保ジャパン本社ビル（PLATEAU の箱を消して置く）。長い向きは北北東
     gmlId: 'bldg_81cf4164-d885-4134-81f8-5356472517ee',
@@ -417,6 +439,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
 let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
