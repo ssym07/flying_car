@@ -32,6 +32,7 @@ import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUp
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import { type BudokanParts, buildBudokan, createBudokanLouverMaterial } from './budokan';
 import {
   type StadiumParts,
@@ -86,6 +87,26 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京ドーム（PLATEAU の箱を消して置く。ドームシティは作らない）。x・z = 角の丸い四角の辺の向き
+    gmlId: 'bldg_369e50ad-eaf1-4484-9d31-9802cc32ab5a',
+    ...around(35.70559, 139.7519, 84),
+    front: 1,
+    build: (length) => {
+      domeShared ??= {
+        glass: createDomeGlassMaterial(),
+        concrete: new THREE.MeshStandardMaterial({ color: 0xbdbab3, roughness: 0.85, side: THREE.DoubleSide }),
+        rim: new THREE.MeshStandardMaterial({ color: 0xd9dcdf, roughness: 0.5, side: THREE.DoubleSide }),
+        membrane: createDomeMembraneMaterial(),
+      };
+      const parts = buildTokyoDome(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof DomeParts>) {
+        group.add(new THREE.Mesh(parts[key], domeShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 日本武道館（PLATEAU の低い箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_d4c6fe12-0eeb-4395-aecf-93c9b5a5c6ee',
@@ -498,6 +519,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let domeShared: Record<keyof DomeParts, THREE.Material> | null = null;
 let budokanShared: Record<keyof BudokanParts, THREE.Material> | null = null;
 let stadiumShared: Record<keyof StadiumParts, THREE.Material> | null = null;
 let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
