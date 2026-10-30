@@ -13,10 +13,12 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { snapBbox, tileInBbox } from './lib/tiles.mjs';
 import { AREAS, regionPath } from './lib/region.mjs';
 
-const partial = process.argv[2] !== undefined;
+// 範囲に '-' を渡すと、範囲を省いた時と同じ（地域の最初の範囲を丸ごと作り直す。分割数だけ変えたい時用）
+const bboxArg = process.argv[2] === '-' ? undefined : process.argv[2];
+const partial = bboxArg !== undefined;
 // 範囲を指定した時は、タイルの境目まで外へ広げ、範囲の中に丸ごと入るタイルだけを書き出す（まわりのタイルは触らない）
 const [SOUTH, WEST, NORTH, EAST] = ((b) => (partial ? snapBbox(b, 15) : b))(
-  (process.argv[2] ?? AREAS[0].join(',')).split(',').map(Number),
+  (bboxArg ?? AREAS[0].join(',')).split(',').map(Number),
 );
 const SPLIT = Number(process.argv[3] ?? 12);
 const ZOOM = 15;
