@@ -97,7 +97,7 @@ export class Minimap {
     };
     this.drawMap(view, bearing);
     this.markerCtx.clearRect(0, 0, this.markerCtx.canvas.width, this.markerCtx.canvas.height);
-    this.drawLabels(view, bearing);
+    if (this.zoom >= MINIMAP.labelMinZoom) this.drawLabels(view, bearing);
     this.drawMarker();
     this.updateScaleLabel(lat);
     // 「N」は縁の、北の向きに置く

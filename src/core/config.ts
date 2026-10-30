@@ -174,8 +174,8 @@ export const MINIMAP = {
   size: 250,
   /** 表示の拡大率（地図タイルのズームレベルと同じ尺度）。15 で 1px ≒ 4m、250px で約1km 四方。小数も可 */
   zoom: 15,
-  /** 拡大率を変えられる範囲（13 で約4km 四方、17.5 で約180m 四方） */
-  minZoom: 12,
+  /** 拡大率を変えられる範囲（7 で約250km 四方（関東全体）、13 で約4km 四方、17.5 で約180m 四方） */
+  minZoom: 7,
   maxZoom: 17.5,
   /** ボタン1回・ホイール1目盛り（deltaY 100）で変わる量 */
   zoomStep: 0.5,
@@ -187,6 +187,8 @@ export const MINIMAP = {
   maxCachedTiles: 64,
   /** 通り名の文字の大きさ (px) */
   labelFontSize: 11,
+  /** これより引いた拡大率では通り名を出さない（広い範囲で文字が埋め尽くさないように） */
+  labelMinZoom: 12,
   /** 同じ通り名を同時に出す最大数 */
   maxLabelsPerName: 1,
 };
