@@ -103,4 +103,8 @@ export const WARDS: Ward[] = [
   // 千葉県：PLATEAU の建物データが無いので、国土地理院の建物の形から作る（scripts/build-gsi-buildings.mjs。手元のデータだけ）
   { code: '12207', name: '松戸市', kind: 'lod1', url: '' },
   { code: '12220', name: '流山市', kind: 'lod1', url: '' },
+  { code: '12203', name: '市川市', kind: 'lod1', url: '' },
+  { code: '12204', name: '船橋市', kind: 'lod1', url: '' },
+  { code: '12216', name: '習志野市', kind: 'lod1', url: '' },
+  { code: '12227', name: '浦安市', kind: 'lod1', url: '' },
 ];
