@@ -10,10 +10,13 @@
 //
 // 出力の形式（1タイル）: [[高架(0/1), layer（負なら掘割）, 軌間(mm), [緯度,経度,...（1e-6度、先頭以外は前の点との差）], 地下鉄(0/1)], ...]
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { AREAS, areaCells } from './lib/tiles.mjs';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number);
+const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? AREAS.flat().join(',')).split(',').map(Number);
 const partial = process.argv[2] !== undefined;
 const SPLIT = Number(process.argv[3] ?? 6);
+/** 区画（範囲を指定しなければ AREAS の長方形ごと） */
+const CELLS = areaCells(SPLIT, process.argv[2] ? [SOUTH, WEST, NORTH, EAST] : null);
 const ZOOM = 15;
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -57,12 +60,8 @@ function tileOf(lat, lon) {
 }
 
 const ways = new Map();
-for (let i = 0; i < SPLIT; i++) {
-  for (let j = 0; j < SPLIT; j++) {
-    const s = SOUTH + ((NORTH - SOUTH) * j) / SPLIT;
-    const n = SOUTH + ((NORTH - SOUTH) * (j + 1)) / SPLIT;
-    const w = WEST + ((EAST - WEST) * i) / SPLIT;
-    const e = WEST + ((EAST - WEST) * (i + 1)) / SPLIT;
+for (const [index, [s, w, n, e]] of CELLS.entries()) {
+  {
     const cacheFile = new URL(`${s},${w},${n},${e}.json`, CACHE_DIR);
     let elements = await readFile(cacheFile, 'utf8').then(JSON.parse, () => null);
     if (!elements) {
@@ -76,26 +75,32 @@ for (let i = 0; i < SPLIT; i++) {
       await writeFile(cacheFile, JSON.stringify(elements));
     }
     for (const el of elements) ways.set(el.id, el);
-    console.log(`part ${i * SPLIT + j + 1}/${SPLIT * SPLIT}: ${ways.size} ways`);
+    console.log(`part ${index + 1}/${CELLS.length}: ${ways.size} ways`);
   }
 }
 
 // ---- トンネル区間（23区まわり全体を1回で取る） ----
 // 屋根付き・建物の下（駅ビル・人工地盤の下を地面の高さのまま通る区間）は、普通の線路として使う（地下鉄は除く）。
 // 本当のトンネル（地下へ入る区間）は、両端の入口（坑口）を作るために端の位置と向きを書き出す
-const tunnelCache = new URL('../data/cache/rail-tunnels/tunnels.json', import.meta.url);
-let tunnelElements = await readFile(tunnelCache, 'utf8').then((t) => JSON.parse(t).elements, () => null);
-if (!tunnelElements) {
-  const bbox = `${SOUTH},${WEST},${NORTH},${EAST}`;
-  tunnelElements = await overpass(`[out:json][timeout:250];
-    (
-      way["railway"~"^(rail|light_rail|narrow_gauge|monorail|subway)$"]["tunnel"~"^(yes|covered|building_passage)$"](${bbox});
-      way["railway"~"^(rail|light_rail|narrow_gauge|monorail|subway)$"]["location"="underground"](${bbox});
-      way["railway"="subway"]["layer"~"^-"](${bbox});
-    );
-    out tags geom qt;`);
-  await mkdir(new URL('./', tunnelCache), { recursive: true });
-  await writeFile(tunnelCache, JSON.stringify({ elements: tunnelElements }));
+// 長方形ごとに1回で取る（1つ目の長方形は前からのキャッシュの名前のまま）
+const tunnelElements = [];
+for (const [index, area] of (process.argv[2] ? [[SOUTH, WEST, NORTH, EAST]] : AREAS).entries()) {
+  const bbox = area.join(',');
+  const name = index === 0 && !process.argv[2] ? 'tunnels.json' : `tunnels-${bbox}.json`;
+  const tunnelCache = new URL(`../data/cache/rail-tunnels/${name}`, import.meta.url);
+  let elements = await readFile(tunnelCache, 'utf8').then((t) => JSON.parse(t).elements, () => null);
+  if (!elements) {
+    elements = await overpass(`[out:json][timeout:250];
+      (
+        way["railway"~"^(rail|light_rail|narrow_gauge|monorail|subway)$"]["tunnel"~"^(yes|covered|building_passage)$"](${bbox});
+        way["railway"~"^(rail|light_rail|narrow_gauge|monorail|subway)$"]["location"="underground"](${bbox});
+        way["railway"="subway"]["layer"~"^-"](${bbox});
+      );
+      out tags geom qt;`);
+    await mkdir(new URL('./', tunnelCache), { recursive: true });
+    await writeFile(tunnelCache, JSON.stringify({ elements }));
+  }
+  tunnelElements.push(...elements);
 }
 const tunnelEnds = []; // [緯度, 経度, トンネルの中の次の点の緯度, 経度]（1e-6度）
 let covered = 0;

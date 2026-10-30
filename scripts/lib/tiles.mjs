@@ -19,3 +19,31 @@ export function tileInBbox(key, [s, w, n, e], z) {
   const eps = 1e-9;
   return lonOf(x, N) >= w - eps && lonOf(x + 1, N) <= e + eps && latOf(y + 1, N) >= s - eps && latOf(y, N) <= n + eps;
 }
+
+/**
+ * データを取る範囲：[南, 西, 北, 東] の長方形のならび。1つ目は東京23区・横浜・川崎、2つ目は多摩の西の帯。
+ * 長方形ごとに区画に分けて取るので、長方形を足しても、前の長方形の区画のキャッシュはそのまま使える
+ */
+export const AREAS = [
+  [35.3, 139.46, 35.82, 139.92],
+  [35.52, 139.34, 35.82, 139.46],
+];
+
+/**
+ * 範囲を区画 [南, 西, 北, 東] に分ける。split は1つ目の長方形の1辺の分割数で、ほかの長方形は大きさに合わせて分ける。
+ * bbox を渡した時は、その範囲だけを split × split に分ける
+ */
+export function areaCells(split, bbox = null) {
+  const out = [];
+  const [a0] = AREAS;
+  for (const [s, w, n, e] of bbox ? [bbox] : AREAS) {
+    const rows = bbox ? split : Math.max(1, Math.ceil((split * (n - s)) / (a0[2] - a0[0]) - 1e-9));
+    const cols = bbox ? split : Math.max(1, Math.ceil((split * (e - w)) / (a0[3] - a0[1]) - 1e-9));
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        out.push([s + ((n - s) * j) / rows, w + ((e - w) * i) / cols, s + ((n - s) * (j + 1)) / rows, w + ((e - w) * (i + 1)) / cols]);
+      }
+    }
+  }
+  return out;
+}

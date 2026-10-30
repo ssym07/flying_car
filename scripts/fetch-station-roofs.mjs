@@ -15,10 +15,13 @@
 //   種類：0 = 駅舎、1 = 上屋（屋根）、2 = ホーム（床）
 //   上屋・ホームの高さは仮の値。scripts/build-platforms.mjs が線路の高さに合わせて書き換える
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { AREAS, areaCells } from './lib/tiles.mjs';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number);
+const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? AREAS.flat().join(',')).split(',').map(Number);
 const partial = process.argv[2] !== undefined;
 const SPLIT = Number(process.argv[3] ?? 4);
+/** 区画（範囲を指定しなければ AREAS の長方形ごと） */
+const CELLS = areaCells(SPLIT, process.argv[2] ? [SOUTH, WEST, NORTH, EAST] : null);
 const ZOOM = 15;
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -113,12 +116,8 @@ function nearestStation(p) {
 
 const ways = new Map();
 const relations = new Map();
-for (let i = 0; i < SPLIT; i++) {
-  for (let j = 0; j < SPLIT; j++) {
-    const s = SOUTH + ((NORTH - SOUTH) * j) / SPLIT;
-    const n = SOUTH + ((NORTH - SOUTH) * (j + 1)) / SPLIT;
-    const w = WEST + ((EAST - WEST) * i) / SPLIT;
-    const e = WEST + ((EAST - WEST) * (i + 1)) / SPLIT;
+for (const [index, [s, w, n, e]] of CELLS.entries()) {
+  {
     const bbox = `${s},${w},${n},${e}`;
     const cacheFile = new URL(`${bbox}.json`, CACHE_DIR);
     let elements = await readFile(cacheFile, 'utf8').then(JSON.parse, () => null);
@@ -147,7 +146,7 @@ for (let i = 0; i < SPLIT; i++) {
       await writeFile(extraFile, JSON.stringify(extra));
     }
     for (const el of extra) relations.set(el.id, el);
-    console.log(`part ${i * SPLIT + j + 1}/${SPLIT * SPLIT}: ${ways.size} ways, ${relations.size} relations`);
+    console.log(`part ${index + 1}/${CELLS.length}: ${ways.size} ways, ${relations.size} relations`);
   }
 }
 

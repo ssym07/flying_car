@@ -7,9 +7,12 @@
 //
 // 出力の形式: [[連絡路(0/1), 高架(0/1), 掘割(0/1), layer, 車線数, 名前, [[緯度,経度], ...]], ...]
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { AREAS, areaCells } from './lib/tiles.mjs';
 
-const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? '35.30,139.46,35.82,139.92').split(',').map(Number);
+const [SOUTH, WEST, NORTH, EAST] = (process.argv[2] ?? AREAS.flat().join(',')).split(',').map(Number);
 const SPLIT = Number(process.argv[3] ?? 6);
+/** 区画（範囲を指定しなければ AREAS の長方形ごと） */
+const CELLS = areaCells(SPLIT, process.argv[2] ? [SOUTH, WEST, NORTH, EAST] : null);
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',
@@ -41,12 +44,8 @@ async function overpass(query) {
 }
 
 const ways = new Map();
-for (let i = 0; i < SPLIT; i++) {
-  for (let j = 0; j < SPLIT; j++) {
-    const s = SOUTH + ((NORTH - SOUTH) * j) / SPLIT;
-    const n = SOUTH + ((NORTH - SOUTH) * (j + 1)) / SPLIT;
-    const w = WEST + ((EAST - WEST) * i) / SPLIT;
-    const e = WEST + ((EAST - WEST) * (i + 1)) / SPLIT;
+for (const [index, [s, w, n, e]] of CELLS.entries()) {
+  {
     const bbox = `${s},${w},${n},${e}`;
     const cacheFile = new URL(`${bbox}.json`, CACHE_DIR);
     let elements = await readFile(cacheFile, 'utf8').then(JSON.parse, () => null);
@@ -58,18 +57,24 @@ for (let i = 0; i < SPLIT; i++) {
       await writeFile(cacheFile, JSON.stringify(elements));
     }
     for (const el of elements) ways.set(el.id, el);
-    console.log(`part ${i * SPLIT + j + 1}/${SPLIT * SPLIT}: ${ways.size} ways`);
+    console.log(`part ${index + 1}/${CELLS.length}: ${ways.size} ways`);
   }
 }
 
 // ---- トンネルの端（全体を1回で取る）：トンネルに入る手前の高速道路を、地面（掘割）まで下ろすのに使う ----
-const tunnelCache = new URL('../data/cache/expressway-tunnels.json', import.meta.url);
-let tunnelElements = await readFile(tunnelCache, 'utf8').then(JSON.parse, () => null);
-if (!tunnelElements) {
-  tunnelElements = await overpass(`[out:json][timeout:250];
-    way["highway"~"^(motorway|motorway_link)$"]["tunnel"~"^(yes|building_passage|covered)$"](${SOUTH},${WEST},${NORTH},${EAST});
-    out geom qt;`);
-  await writeFile(tunnelCache, JSON.stringify(tunnelElements));
+const tunnelElements = [];
+for (const [index, area] of (process.argv[2] ? [[SOUTH, WEST, NORTH, EAST]] : AREAS).entries()) {
+  const bbox = area.join(',');
+  const name = index === 0 && !process.argv[2] ? 'expressway-tunnels.json' : `expressway-tunnels-${bbox}.json`;
+  const tunnelCache = new URL(`../data/cache/${name}`, import.meta.url);
+  let elements = await readFile(tunnelCache, 'utf8').then(JSON.parse, () => null);
+  if (!elements) {
+    elements = await overpass(`[out:json][timeout:250];
+      way["highway"~"^(motorway|motorway_link)$"]["tunnel"~"^(yes|building_passage|covered)$"](${bbox});
+      out geom qt;`);
+    await writeFile(tunnelCache, JSON.stringify(elements));
+  }
+  tunnelElements.push(...elements);
 }
 const tunnelEnds = [];
 for (const el of tunnelElements) {

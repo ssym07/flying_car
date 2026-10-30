@@ -1,4 +1,4 @@
-// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の6市（2025）と、横浜市・川崎市の各区。
+// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の13市（2025）と、横浜市・川崎市の各区。
 // データカタログ API（https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets）から作成。
 // どの区も軽い LOD1（LOD1 が無い台東区はテクスチャ無し LOD2）に外壁テンプレートを貼る。
 // kind: 'lod2-texture' にすると配信データのテクスチャのまま表示する（1区で100MB超と重い）。
@@ -62,11 +62,18 @@ export const WARDS: Ward[] = [
   { code: '14135', name: '川崎市多摩区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/91/53db04-831f-4d05-a906-4d0419201285/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14135_tama-ku_lod1/tileset.json' },
   { code: '14136', name: '川崎市宮前区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/60/33ccc8-8727-475e-946e-88c6020cc2f6/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14136_miyamae-ku_lod1/tileset.json' },
   { code: '14137', name: '川崎市麻生区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/de/d9ebc6-0fe4-4cb1-94b0-1affded44d42/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14137_asao-ku_lod1/tileset.json' },
-  // 多摩地域（2025）：武蔵野市・三鷹市・調布市・西東京市・小金井市・狛江市
+  // 多摩地域（2025）：武蔵野市・三鷹市・調布市・西東京市・小金井市・狛江市・立川市・府中市・小平市・東村山市・国分寺市・清瀬市・国立市
   { code: '13203', name: '武蔵野市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/20/609c62-a978-4692-a056-83b33b55e3c1/13203_musashino-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13204', name: '三鷹市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/fe/bebf67-6c9f-4c61-820a-e3b97c7dd0a4/13204_mitaka-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13208', name: '調布市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/34/f83e90-493a-4d23-bd6c-8e2824befd11/13208_chofu-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13229', name: '西東京市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/bd/5f5d1b-f788-4308-bdf4-ae0498e53fc4/13229_nishitokyo-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13210', name: '小金井市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/c0/0ce728-2b22-4d12-b74e-bf136131b5c3/13210_koganei-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '13219', name: '狛江市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/9c/53484a-1c49-4408-a73a-3cdc8441541e/13219_komae-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13202', name: '立川市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/13/90122a-d0c0-42c5-9251-08c875db5dae/13202_tachikawa-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13206', name: '府中市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/3d/928b9f-2733-4e74-bf2b-24ff074497e0/13206_fuchu-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13211', name: '小平市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/fb/72466e-3193-4a09-9408-66d4c6439619/13211_kodaira-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13213', name: '東村山市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/8c/0cbffc-5db0-47cd-8d14-be85a21e4b6d/13213_higashimurayama-shi_city_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13214', name: '国分寺市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/cb/030869-6e9d-44d2-86f4-f629e9679e12/13214_kokubunji-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13221', name: '清瀬市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a5/db7903-1280-4052-b63a-0eed46bda83a/13221_kiyose-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13215', name: '国立市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/0f/f87610-5670-41eb-bbed-5c48960ba6e1/13215_kunitachi-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
 ];
