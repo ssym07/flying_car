@@ -530,10 +530,9 @@ function createMaterials(
   addLanduse(ground, landuse);
   addTrenchMask(ground);
   return [
+    // 縁の壁も本体と同じ材質で描く（別の材質だと、本体だけ奥へずらすので壁の上の縁が手前に出て、
+    // 区画の境目が細い線に見える。同じ材質なら海の上でも水面の色になる）
     ground,
-    // 縁の壁はずらさない（垂直な面は大きく奥へずれて、隠したい隙間が見えてしまう）。
-    // 裏から見ても消えないよう両面にし、裏面が暗く照らされて黒い線に見えないようライティングもしない
-    new THREE.MeshBasicMaterial({ map, color, side: THREE.DoubleSide }),
   ];
 }
 
@@ -582,8 +581,6 @@ function buildGeometry(
   for (let i = seg; i > 0; i--) ring.push([i, seg]);
   for (let i = seg; i > 0; i--) ring.push([0, i]);
 
-  const mainIndexCount = index.length;
-
   // 縁から下に垂らす壁。法線が本体に影響しないよう、頂点は本体と共有しない
   ring.forEach(([col, row], i) => {
     place(gridCount + i * 2, col, row, 0);
@@ -599,8 +596,7 @@ function buildGeometry(
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(index);
-  geometry.addGroup(0, mainIndexCount, 0);
-  geometry.addGroup(mainIndexCount, index.length - mainIndexCount, 1);
+  geometry.addGroup(0, index.length, 0);
   geometry.computeVertexNormals();
   // 壁の法線は上向きにして、本体と同じ明るさにする
   const normals = geometry.getAttribute('normal') as THREE.BufferAttribute;

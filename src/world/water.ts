@@ -48,7 +48,7 @@ export async function fetchWaterMask(
   );
   if (!results.some(Boolean)) return null;
 
-  // 水色の画素：水面の色（#bed2ff）と、細い川の縁取りの青（#145aff）とその間の色（文字のふちのにじみも拾えるよう幅を持たせる）
+  // 水色の画素（isWaterColor）
   const { data } = ctx.getImageData(0, 0, size, size);
   let mask: Uint8Array = new Uint8Array(size * size);
   let any = false;
@@ -56,7 +56,7 @@ export async function fetchWaterMask(
     const r = data[p * 4];
     const g = data[p * 4 + 1];
     const b = data[p * 4 + 2];
-    if (b > 0xf0 && r < 0xd0 && g < 0xe2 && g > r && b - r > 40) {
+    if (isWaterColor(r, g, b)) {
       mask[p] = 1;
       any = true;
     }
@@ -72,7 +72,14 @@ export async function fetchWaterMask(
     for (let p = 0; p < mask.length; p++) if (bridges[p] && closed[p]) mask[p] = 1;
   }
 
-  const distance = shoreDistance(mask, size);
+  // 岸からの距離は、まわりの区画の水域も見て測る（区画の中だけで測ると、岸が隣の区画にある所で
+  // 区画の境目を境に海の色（岸辺の明るい青〜沖の深い青）が急に変わる）
+  const margin = WATER.deepDistancePx + 8;
+  const distance = crop(
+    shoreDistance(await withNeighbors(mask, x, y, z, size, margin), size + margin * 2),
+    size,
+    margin,
+  );
   // 岸の線が画素の階段にならないよう、水域をぼかして（シェーダーで 0.5 を境に切る）なめらかにする
   const soft = boxBlur(boxBlur(Float32Array.from(mask), size, WATER.edgeBlur), size, WATER.edgeBlur);
   // DataTexture は1行目が下（v=0）になるので、上下を反転して詰める
@@ -256,6 +263,72 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
       );
   };
   material.customProgramCacheKey = () => 'terrain-water';
+}
+
+/** 淡色地図の水色の画素か：水面の色（#bed2ff）と、細い川の縁取りの青（#145aff）とその間の色（文字のふちのにじみも拾えるよう幅を持たせる） */
+function isWaterColor(r: number, g: number, b: number): boolean {
+  return b > 0xf0 && r < 0xd0 && g < 0xe2 && g > r && b - r > 40;
+}
+
+/**
+ * 区画の水域 mask（size × size）のまわりに margin 画素の余白を付けた水域。余白は隣の 8 区画の淡色地図
+ * （区画と同じズームの粗い地図を引き伸ばす）から作る。読めなかった所は区画の縁の値をそのまま延ばす
+ */
+async function withNeighbors(mask: Uint8Array, x: number, y: number, z: number, size: number, margin: number) {
+  const E = size + margin * 2;
+  const out = new Uint8Array(E * E);
+  for (let py = 0; py < E; py++) {
+    const sy = Math.min(size - 1, Math.max(0, py - margin));
+    for (let px = 0; px < E; px++) out[py * E + px] = mask[sy * size + Math.min(size - 1, Math.max(0, px - margin))];
+  }
+  const canvas = new OffscreenCanvas(E, E);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  const loaded: Array<[number, number]> = [];
+  await Promise.all(
+    [-1, 0, 1].flatMap((dy) =>
+      [-1, 0, 1].map(async (dx) => {
+        if (dx === 0 && dy === 0) return;
+        const url = WATER.mapUrl
+          .replace('{z}', `${z}`)
+          .replace('{x}', `${x + dx}`)
+          .replace('{y}', `${y + dy}`);
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return;
+          const image = await createImageBitmap(await res.blob());
+          ctx.drawImage(image, margin + dx * size, margin + dy * size, size, size);
+          image.close();
+          loaded.push([dx, dy]);
+        } catch {
+          // 読めなかった所は縁の値のまま
+        }
+      }),
+    ),
+  );
+  if (loaded.length === 0) return out;
+  const { data } = ctx.getImageData(0, 0, E, E);
+  for (const [dx, dy] of loaded) {
+    const x0 = Math.max(0, margin + dx * size);
+    const x1 = Math.min(E, margin + (dx + 1) * size);
+    const y0 = Math.max(0, margin + dy * size);
+    const y1 = Math.min(E, margin + (dy + 1) * size);
+    for (let py = y0; py < y1; py++) {
+      for (let px = x0; px < x1; px++) {
+        const p = py * E + px;
+        out[p] = isWaterColor(data[p * 4], data[p * 4 + 1], data[p * 4 + 2]) ? 1 : 0;
+      }
+    }
+  }
+  return out;
+}
+
+/** 余白 margin の付いた画像（(size + 2 margin) 四方）から、真ん中の size 四方を切り出す */
+function crop(src: Float32Array, size: number, margin: number): Float32Array {
+  const E = size + margin * 2;
+  const out = new Float32Array(size * size);
+  for (let py = 0; py < size; py++)
+    out.set(src.subarray((py + margin) * E + margin, (py + margin) * E + margin + size), py * size);
+  return out;
 }
 
 /** 縦横に分けた箱型のぼかし（半径 r 画素） */
