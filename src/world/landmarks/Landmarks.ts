@@ -44,6 +44,14 @@ import {
 } from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import {
+  type ForumParts,
+  buildInternationalForum,
+  createForumGlassMaterial,
+  createForumHallMaterial,
+  createForumRoofMaterial,
+  createForumWallMaterial,
+} from './internationalForum';
+import {
   type MidtownYaesuParts,
   buildMidtownYaesu,
   createYaesuGlassMaterial,
@@ -146,6 +154,29 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京国際フォーラム（ガラス棟とホール棟の PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_861e9fa3-3ab6-443b-a1b0-6457f4d2e6dd',
+    ...around(35.6766, 139.7643, 0),
+    front: -1,
+    build: (length) => {
+      const double = (m: THREE.MeshStandardMaterial) => ((m.side = THREE.DoubleSide), m);
+      forumShared ??= {
+        glass: createForumGlassMaterial(),
+        roofGlass: createForumRoofMaterial(),
+        wall: createForumWallMaterial(),
+        terrace: double(new THREE.MeshStandardMaterial({ color: 0xb4b14e, roughness: 0.9 })),
+        hall: createForumHallMaterial(),
+        white: double(new THREE.MeshStandardMaterial({ color: 0xe8eaeb, roughness: 0.5 })),
+        roof: double(new THREE.MeshStandardMaterial({ color: 0x5e6266, roughness: 0.8 })),
+      };
+      const parts = buildInternationalForum(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof ForumParts>)
+        group.add(new THREE.Mesh(parts[key], forumShared[key]));
+      return group;
+    },
+  },
   {
     // 東京ミッドタウン八重洲（PLATEAU の工事中の箱を消して置く。取り壊された古いビルの箱も build-station-cutouts で消す）
     gmlId: 'bldg_25d370de-2c35-457b-b756-3444a3d02eb3',
@@ -776,6 +807,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let forumShared: Record<keyof ForumParts, THREE.Material> | null = null;
 let yaesuShared: Record<keyof MidtownYaesuParts, THREE.Material> | null = null;
 let parkShared: Record<keyof ParkBuildingParts, THREE.Material> | null = null;
 let ichigokanShared: Record<keyof IchigokanParts, THREE.Material> | null = null;
