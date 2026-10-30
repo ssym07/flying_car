@@ -44,6 +44,13 @@ import {
 } from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import {
+  type JpTowerParts,
+  buildJpTower,
+  createJpBandMaterial,
+  createJpGlassMaterial,
+  createPostOfficeMaterial,
+} from './jpTower';
+import {
   type MarunouchiParts,
   buildMaruBuilding,
   buildShinMarunouchi,
@@ -107,6 +114,33 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // JPタワーと旧東京中央郵便局（KITTE）（PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_f0028aa3-e666-4608-8b70-4e981a45d6b5',
+    ...around(35.67979, 139.76483, 0),
+    front: -1,
+    build: (length) => {
+      jpShared ??= {
+        podium: createPostOfficeMaterial(),
+        glass: createJpGlassMaterial(),
+        band: createJpBandMaterial(),
+        frame: new THREE.MeshStandardMaterial({
+          color: 0x6d7378,
+          roughness: 0.5,
+          metalness: 0.4,
+          side: THREE.DoubleSide,
+        }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8a8c8e, roughness: 0.8 }),
+        green: new THREE.MeshStandardMaterial({ color: 0x5a8a40, roughness: 0.9 }),
+        clock: new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.6, side: THREE.DoubleSide }),
+      };
+      const parts = buildJpTower(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof JpTowerParts>)
+        group.add(new THREE.Mesh(parts[key], jpShared[key]));
+      return group;
+    },
+  },
   {
     // 丸ビル（PLATEAU の低い箱を消して置く）。x = 北北東、z = 東京駅の側
     gmlId: 'bldg_a98349a1-56c0-4ec4-b22c-abe49301bd04',
@@ -586,6 +620,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let jpShared: Record<keyof JpTowerParts, THREE.Material> | null = null;
 let maruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
 let shinMaruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
 
