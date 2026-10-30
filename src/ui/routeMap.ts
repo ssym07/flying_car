@@ -23,10 +23,14 @@ interface Stop {
 }
 
 /** 拡大率（1km あたりの px）の範囲と、駅名を出し始める拡大率（乗換駅・すべての駅） */
-const MIN_SCALE = 2;
+const MIN_SCALE = 6;
 const MAX_SCALE = 120;
 const LABEL_TRANSFER = 9;
 const LABEL_ALL = 22;
+/** 普通の駅の丸を出し始める拡大率と、はっきり出す拡大率 */
+const DOTS_FROM = 8;
+const DOTS_FULL = 16;
+const THREE_CLAMP = (v: number) => Math.min(1, Math.max(0, v));
 /** これより動いたらクリックではなくドラッグ (px) */
 const DRAG_THRESHOLD = 5;
 
@@ -354,20 +358,25 @@ export class RouteMap {
       g.stroke();
     }
 
-    // 駅：乗換駅（2路線以上）は黒い縁の大きな丸
-    const r = Math.max(2.5, Math.min(6, this.scale / 4));
+    // 駅：乗換駅（2路線以上）は黒い縁の大きな丸。引いて見ている時は目立たせない
+    // （普通の駅は描かず、乗換駅だけ小さく。寄るにつれて普通の駅も出す）
+    const near = THREE_CLAMP((this.scale - DOTS_FROM) / (DOTS_FULL - DOTS_FROM));
+    const r = Math.max(1.6, Math.min(6, this.scale / 4));
     this.stops.forEach((s, i) => {
       const [x, y] = this.toScreen(s.x, s.y);
       if (!visible(x, y)) return;
       const transfer = s.lines.length >= 2;
+      if (!transfer && near <= 0 && i !== this.hover) return;
+      g.globalAlpha = transfer || i === this.hover ? 1 : near;
       g.beginPath();
-      g.arc(x, y, transfer ? r * 1.35 : r, 0, Math.PI * 2);
+      g.arc(x, y, transfer ? r * (1 + 0.35 * near) : r, 0, Math.PI * 2);
       g.fillStyle = '#ffffff';
       g.fill();
-      g.lineWidth = transfer ? 2.5 : 1.6;
+      g.lineWidth = transfer ? 1.2 + 1.3 * near : 1.6;
       g.strokeStyle = i === this.hover ? '#ff6a00' : transfer ? '#1d1f24' : (this.lines[s.lines[0]]?.color ?? '#555');
       g.stroke();
     });
+    g.globalAlpha = 1;
 
     // 駅名
     g.font = `600 ${this.scale >= LABEL_ALL ? 11 : 10}px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
