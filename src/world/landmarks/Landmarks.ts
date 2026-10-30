@@ -32,6 +32,12 @@ import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUp
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import {
+  type StadiumParts,
+  buildNationalStadium,
+  createStadiumSeatMaterial,
+  createStadiumWoodMaterial,
+} from './nationalStadium';
 import { type CastleParts, buildCinderellaCastle } from './cinderellaCastle';
 import { type SompoParts, buildSompoJapan, createSompoCoreMaterial, createSompoFinMaterial } from './sompoJapan';
 import { type CocoonParts, buildCocoonTower, createCocoonGlassMaterial } from './cocoonTower';
@@ -79,6 +85,33 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 国立競技場（PLATEAU の楕円の箱を消して置く）。x = 楕円の長い向き（北北東）
+    gmlId: 'bldg_d840231c-8174-4086-9ca6-6417886b0fda',
+    ...around(35.677837, 139.714508, 68),
+    front: 1,
+    build: (length) => {
+      const flat = (color: number, roughness = 0.7, extra: THREE.MeshStandardMaterialParameters = {}) =>
+        new THREE.MeshStandardMaterial({ color, roughness, side: THREE.DoubleSide, ...extra });
+      stadiumShared ??= {
+        wood: createStadiumWoodMaterial(),
+        roof: flat(0xeceef0, 0.5),
+        roofGlass: flat(0x8fb6d6, 0.15, { metalness: 0.4 }),
+        white: flat(0xf3f3f1, 0.5),
+        glass: flat(0x3f4c58, 0.2, { metalness: 0.4 }),
+        green: flat(0x4f7d3a, 0.9),
+        seats: createStadiumSeatMaterial(),
+        track: flat(0x8a5546, 0.9),
+        field: flat(0x4a8a42, 0.95),
+      };
+      const parts = buildNationalStadium(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof StadiumParts>) {
+        group.add(new THREE.Mesh(parts[key], stadiumShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // シンデレラ城（浦安市は国土地理院の建物の形から作っていて、城の場所の建物は作らない）。建物の座標は x = 東、z = 南
     gmlId: '',
@@ -439,6 +472,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let stadiumShared: Record<keyof StadiumParts, THREE.Material> | null = null;
 let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
 let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
