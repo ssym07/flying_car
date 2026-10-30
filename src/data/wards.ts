@@ -1,4 +1,4 @@
-// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区（2025）と、横浜市・川崎市の各区。
+// PLATEAU 建築物モデルの 3D Tiles 配信 URL。東京23区・多摩の6市（2025）と、横浜市・川崎市の各区。
 // データカタログ API（https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets）から作成。
 // どの区も軽い LOD1（LOD1 が無い台東区はテクスチャ無し LOD2）に外壁テンプレートを貼る。
 // kind: 'lod2-texture' にすると配信データのテクスチャのまま表示する（1区で100MB超と重い）。
@@ -62,4 +62,11 @@ export const WARDS: Ward[] = [
   { code: '14135', name: '川崎市多摩区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/91/53db04-831f-4d05-a906-4d0419201285/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14135_tama-ku_lod1/tileset.json' },
   { code: '14136', name: '川崎市宮前区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/60/33ccc8-8727-475e-946e-88c6020cc2f6/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14136_miyamae-ku_lod1/tileset.json' },
   { code: '14137', name: '川崎市麻生区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/de/d9ebc6-0fe4-4cb1-94b0-1affded44d42/14130_kawasaki-shi_city_2022_citygml_4_op_bldg_3dtiles_14137_asao-ku_lod1/tileset.json' },
+  // 多摩地域（2025）：武蔵野市・三鷹市・調布市・西東京市・小金井市・狛江市
+  { code: '13203', name: '武蔵野市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/20/609c62-a978-4692-a056-83b33b55e3c1/13203_musashino-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13204', name: '三鷹市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/fe/bebf67-6c9f-4c61-820a-e3b97c7dd0a4/13204_mitaka-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13208', name: '調布市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/34/f83e90-493a-4d23-bd6c-8e2824befd11/13208_chofu-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13229', name: '西東京市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/bd/5f5d1b-f788-4308-bdf4-ae0498e53fc4/13229_nishitokyo-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13210', name: '小金井市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/c0/0ce728-2b22-4d12-b74e-bf136131b5c3/13210_koganei-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '13219', name: '狛江市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/9c/53484a-1c49-4408-a73a-3cdc8441541e/13219_komae-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
 ];
