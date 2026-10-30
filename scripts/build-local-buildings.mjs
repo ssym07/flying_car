@@ -233,6 +233,8 @@ for (const ward of targets) {
   await mkdir(dir, { recursive: true });
   await writeFile(new URL('tileset.json', dir), JSON.stringify(tileset));
   done.add(ward.code);
+  // ほかのスクリプト（build-gsi-buildings.mjs など）が足した区を消さないよう、書く直前に読み直して合わせる
+  for (const code of await readFile(new URL('wards.json', OUT), 'utf8').then(JSON.parse, () => [])) done.add(code);
   await writeFile(new URL('wards.json', OUT), JSON.stringify([...done].sort()));
   console.log(
     `${ward.name} (${ward.code}): ${uris.length} tiles, new ${downloaded} (${(fetchedBytes / 1e6).toFixed(0)}MB → ${(savedBytes / 1e6).toFixed(0)}MB)`,
