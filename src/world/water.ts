@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WATER } from '../core/config';
+import { LANDUSE, WATER } from '../core/config';
 import { roadMask } from './roadMask';
 
 /**
@@ -127,7 +127,12 @@ export function flattenWater(heights: Float32Array, mask: Uint8Array, maskSize: 
       members.push(p);
       const px = p % n;
       const py = (p - px) / n;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
         const qx = px + dx;
         const qy = py + dy;
         if (qx < 0 || qy < 0 || qx >= n || qy >= n) continue;
@@ -164,6 +169,8 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
     shader.uniforms.deepColor = { value: new THREE.Color(WATER.deepColor) };
     shader.uniforms.foamColor = { value: new THREE.Color(WATER.foamColor) };
     shader.uniforms.bankColor = { value: new THREE.Color(WATER.bankColor) };
+    shader.uniforms.beachShallowColor = { value: new THREE.Color(WATER.beachShallowColor) };
+    shader.uniforms.wetSandColor = { value: new THREE.Color(LANDUSE.colors.wetSand) };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vWaterWorld;`)
       .replace(
@@ -180,6 +187,8 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         uniform vec3 deepColor;
         uniform vec3 foamColor;
         uniform vec3 bankColor;
+        uniform vec3 beachShallowColor;
+        uniform vec3 wetSandColor;
         varying vec3 vWaterWorld;`,
       )
       .replace(
@@ -194,11 +203,34 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         float foam = smoothstep(0.5, 0.6, waterSample.r) * (1.0 - smoothstep(0.6, 0.82, waterSample.r));
         foam *= 0.65 + 0.35 * sin(waterTime * 1.6 + (vWaterWorld.x + vWaterWorld.z) * 0.35);
         waterColor = mix(waterColor, foamColor, foam * ${WATER.foamStrength.toFixed(2)});
-        // 護岸：陸側の縁に明るいコンクリートの帯と、水際の濃い影の線
+        // 砂浜の前の海（luBeachNear は地面の種類の処理で決まる）：浅瀬は明るい青緑、岸へ寄せる白い波の線
+        float beachSea = smoothstep(0.0, 0.25, luBeachNear);
+        // 岸からの距離 (m)：水面の岸からの距離は区画ごとにしか測れない（隣の区画の岸が見えない）ので、
+        // 砂浜の前では区画をまたいで測った砂浜からの距離を使う
+        float shoreM = (1.0 - luBeachNear) * ${LANDUSE.beachReach.toFixed(1)};
+        waterColor = mix(waterColor, mix(beachShallowColor, waterColor, smoothstep(10.0, 80.0, shoreM)), beachSea);
+        {
+          // 波の線：岸からの距離が一定の線を、岸へ向かって動かす。所々で途切れさせ、沖ほど薄く
+          float phase = shoreM / ${WATER.surfSpacing.toFixed(1)} + waterTime * ${(WATER.surfSpeed / WATER.surfSpacing).toFixed(4)};
+          float band = fract(phase);
+          float crest = smoothstep(0.0, 0.06, band) * (1.0 - smoothstep(0.06, 0.22, band));
+          float broken = smoothstep(0.35, 0.65, luNoise(vWaterWorld.xz / 30.0 + floor(phase) * 3.7));
+          float fade = 1.0 - smoothstep(10.0, ${WATER.surfReach.toFixed(1)}, shoreM);
+          waterColor = mix(waterColor, foamColor, crest * broken * fade * beachSea * 0.85);
+          // 波打ち際の白い泡の帯（寄せては返す）
+          float swash = 0.5 + 0.5 * sin(waterTime * 0.8 + luNoise(vWaterWorld.xz / 40.0) * 6.0);
+          float edgeM = waterDepth * ${WATER.deepDistancePx.toFixed(1)} * 2.0;
+          float edgeFoam = 1.0 - smoothstep(2.0 + swash * 4.0, 7.0 + swash * 5.0, min(edgeM, shoreM));
+          waterColor = mix(waterColor, foamColor, edgeFoam * beachSea * 0.8);
+        }
+        // 護岸：陸側の縁に明るいコンクリートの帯と、水際の濃い影の線。砂浜では代わりに湿った砂の帯
         float bank = smoothstep(0.12, 0.25, waterSample.r) * (1.0 - isWater);
         float lip = smoothstep(0.32, 0.45, waterSample.r) * (1.0 - isWater);
-        vec3 land = mix(diffuseColor.rgb, bankColor, bank);
-        land = mix(land, bankColor * 0.55, lip);
+        float sandy = max(luIsBeach, beachSea);
+        vec3 land = mix(diffuseColor.rgb, bankColor, bank * (1.0 - sandy));
+        land = mix(land, bankColor * 0.55, lip * (1.0 - sandy));
+        float wet = smoothstep(0.04, 0.3, waterSample.r) * (1.0 - isWater) * sandy;
+        land = mix(land, wetSandColor, wet * 0.9);
         diffuseColor.rgb = mix(land, waterColor, isWater);`,
       )
       .replace(

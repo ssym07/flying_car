@@ -44,7 +44,9 @@ export async function fetchParks(
 ): Promise<{ texture: THREE.Texture; trees: TreeSpot[] } | null> {
   let data: ParkTile;
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}${PARKS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
+    const res = await fetch(
+      `${import.meta.env.BASE_URL}${PARKS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`,
+    );
     // 公園の無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
     data = (await res.json()) as ParkTile;
@@ -126,7 +128,7 @@ function placeTrees(
   toLatLon: (px: number, py: number) => [number, number],
 ): TreeSpot[] {
   let s = seed % 2147483647 || 1;
-  const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const step = PARKS.treeSpacing / metersPerPx;
   const edge = Math.max(2, Math.round(PARKS.edgeWidth / metersPerPx));
   const at = (px: number, py: number) => {
@@ -139,7 +141,8 @@ function placeTrees(
   const inGrove = (px: number, py: number) => {
     const [lat, lon] = toLatLon(px, py);
     return PARKS.groves.some(
-      ([glat, glon, r]) => Math.hypot((lat - glat) * 111320, (lon - glon) * 111320 * Math.cos((glat * Math.PI) / 180)) < r,
+      ([glat, glon, r]) =>
+        Math.hypot((lat - glat) * 111320, (lon - glon) * 111320 * Math.cos((glat * Math.PI) / 180)) < r,
     );
   };
   const trees: TreeSpot[] = [];
@@ -170,14 +173,14 @@ function placeTrees(
               ? TreeKind.Conifer
               : TreeKind.Broadleaf
           : here.wood
-        ? r < 0.65
-          ? TreeKind.Conifer
-          : TreeKind.Broadleaf
-        : r < PARKS.sakuraRatio
-          ? TreeKind.Sakura
-          : r < PARKS.sakuraRatio + 0.15
-            ? TreeKind.Conifer
-            : TreeKind.Broadleaf;
+            ? r < 0.65
+              ? TreeKind.Conifer
+              : TreeKind.Broadleaf
+            : r < PARKS.sakuraRatio
+              ? TreeKind.Sakura
+              : r < PARKS.sakuraRatio + 0.15
+                ? TreeKind.Conifer
+                : TreeKind.Broadleaf;
       trees.push({ u: px / SIZE, v: py / SIZE, kind, scale: 0.7 + rand() * 0.6 });
       if (trees.length >= PARKS.maxTreesPerChunk) return trees;
     }
@@ -227,8 +230,9 @@ export function addParks(material: THREE.MeshStandardMaterial, parkMap: THREE.Te
         `#include <map_fragment>
         {
           vec4 park = texture2D(parkMap, vMapUv);
-          float grass = smoothstep(0.3, 0.7, park.r);
-          float dirt = smoothstep(0.3, 0.7, park.g);
+          // 公園の中の砂浜（葛西臨海公園など）は芝生にしない
+          float grass = smoothstep(0.3, 0.7, park.r) * (1.0 - luIsBeach);
+          float dirt = smoothstep(0.3, 0.7, park.g) * (1.0 - luIsBeach);
           // 芝生：大きなむらと細かいざらつき。写真の色も少しだけ残して場所ごとの違いを出す
           float n = parkNoise(vParkWorld.xz / 14.0) * 0.65 + parkNoise(vParkWorld.xz / 3.0) * 0.35;
           vec3 lawn = mix(grassColor, grassColor2, n);

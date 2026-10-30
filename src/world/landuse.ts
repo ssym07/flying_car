@@ -4,7 +4,7 @@ import { LANDUSE } from '../core/config';
 import { roadMask } from './roadMask';
 
 /**
- * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場。
+ * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場・砂浜。
  * public/landuse、scripts/fetch-landuse.mjs で作る）から、地形チャンクごとに「地面の種類」の画像を作り、
  * 種類ごとのテンプレート（アスファルトと白線・砂利・墓石の並び など）で地形の色を塗り替える。
  * データの無い所は「住宅地の敷地」のテンプレートで塗る（航空写真のぼやけと、写り込んだ屋根を見せない）。
@@ -19,8 +19,9 @@ interface LanduseTile {
 }
 
 const SIZE = 512;
-/** 墓地の種類の番号（scripts/fetch-landuse.mjs と同じ） */
+/** 墓地・砂浜の種類の番号（scripts/fetch-landuse.mjs と同じ） */
 const CEMETERY = 2;
+const BEACH = 10;
 
 /** 墓石1基：タイルの中の位置（u = 東へ、v = 南へ、0〜1）、区画の並ぶ向き（度、東が 0、北へ回る）、色の明るさ */
 export interface GraveSpot {
@@ -42,7 +43,9 @@ export interface LanduseData {
 export async function fetchLanduse(x: number, y: number, z: number): Promise<LanduseData | null> {
   let data: LanduseTile;
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}${LANDUSE.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
+    const res = await fetch(
+      `${import.meta.env.BASE_URL}${LANDUSE.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`,
+    );
     // データの無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
     data = (await res.json()) as LanduseTile;
@@ -65,7 +68,7 @@ export async function fetchLanduse(x: number, y: number, z: number): Promise<Lan
     const pts = decode(coords).map(([lat, lon]) => toPx(lat, lon));
     let top = Infinity;
     let bottom = -Infinity;
-    for (const [, py] of pts) (top = Math.min(top, py)), (bottom = Math.max(bottom, py));
+    for (const [, py] of pts) ((top = Math.min(top, py)), (bottom = Math.max(bottom, py)));
     const r = (kind + 1) * 20;
     const gch = Math.round((angle / 180) * 255);
     for (let row = Math.max(0, Math.floor(top)); row <= Math.min(SIZE - 1, Math.ceil(bottom)); row++) {
@@ -90,6 +93,10 @@ export async function fetchLanduse(x: number, y: number, z: number): Promise<Lan
     }
   }
   const graves = data.a.some(([kind]) => kind === CEMETERY) ? await placeGraves(data, pixels, x, y, z) : [];
+  if (data.a.some(([kind]) => kind === BEACH)) {
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / n))) * 180) / Math.PI;
+    markBeachReach(data, toPx, pixels, (n * SIZE) / (40075016 * Math.cos((lat * Math.PI) / 180)));
+  }
   const texture = new THREE.DataTexture(pixels, SIZE, SIZE);
   texture.needsUpdate = true;
   // 種類の番号が隣と混ざらないよう、補間しない
@@ -97,6 +104,88 @@ export async function fetchLanduse(x: number, y: number, z: number): Promise<Lan
   texture.minFilter = THREE.NearestFilter;
   texture.generateMipmaps = false;
   return { texture, graves };
+}
+
+/** タイルの中の位置（u = 東へ、v = 南へ、0〜1）が砂浜か（砂浜に木を植えないのに使う） */
+export function isBeachAt(data: LanduseData, u: number, v: number): boolean {
+  const pixels = (data.texture as THREE.DataTexture).image.data as Uint8Array;
+  const col = Math.min(SIZE - 1, Math.max(0, Math.floor(u * SIZE)));
+  const row = Math.min(SIZE - 1, Math.max(0, Math.floor(v * SIZE)));
+  return pixels[((SIZE - 1 - row) * SIZE + col) * 4] === (BEACH + 1) * 20;
+}
+
+/**
+ * 青の成分に「砂浜からの近さ」を入れる（砂浜で 255、LANDUSE.beachReach m 離れると 0）。
+ * 水面のシェーダーが、砂浜の前の海だけに浅瀬の色と寄せる波を描くのに使う。pxPerMeter：1m が何画素か。
+ * 砂浜が隣のタイルにある所も測れるよう、まわりに余白を付けた画像に砂浜を描いてから距離を測る
+ * （砂浜の形は scripts/add-beaches.mjs がまわりのタイルにも入れている）
+ */
+function markBeachReach(
+  data: LanduseTile,
+  toPx: (lat: number, lon: number) => [number, number],
+  pixels: Uint8Array,
+  pxPerMeter: number,
+): void {
+  const reach = Math.max(1, LANDUSE.beachReach * pxPerMeter);
+  const pad = Math.ceil(reach) + 2;
+  const P = SIZE + pad * 2;
+  const dist = new Float32Array(P * P).fill(1e9);
+  // 砂浜の形を余白付きの画像に塗る（画素の中心が形の中なら砂浜。行 0 がタイルの北の端）
+  for (const [kind, , coords] of data.a) {
+    if (kind !== BEACH) continue;
+    const pts = decode(coords).map(([lat, lon]) => toPx(lat, lon).map((v) => v + pad) as [number, number]);
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const [, py] of pts) ((top = Math.min(top, py)), (bottom = Math.max(bottom, py)));
+    for (let row = Math.max(0, Math.floor(top)); row <= Math.min(P - 1, Math.ceil(bottom)); row++) {
+      const cy = row + 0.5;
+      const xs: number[] = [];
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [ax, ay] = pts[i];
+        const [bx, by] = pts[j];
+        if (ay > cy !== by > cy) xs.push(ax + ((cy - ay) * (bx - ax)) / (by - ay));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const from = Math.max(0, Math.ceil(xs[k] - 0.5));
+        const to = Math.min(P - 1, Math.floor(xs[k + 1] - 0.5));
+        for (let col = from; col <= to; col++) dist[row * P + col] = 0;
+      }
+    }
+  }
+  // 2回のなめ（前から・後ろから）で、砂浜の画素までの距離（画素、斜めは 1.4）を求める
+  const relax = (p: number, q: number, d: number) => {
+    if (dist[q] + d < dist[p]) dist[p] = dist[q] + d;
+  };
+  for (let row = 0; row < P; row++) {
+    for (let col = 0; col < P; col++) {
+      const p = row * P + col;
+      if (col > 0) relax(p, p - 1, 1);
+      if (row > 0) {
+        relax(p, p - P, 1);
+        if (col > 0) relax(p, p - P - 1, 1.4);
+        if (col < P - 1) relax(p, p - P + 1, 1.4);
+      }
+    }
+  }
+  for (let row = P - 1; row >= 0; row--) {
+    for (let col = P - 1; col >= 0; col--) {
+      const p = row * P + col;
+      if (col < P - 1) relax(p, p + 1, 1);
+      if (row < P - 1) {
+        relax(p, p + P, 1);
+        if (col < P - 1) relax(p, p + P + 1, 1.4);
+        if (col > 0) relax(p, p + P - 1, 1.4);
+      }
+    }
+  }
+  // 画像はデータの行 0 が v = 0（南）なので、上下を入れ替えて詰める
+  for (let row = 0; row < SIZE; row++) {
+    for (let col = 0; col < SIZE; col++) {
+      const d = dist[(row + pad) * P + col + pad];
+      pixels[((SIZE - 1 - row) * SIZE + col) * 4 + 2] = Math.round(255 * Math.max(0, 1 - d / reach));
+    }
+  }
 }
 
 /** 墓石の区画の大きさ (m)：並ぶ向き（along）と、それに直角（across）。この区画ごとに通路を空ける */
@@ -113,7 +202,13 @@ const MAX_GRAVES = 30000;
  * 墓地の墓石の位置。区画の格子は世界で共通の座標で作る（タイルの境目で墓地が分かれても列がずれない）。
  * 区画の中心が「墓地」の画素で、道路から離れていれば置く
  */
-async function placeGraves(data: LanduseTile, pixels: Uint8Array, x: number, y: number, z: number): Promise<GraveSpot[]> {
+async function placeGraves(
+  data: LanduseTile,
+  pixels: Uint8Array,
+  x: number,
+  y: number,
+  z: number,
+): Promise<GraveSpot[]> {
   const roads = await roadMask(x, y, z, SIZE);
   const n = 2 ** z;
   const K = Math.PI / 180;
@@ -257,6 +352,9 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
           .map((name) => `uniform vec3 lu_${name};`)
           .join('\n')}
         uniform float luPhotoMix;
+        // 砂浜（水面・公園の処理でも使う）：この画素が砂浜か、砂浜からの近さ（0〜1）
+        float luIsBeach = 0.0;
+        float luBeachNear = 0.0;
         uniform float luDefaultPhotoMix;
         varying vec3 vLandWorld;
         float luHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -277,6 +375,7 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
         {
           vec4 lu = texture2D(landuseMap, vMapUv);
           float kind = floor(lu.r * 255.0 / 20.0 + 0.5) - 1.0;
+          luBeachNear = lu.b;
           // 向き：東が 0、北へ回る。ローカル座標は +x が西、+z が北
           float ang = lu.g * 3.14159265;
           vec2 w = vLandWorld.xz;
@@ -333,10 +432,17 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
             // 畑：土のうねと作物の列
             float row = luLine(across, 1.2, 0.55);
             col = mix(lu_soil * (0.9 + fine * 0.15), lu_crop * (0.85 + big * 0.25), row);
-          } else {
+          } else if (kind < 9.5) {
             // 広場・商業地：タイル舗装（1m 角、1枚ごとに少し色を変える）
             col = lu_paving * (0.92 + luHash(floor(w)) * 0.12);
             col *= 1.0 - 0.2 * clamp(luLine(w.x, 1.0, 0.04) + luLine(w.y, 1.0, 0.04), 0.0, 1.0);
+          } else {
+            // 砂浜：明るい砂の大きなむらと、風紋（細かい縞）。波打ち際の湿った砂は水面の処理で描く
+            float ripple = sin(dot(w, vec2(0.8, 0.6)) * 7.0 + big * 9.0) * 0.5 + 0.5;
+            float rippleFade = 1.0 - clamp(fwidth(w.x) * 1.5, 0.0, 1.0);
+            col = mix(lu_sand, lu_sand2, smoothstep(0.3, 0.8, big)) * (0.95 + fine * 0.07 + (ripple - 0.5) * 0.06 * rippleFade);
+            photoMix = 0.06;
+            luIsBeach = 1.0;
           }
           diffuseColor.rgb = mix(col, photo, photoMix);
         }`,

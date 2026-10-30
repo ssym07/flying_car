@@ -363,6 +363,12 @@ export const WATER = {
   foamStrength: 0.75,
   /** 岸からこの距離（画素）で一番深い色になる。約2m/画素なので 120 ≒ 240m */
   deepDistancePx: 120,
+  /** 砂浜の前の浅瀬の色（明るい青緑） */
+  beachShallowColor: 0x5cc4c2,
+  /** 砂浜へ寄せる波：波の間隔 (m)、沖へ見える範囲 (m)、寄せる速さ (m/秒) */
+  surfSpacing: 24,
+  surfReach: 90,
+  surfSpeed: 2.2,
   /** 岸辺・浅い所の色（川） */
   shallowColor: 0x4fb3d9,
   /** 沖・深い所の色（海） */
@@ -583,7 +589,13 @@ export const LANDUSE = {
     crop: 0x6f9a45,
     /** 広場・商業地のタイル舗装 */
     paving: 0xc9c3b8,
+    /** 砂浜の乾いた砂（2色のむら）と、波打ち際の湿った砂 */
+    sand: 0xe6d6b0,
+    sand2: 0xd6c39a,
+    wetSand: 0xa48c68,
   },
+  /** 砂浜から海側へ「砂浜の前の海」とみなす距離 (m)。浅瀬の色と寄せる波を描く範囲 */
+  beachReach: 100,
 };
 
 /** 高速道路（首都高・湾岸線・外環道など。scripts/fetch-expressways.mjs → build-expressways.mjs で作る） */

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { PARKS, RAILWAYS, TERRAIN } from '../core/config';
-import { addLanduse, buildGraves, fetchLanduse } from './landuse';
+import { addLanduse, buildGraves, fetchLanduse, isBeachAt } from './landuse';
 import { addParks, buildTrees, fetchParks } from './parks';
 import { addWater, fetchWaterMask, flattenWater, waterTime } from './water';
 
@@ -360,7 +360,9 @@ export class Terrain {
         const h = this.surfaceHeightAt(lat, lon);
         return h === null ? null : this.toLocal(lat, lon, h - 0.2);
       };
-      const props = parks && parks.trees.length > 0 ? buildTrees(parks.trees, groundAt) : new THREE.Group();
+      // 砂浜には木を植えない
+      const trees = parks && landuse ? parks.trees.filter((t) => !isBeachAt(landuse, t.u, t.v)) : (parks?.trees ?? []);
+      const props = trees.length > 0 ? buildTrees(trees, groundAt) : new THREE.Group();
       const graves = landuse
         ? buildGraves(landuse.graves, groundAt, (u, v, angle) => {
             // 区画の並ぶ向き（東が 0、北へ回る）の 1m 先の点との差

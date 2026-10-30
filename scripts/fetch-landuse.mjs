@@ -45,6 +45,7 @@ const KIND = {
   grass: 7,
   farmland: 8,
   paved: 9,
+  // 10 は砂浜（scripts/add-beaches.mjs が後から足す）
 };
 /** 重なった時の塗る順（後ろほど上）。広く大まかなもの → 狭く細かいもの */
 const PRIORITY = [
