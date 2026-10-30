@@ -44,6 +44,13 @@ import {
 } from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import {
+  type MidtownYaesuParts,
+  buildMidtownYaesu,
+  createYaesuGlassMaterial,
+  createYaesuLouverMaterial,
+  createYaesuPodiumMaterial,
+} from './midtownYaesu';
+import {
   type IchigokanParts,
   type ParkBuildingParts,
   buildIchigokan,
@@ -139,6 +146,34 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京ミッドタウン八重洲（PLATEAU の工事中の箱を消して置く。取り壊された古いビルの箱も build-station-cutouts で消す）
+    gmlId: 'bldg_25d370de-2c35-457b-b756-3444a3d02eb3',
+    ...around(35.679417, 139.769533, 65),
+    front: -1,
+    build: (length) => {
+      yaesuShared ??= {
+        louver: createYaesuLouverMaterial(),
+        glass: createYaesuGlassMaterial(),
+        podium: createYaesuPodiumMaterial(),
+        dark: new THREE.MeshStandardMaterial({ color: 0x2f3a45, roughness: 0.4, metalness: 0.3 }),
+        frame: new THREE.MeshStandardMaterial({
+          color: 0xc9d0d6,
+          roughness: 0.4,
+          metalness: 0.4,
+          side: THREE.DoubleSide,
+        }),
+        green: new THREE.MeshStandardMaterial({ color: 0x5a8a40, roughness: 0.9, side: THREE.DoubleSide }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8a8c8e, roughness: 0.8, side: THREE.DoubleSide }),
+      };
+      const parts = buildMidtownYaesu(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof MidtownYaesuParts>) {
+        group.add(new THREE.Mesh(parts[key], yaesuShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 丸の内パークビルディング（PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_66be0e64-a0f8-4974-9b90-cd0da900205d',
@@ -741,6 +776,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let yaesuShared: Record<keyof MidtownYaesuParts, THREE.Material> | null = null;
 let parkShared: Record<keyof ParkBuildingParts, THREE.Material> | null = null;
 let ichigokanShared: Record<keyof IchigokanParts, THREE.Material> | null = null;
 let eirakuShared: Record<keyof EirakuParts, THREE.Material> | null = null;
