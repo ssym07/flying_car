@@ -3,7 +3,7 @@
 // 使い方: node scripts/fetch-route-map.mjs（fetch-stations.mjs の後に実行）
 // データ: © OpenStreetMap contributors (ODbL)
 //
-// 出力: { stations: [[名前, 緯度, 経度, 模式図の x, y（km）], ...], lines: [[路線名, 色（#rrggbb）, [駅の番号, ...]], ...] }
+// 出力: { rings: [[円で描く路線の番号, 中心 x, y, 半径], ...], stations: [[名前, 緯度, 経度, 模式図の x, y（km）], ...], lines: [[路線名, 色（#rrggbb）, [駅の番号, ...]], ...] }
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { AREAS } from './lib/tiles.mjs';
 
@@ -160,6 +160,8 @@ for (const { name, colour, stops } of kept) {
   }
   flush();
 }
+/** 円で描く路線：[路線の番号, 円の中心 x, y, 半径] */
+const rings = [];
 // ---- 模式図の位置：路線がなるべくまっすぐ・0/45/90 度の線・同じ間隔になるよう、駅を少しずつ動かす ----
 {
   const lat0 = 35.68;
@@ -173,6 +175,28 @@ for (const { name, colour, stops } of kept) {
     return [x * k, y * k];
   });
   const pos = geo.map((p) => p.slice());
+  // 環状の路線（山手線）：駅を等間隔で円の上に並べて動かさない。円の中心と半径は駅の地理の位置から
+  const fixed = new Set();
+  for (const [index, [name, , ids]] of lines.entries()) {
+    if (!/山手線/.test(name)) continue;
+    const ring = [...new Set(ids)];
+    if (ring.length < 8) continue;
+    const cx = ring.reduce((a, i) => a + geo[i][0], 0) / ring.length;
+    const cy = ring.reduce((a, i) => a + geo[i][1], 0) / ring.length;
+    const r = Math.max(ring.reduce((a, i) => a + Math.hypot(geo[i][0] - cx, geo[i][1] - cy), 0) / ring.length, (ring.length * 1.3) / (Math.PI * 2));
+    // 回る向き：駅の並びの角度が増えるか減るか
+    const angle = (i) => Math.atan2(geo[i][1] - cy, geo[i][0] - cx);
+    let turn = 0;
+    for (let k = 1; k < ring.length; k++) turn += Math.atan2(Math.sin(angle(ring[k]) - angle(ring[k - 1])), Math.cos(angle(ring[k]) - angle(ring[k - 1])));
+    const dir = turn >= 0 ? 1 : -1;
+    const base = angle(ring[0]);
+    ring.forEach((i, k) => {
+      const a = base + (dir * k * Math.PI * 2) / ring.length;
+      pos[i] = [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+      fixed.add(i);
+    });
+    rings.push([index, +cx.toFixed(3), +cy.toFixed(3), +r.toFixed(3)]);
+  }
   const edges = new Map();
   const triples = [];
   for (const [, , ids] of lines) {
@@ -252,12 +276,12 @@ for (const { name, colour, stops } of kept) {
     });
     const step = 0.5;
     pos.forEach((p, i) => {
-      if (move[i][2] === 0) return;
+      if (move[i][2] === 0 || fixed.has(i)) return;
       p[0] += (move[i][0] / move[i][2]) * step;
       p[1] += (move[i][1] / move[i][2]) * step;
     });
   }
   outStations.forEach((s, i) => s.push(+pos[i][0].toFixed(3), +pos[i][1].toFixed(3)));
 }
-await writeFile(OUT, JSON.stringify({ stations: outStations, lines }));
+await writeFile(OUT, JSON.stringify({ stations: outStations, lines, rings }));
 console.log(`${relations.size} routes → ${kept.length} lines (${lines.length} pieces), ${outStations.length} stations`);

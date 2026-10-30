@@ -6,6 +6,8 @@ interface RouteMapData {
   stations: Array<[string, number, number, number, number]>;
   /** [路線名, 色, 駅の番号の並び] */
   lines: Array<[string, string, number[]]>;
+  /** 円で描く路線（山手線）：[路線の番号, 中心 x, y, 半径] */
+  rings?: Array<[number, number, number, number]>;
 }
 
 interface Stop {
@@ -23,10 +25,12 @@ interface Stop {
 }
 
 /** 拡大率（1km あたりの px）の範囲と、駅名を出し始める拡大率（乗換駅・すべての駅） */
-const MIN_SCALE = 6;
+const MIN_SCALE = 14;
 const MAX_SCALE = 120;
 const LABEL_TRANSFER = 9;
 const LABEL_ALL = 22;
+/** 背景（焦げ茶） */
+const BG = '#2a211c';
 /** 普通の駅の丸を出し始める拡大率と、はっきり出す拡大率 */
 const DOTS_FROM = 20;
 const DOTS_FULL = 34;
@@ -46,11 +50,11 @@ export class RouteMap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly tip: HTMLDivElement;
   private stops: Stop[] = [];
-  private lines: Array<{ name: string; color: string; ids: number[] }> = [];
+  private lines: Array<{ name: string; color: string; ids: number[]; ring: [number, number, number] | null }> = [];
   /** 表示：地図の中心（km）と拡大率 */
   private cx = 0;
   private cy = 0;
-  private scale = 14;
+  private scale = 20;
   private hover = -1;
   private here: { x: number; y: number } | null = null;
   private drag: { x: number; y: number; cx: number; cy: number; moved: boolean } | null = null;
@@ -79,15 +83,12 @@ export class RouteMap {
     this.panel.className = 'route-map';
     this.panel.hidden = true;
     this.panel.innerHTML = `
-      <div class="route-map-head"><span>路線図</span><span class="route-map-hint">駅を押すとその駅へ移動</span>
-        <button type="button" class="route-map-close" aria-label="閉じる">×</button></div>
       <div class="route-map-body"><canvas></canvas><div class="route-map-tip" hidden></div>
         <div class="route-map-zoom"><button type="button" data-zoom="1" aria-label="拡大">＋</button><button type="button" data-zoom="-1" aria-label="縮小">−</button><button type="button" data-here aria-label="現在地">◎</button></div>
       </div>`;
     this.canvas = this.panel.querySelector('canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
     this.tip = this.panel.querySelector('.route-map-tip')!;
-    this.panel.querySelector('.route-map-close')!.addEventListener('click', () => this.toggle(false));
     this.panel.querySelector('.route-map-zoom')!.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('button');
       if (!b) return;
@@ -137,7 +138,8 @@ export class RouteMap {
     });
     this.lines = data.lines.map(([name, color, ids], i) => {
       for (const id of ids) if (!this.stops[id].lines.includes(i)) this.stops[id].lines.push(i);
-      return { name, color, ids };
+      const ring = data.rings?.find((r) => r[0] === i);
+      return { name, color, ids, ring: ring ? ([ring[1], ring[2], ring[3]] as [number, number, number]) : null };
     });
     this.dirty = true;
   }
@@ -337,7 +339,7 @@ export class RouteMap {
     }
     const g = this.ctx;
     g.setTransform(ratio, 0, 0, ratio, 0, 0);
-    g.fillStyle = '#f7f8fa';
+    g.fillStyle = BG;
     g.fillRect(0, 0, w, h);
     const margin = 40;
     const visible = (x: number, y: number) => x > -margin && y > -margin && x < w + margin && y < h + margin;
@@ -346,10 +348,17 @@ export class RouteMap {
     const width = Math.max(2, Math.min(5, this.scale / 6));
     g.lineCap = 'round';
     g.lineJoin = 'round';
-    for (const line of this.lines) {
+    // 円で描く路線（山手線）はほかの路線に隠れないよう最後に、少し太く
+    for (const line of [...this.lines.filter((l) => !l.ring), ...this.lines.filter((l) => l.ring)]) {
       g.strokeStyle = line.color;
-      g.lineWidth = width;
+      g.lineWidth = line.ring ? width * 1.4 : width;
       g.beginPath();
+      if (line.ring) {
+        const [x, y] = this.toScreen(line.ring[0], line.ring[1]);
+        g.arc(x, y, line.ring[2] * this.scale, 0, Math.PI * 2);
+        g.stroke();
+        continue;
+      }
       line.ids.forEach((id, k) => {
         const [x, y] = this.toScreen(this.stops[id].x, this.stops[id].y);
         if (k === 0) g.moveTo(x, y);
@@ -370,10 +379,10 @@ export class RouteMap {
       g.globalAlpha = transfer || i === this.hover ? 1 : near;
       g.beginPath();
       g.arc(x, y, transfer ? r * (1 + 0.35 * near) : r, 0, Math.PI * 2);
-      g.fillStyle = '#ffffff';
+      g.fillStyle = transfer ? BG : '#f4ead8';
       g.fill();
       g.lineWidth = transfer ? 1.2 + 1.3 * near : 1.6;
-      g.strokeStyle = i === this.hover ? '#ff6a00' : transfer ? '#1d1f24' : (this.lines[s.lines[0]]?.color ?? '#555');
+      g.strokeStyle = i === this.hover ? '#ff9a3c' : transfer ? '#f4ead8' : (this.lines[s.lines[0]]?.color ?? '#999');
       g.stroke();
     });
     g.globalAlpha = 1;
@@ -382,8 +391,8 @@ export class RouteMap {
     g.font = `600 ${this.scale >= LABEL_ALL ? 11 : 10}px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
     g.textBaseline = 'middle';
     g.lineWidth = 3;
-    g.strokeStyle = 'rgba(247, 248, 250, 0.95)';
-    g.fillStyle = '#1d1f24';
+    g.strokeStyle = 'rgba(38, 30, 25, 0.95)';
+    g.fillStyle = '#f1e6d2';
     const placed: Array<[number, number, number, number]> = [];
     const order = this.stops.map((_, i) => i).sort((a, b) => this.stops[b].lines.length - this.stops[a].lines.length);
     for (const i of order) {

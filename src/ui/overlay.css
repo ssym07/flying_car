@@ -388,42 +388,14 @@ body {
   flex-direction: column;
   border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
-  background: #f7f8fa;
+  border: 1px solid rgba(214, 190, 150, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  background: #2a211c;
   pointer-events: auto;
 }
 
 .route-map[hidden] {
   display: none;
-}
-
-.route-map-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px 8px 14px;
-  background: #1d2433;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.route-map-hint {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--fg-dim);
-}
-
-.route-map-close {
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--fg);
-  font-size: 16px;
-  cursor: pointer;
 }
 
 .route-map-body {
@@ -452,10 +424,10 @@ body {
 .route-map-zoom button {
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(214, 190, 150, 0.35);
   border-radius: 8px;
-  background: #fff;
-  color: #1d1f24;
+  background: rgba(58, 46, 38, 0.9);
+  color: #f1e6d2;
   font: inherit;
   font-size: 16px;
   cursor: pointer;
