@@ -44,6 +44,13 @@ import {
 } from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import {
+  type EirakuParts,
+  buildEiraku,
+  createEirakuGlassMaterial,
+  createEirakuGridMaterial,
+  createEirakuPodiumMaterial,
+} from './eirakuBuilding';
+import {
   type TokiaParts,
   buildTokyoBuilding,
   createTokiaFinMaterial,
@@ -122,6 +129,27 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 丸の内永楽ビルディング（PLATEAU の低い箱を消して置く）。x = 北北東、z = 東京駅の側
+    gmlId: 'bldg_32ba8db3-4a5a-4eab-9b6a-a095bcdd165b',
+    ...around(35.68433, 139.7649, 75),
+    front: -1,
+    build: (length) => {
+      eirakuShared ??= {
+        podium: createEirakuPodiumMaterial(),
+        glass: createEirakuGlassMaterial(),
+        grid: createEirakuGridMaterial(),
+        stone: new THREE.MeshStandardMaterial({ color: 0xd0c3a8, roughness: 0.75 }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x2c3034, roughness: 0.5, metalness: 0.2 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8a8c8e, roughness: 0.8 }),
+      };
+      const parts = buildEiraku(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof EirakuParts>)
+        group.add(new THREE.Mesh(parts[key], eirakuShared[key]));
+      return group;
+    },
+  },
   {
     // 東京ビル TOKIA（PLATEAU の低い箱を消して置く）。x = 線路に沿って北北東、z = 線路の側
     gmlId: 'bldg_5d5dd52d-bfdd-4bb6-9cbf-f865fb6946fb',
@@ -656,6 +684,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let eirakuShared: Record<keyof EirakuParts, THREE.Material> | null = null;
 let tokiaShared: Record<keyof TokiaParts, THREE.Material> | null = null;
 let jpShared: Record<keyof JpTowerParts, THREE.Material> | null = null;
 let maruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
