@@ -2,8 +2,9 @@
  * 遊ぶ地域（ワールド）。URL の ?region=osaka で選ぶ（無ければ東京）。
  * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
  *
- * 道路・線路・地面の種類などのタイルは位置ごとのファイルなので地域で分けない。
- * 地域ごとにひとまとまりのファイル（建物の区の一覧を除く）は dataDir の下に置く
+ * 地域で作るデータ（道路・線路・地面の種類などのタイル、路線図・空路・駅の形）は、地域ごとに dataDir の下に置く
+ * （東京は public の直下、大阪は public/osaka）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
+ * 地域で分けておかないと、片方を作り直した時にもう片方が消える。建物（public/plateau）は区ごとなので共通
  */
 export interface Region {
   id: 'tokyo' | 'osaka';
@@ -14,7 +15,7 @@ export interface Region {
   origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
   /** 開始地点まわりのジオイド高 (m)。標高 = 楕円体高 - ジオイド高 */
   geoidHeight: number;
-  /** public の下の、この地域のファイルの置き場所（route-map.json・sky-lanes.json・station-footprints.json） */
+  /** public の下の、この地域のデータの置き場所（タイルと route-map.json・sky-lanes.json・station-footprints.json） */
   dataDir: string;
   /** この地域の建物の区のコードの頭（都道府県コード） */
   prefectures: string[];

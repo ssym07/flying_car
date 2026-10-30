@@ -311,7 +311,7 @@ export const LABELS = {
 /** 道路（OpenStreetMap の中心線から、テンプレートで車道・歩道・横断歩道を作る） */
 export const ROADS = {
   /** 道路データ（scripts/fetch-road-network.mjs で作る。地形チャンクと同じズーム15のタイル） */
-  tilePath: 'roads/15/{x}/{y}.json',
+  tilePath: `${REGION.dataDir}roads/15/{x}/{y}.json`,
   /** アスファルトの色（生活道路は shade 倍で明るくする） */
   asphaltColor: 0x55585f,
   /** 歩道のタイルに掛ける色 */
@@ -406,7 +406,7 @@ export const BRIDGES = {
 
 /** 駅の屋根（OpenStreetMap の駅舎・上屋の形。scripts/fetch-station-roofs.mjs で作る） */
 export const STATION_ROOFS = {
-  tilePath: 'station-roofs/15/{x}/{y}.json',
+  tilePath: `${REGION.dataDir}station-roofs/15/{x}/{y}.json`,
   /**
    * 屋根の色（駅ごとにこの中から選ぶ）。
    * 航空写真の主要駅（東京・秋葉原・新橋・原宿）を参考に、白・銀・薄い緑・青緑
@@ -444,7 +444,7 @@ export const STATION_ROOFS = {
 
 /** 線路（OpenStreetMap の線路。scripts/fetch-railways.mjs → build-rail-heights.mjs で作る） */
 export const RAILWAYS = {
-  tilePath: 'rail-tracks/15/{x}/{y}.json',
+  tilePath: `${REGION.dataDir}rail-tracks/15/{x}/{y}.json`,
   /** 道床（砂利を敷いた部分）の幅 (m) */
   ballastWidth: 3.4,
   /** 地面から浮かせる高さ (m) */
@@ -520,7 +520,7 @@ export const SEARCH = {
 
 /** 公園（OpenStreetMap の公園・林・グラウンド・園路。scripts/fetch-parks.mjs で作る） */
 export const PARKS = {
-  tilePath: 'parks/15/{x}/{y}.json',
+  tilePath: `${REGION.dataDir}parks/15/{x}/{y}.json`,
   /** 芝生の色（2色の間でむらを付ける）と、園路・グラウンドの土の色 */
   grassColor: 0x6fae4a,
   grassColor2: 0x8cc35a,
@@ -550,7 +550,7 @@ export const PARKS = {
 
 /** 道路・公園・水以外の地面（scripts/fetch-landuse.mjs で作る）。種類ごとのテンプレートの色 */
 export const LANDUSE = {
-  tilePath: 'landuse/15/{x}/{y}.json',
+  tilePath: `${REGION.dataDir}landuse/15/{x}/{y}.json`,
   /** 航空写真の色を混ぜる割合（種類の分かる所・データの無い住宅地の敷地） */
   photoMix: 0.15,
   defaultPhotoMix: 0.3,
@@ -588,7 +588,7 @@ export const LANDUSE = {
 
 /** 高速道路（首都高・湾岸線・外環道など。scripts/fetch-expressways.mjs → build-expressways.mjs で作る） */
 export const EXPRESSWAYS = {
-  tilePath: 'expressways/15/{x}/{y}.json',
+  tilePath: `${REGION.dataDir}expressways/15/{x}/{y}.json`,
   /** 車線幅・路肩の幅 (m) */
   laneWidth: 3.5,
   shoulder: 1.0,
