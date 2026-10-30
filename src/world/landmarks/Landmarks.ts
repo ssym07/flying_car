@@ -51,6 +51,7 @@ import {
   createForumRoofMaterial,
   createForumWallMaterial,
 } from './internationalForum';
+import { type BigSightParts, buildBigSight, createBigSightPanelMaterial } from './bigSight';
 import {
   type ColiseumParts,
   type TennisParts,
@@ -163,6 +164,29 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 東京ビッグサイトの会議棟（会議棟とエントランスプラザの PLATEAU の箱を消して置く）。x・z = 正方形の辺の向き
+    gmlId: 'bldg_8794832f-3815-445c-85de-dcb96f5ca6ea',
+    ...around(35.629785, 139.79407, -56.7),
+    front: -1,
+    build: (length) => {
+      const flat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.7, side: THREE.DoubleSide, ...extra });
+      bigSightShared ??= {
+        panel: createBigSightPanelMaterial(),
+        under: flat(0x4a4740),
+        glass: flat(0x7e9fb4, { roughness: 0.15, metalness: 0.5 }),
+        deck: flat(0xb8b5ae, { roughness: 0.85 }),
+        white: flat(0xd9dcdf, { roughness: 0.5 }),
+      };
+      const parts = buildBigSight(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof BigSightParts>) {
+        group.add(new THREE.Mesh(parts[key], bigSightShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 有明テニスの森公園のコート・インドアコート・ショーコート（インドアコートとショーコートの PLATEAU の箱を消して置く）。
     // x = 公園の長い向き（東北東）、z = 南南東
@@ -864,6 +888,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 let forumShared: Record<keyof ForumParts, THREE.Material> | null = null;
+let bigSightShared: Record<keyof BigSightParts, THREE.Material> | null = null;
 let tennisShared: Record<keyof TennisParts, THREE.Material> | null = null;
 let coliseumShared: Record<keyof ColiseumParts, THREE.Material> | null = null;
 let yaesuShared: Record<keyof MidtownYaesuParts, THREE.Material> | null = null;
