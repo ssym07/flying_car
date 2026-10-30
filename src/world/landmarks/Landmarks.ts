@@ -32,6 +32,7 @@ import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUp
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
 import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import { type BudokanParts, buildBudokan, createBudokanLouverMaterial } from './budokan';
 import {
   type StadiumParts,
   buildNationalStadium,
@@ -85,6 +86,31 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 日本武道館（PLATEAU の低い箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_d4c6fe12-0eeb-4395-aecf-93c9b5a5c6ee',
+    ...around(35.69336, 139.74987, 0),
+    front: -1,
+    build: (length) => {
+      const flat = (color: number, roughness = 0.7, extra: THREE.MeshStandardMaterialParameters = {}) =>
+        new THREE.MeshStandardMaterial({ color, roughness, side: THREE.DoubleSide, ...extra });
+      budokanShared ??= {
+        concrete: flat(0xb3ada2, 0.85),
+        louver: createBudokanLouverMaterial(),
+        glass: flat(0x3c4b57, 0.2, { metalness: 0.4 }),
+        eave: flat(0xb8893a, 0.45, { metalness: 0.5 }),
+        roof: flat(0x8fb7a2, 0.6, { metalness: 0.1 }),
+        ridge: flat(0x5e7f70, 0.6),
+        gold: flat(0xe2b64a, 0.3, { metalness: 0.85 }),
+      };
+      const parts = buildBudokan(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof BudokanParts>) {
+        group.add(new THREE.Mesh(parts[key], budokanShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 国立競技場（PLATEAU の楕円の箱を消して置く）。x = 楕円の長い向き（北北東）
     gmlId: 'bldg_d840231c-8174-4086-9ca6-6417886b0fda',
@@ -472,6 +498,7 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let budokanShared: Record<keyof BudokanParts, THREE.Material> | null = null;
 let stadiumShared: Record<keyof StadiumParts, THREE.Material> | null = null;
 let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
 let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;

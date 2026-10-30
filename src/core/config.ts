@@ -531,6 +531,14 @@ export const PARKS = {
   edgeDensity: 0.75,
   woodDensity: 0.85,
   sakuraRatio: 0.12,
+  /**
+   * 森のような公園：[緯度, 経度, 半径 (m)]。地図では芝生の公園でも、実際は木の茂った所。
+   * 中は林と同じ密度で植え、水辺から bankWidth m 以内は桜並木にする
+   */
+  groves: [
+    [35.6915, 139.751, 480], // 北の丸公園（日本武道館のまわり）と千鳥ヶ淵
+  ] as Array<[number, number, number]>,
+  bankWidth: 22,
   maxTreesPerChunk: 4000,
   /** カメラからこの距離 (m) 以内のチャンクだけ木を描く */
   treeRadius: 1600,

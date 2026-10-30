@@ -100,7 +100,13 @@ export async function fetchParks(
   g.globalCompositeOperation = 'source-over';
 
   const { data: pixels } = g.getImageData(0, 0, SIZE, SIZE);
-  const trees = placeTrees(pixels, waterMask, metersPerPx, x * 7919 + y * 104729);
+  // 画素 → 緯度経度（森のような公園の範囲を調べるのに使う）
+  const toLatLon = (px: number, py: number): [number, number] => {
+    const lon = ((x + px / SIZE) / n) * 360 - 180;
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + py / SIZE)) / n))) * 180) / Math.PI;
+    return [lat, lon];
+  };
+  const trees = placeTrees(pixels, waterMask, metersPerPx, x * 7919 + y * 104729, toLatLon);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.generateMipmaps = true;
@@ -108,8 +114,17 @@ export async function fetchParks(
   return { texture, trees };
 }
 
-/** 芝生の上に、少しずらした格子で木を置く。林と芝生の縁は密に、道・グラウンド・水の上には置かない */
-function placeTrees(pixels: Uint8ClampedArray, water: Uint8Array | null, metersPerPx: number, seed: number): TreeSpot[] {
+/**
+ * 芝生の上に、少しずらした格子で木を置く。林と芝生の縁は密に、道・グラウンド・水の上には置かない。
+ * 森のような公園（PARKS.groves）の中は芝生にも林のように植え、水辺（お堀など）は桜並木にする
+ */
+function placeTrees(
+  pixels: Uint8ClampedArray,
+  water: Uint8Array | null,
+  metersPerPx: number,
+  seed: number,
+  toLatLon: (px: number, py: number) => [number, number],
+): TreeSpot[] {
   let s = seed % 2147483647 || 1;
   const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   const step = PARKS.treeSpacing / metersPerPx;
@@ -117,6 +132,15 @@ function placeTrees(pixels: Uint8ClampedArray, water: Uint8Array | null, metersP
   const at = (px: number, py: number) => {
     const i = (Math.min(SIZE - 1, Math.max(0, py)) * SIZE + Math.min(SIZE - 1, Math.max(0, px))) * 4;
     return { grass: pixels[i] > 127, dirt: pixels[i + 1] > 127, wood: pixels[i + 2] > 127 };
+  };
+  const waterAt = (px: number, py: number) =>
+    !!water && water[Math.min(SIZE - 1, Math.max(0, py)) * SIZE + Math.min(SIZE - 1, Math.max(0, px))] > 0;
+  const bank = Math.max(2, Math.round(PARKS.bankWidth / metersPerPx));
+  const inGrove = (px: number, py: number) => {
+    const [lat, lon] = toLatLon(px, py);
+    return PARKS.groves.some(
+      ([glat, glon, r]) => Math.hypot((lat - glat) * 111320, (lon - glon) * 111320 * Math.cos((glat * Math.PI) / 180)) < r,
+    );
   };
   const trees: TreeSpot[] = [];
   for (let gy = step / 2; gy < SIZE; gy += step) {
@@ -130,10 +154,22 @@ function placeTrees(pixels: Uint8ClampedArray, water: Uint8Array | null, metersP
       const nearPath = [-2, 2].some((d) => at(px + d, py).dirt || at(px, py + d).dirt);
       if (nearPath) continue;
       const nearEdge = [-edge, edge].some((d) => !at(px + d, py).grass || !at(px, py + d).grass);
-      const density = here.wood ? PARKS.woodDensity : nearEdge ? PARKS.edgeDensity : PARKS.lawnDensity;
+      const grove = PARKS.groves.length > 0 && inGrove(px, py);
+      const nearWater = grove && [-bank, bank].some((d) => waterAt(px + d, py) || waterAt(px, py + d));
+      const density = here.wood || grove ? PARKS.woodDensity : nearEdge ? PARKS.edgeDensity : PARKS.lawnDensity;
       if (rand() > density) continue;
       const r = rand();
-      const kind = here.wood
+      const kind = nearWater
+        ? r < 0.85
+          ? TreeKind.Sakura
+          : TreeKind.Broadleaf
+        : grove
+          ? r < 0.15
+            ? TreeKind.Sakura
+            : r < 0.3
+              ? TreeKind.Conifer
+              : TreeKind.Broadleaf
+          : here.wood
         ? r < 0.65
           ? TreeKind.Conifer
           : TreeKind.Broadleaf
