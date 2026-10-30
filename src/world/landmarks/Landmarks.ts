@@ -44,6 +44,16 @@ import {
 } from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
 import {
+  type IchigokanParts,
+  type ParkBuildingParts,
+  buildIchigokan,
+  buildParkBuilding,
+  createBrickWallMaterial,
+  createParkGlassMaterial,
+  createParkPodiumMaterial,
+  createParkStoneMaterial,
+} from './brickSquare';
+import {
   type EirakuParts,
   buildEiraku,
   createEirakuGlassMaterial,
@@ -129,6 +139,53 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 丸の内パークビルディング（PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_66be0e64-a0f8-4974-9b90-cd0da900205d',
+    ...around(35.67901, 139.76311, 0),
+    front: -1,
+    build: (length) => {
+      parkShared ??= {
+        stone: createParkStoneMaterial(),
+        glass: createParkGlassMaterial(),
+        crown: new THREE.MeshStandardMaterial({
+          color: 0xc9ced3,
+          roughness: 0.3,
+          metalness: 0.6,
+          side: THREE.DoubleSide,
+        }),
+        podium: createParkPodiumMaterial(),
+        green: new THREE.MeshStandardMaterial({ color: 0x55843d, roughness: 0.9, side: THREE.DoubleSide }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8a8c8e, roughness: 0.8, side: THREE.DoubleSide }),
+      };
+      const parts = buildParkBuilding(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof ParkBuildingParts>) {
+        group.add(new THREE.Mesh(parts[key], parkShared[key]));
+      }
+      return group;
+    },
+  },
+  {
+    // 三菱一号館（PLATEAU の箱を消して置く）。x = 北北東、z = 通りの側（東南東）
+    gmlId: 'bldg_eca59423-ac27-46b4-8ccf-451b63652d52',
+    ...around(35.67847, 139.76318, 75),
+    front: -1,
+    build: (length) => {
+      ichigokanShared ??= {
+        brick: createBrickWallMaterial(),
+        trim: new THREE.MeshStandardMaterial({ color: 0xe9e3d5, roughness: 0.7 }),
+        slate: new THREE.MeshStandardMaterial({ color: 0x4f5760, roughness: 0.7, side: THREE.DoubleSide }),
+        base: new THREE.MeshStandardMaterial({ color: 0x8d8d88, roughness: 0.85 }),
+      };
+      const parts = buildIchigokan(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof IchigokanParts>) {
+        group.add(new THREE.Mesh(parts[key], ichigokanShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 丸の内永楽ビルディング（PLATEAU の低い箱を消して置く）。x = 北北東、z = 東京駅の側
     gmlId: 'bldg_32ba8db3-4a5a-4eab-9b6a-a095bcdd165b',
@@ -684,6 +741,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return g;
 }
 
+let parkShared: Record<keyof ParkBuildingParts, THREE.Material> | null = null;
+let ichigokanShared: Record<keyof IchigokanParts, THREE.Material> | null = null;
 let eirakuShared: Record<keyof EirakuParts, THREE.Material> | null = null;
 let tokiaShared: Record<keyof TokiaParts, THREE.Material> | null = null;
 let jpShared: Record<keyof JpTowerParts, THREE.Material> | null = null;
