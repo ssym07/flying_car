@@ -52,6 +52,15 @@ import {
   createForumWallMaterial,
 } from './internationalForum';
 import {
+  type ColiseumParts,
+  type TennisParts,
+  buildAriakeColiseum,
+  buildAriakeTennis,
+  createColiseumWallMaterial,
+  createRibbedRoofMaterial,
+  createTennisCourtMaterial,
+} from './ariakeTennis';
+import {
   type MidtownYaesuParts,
   buildMidtownYaesu,
   createYaesuGlassMaterial,
@@ -154,6 +163,53 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 有明テニスの森公園のコート・インドアコート・ショーコート（インドアコートとショーコートの PLATEAU の箱を消して置く）。
+    // x = 公園の長い向き（東北東）、z = 南南東
+    gmlId: 'bldg_36f9e4e1-0db4-44fe-9eb4-bb56fccc8468',
+    ...around(35.6355, 139.788, 33.5),
+    front: -1,
+    build: (length) => {
+      const flat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.7, side: THREE.DoubleSide, ...extra });
+      tennisShared ??= {
+        court: createTennisCourtMaterial(),
+        hedge: flat(0x3f6e34, { roughness: 0.95 }),
+        white: createRibbedRoofMaterial(),
+        glass: flat(0x8fb3c6, { roughness: 0.15, metalness: 0.4 }),
+        seats: flat(0x5d7f9e),
+      };
+      const parts = buildAriakeTennis(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof TennisParts>) {
+        if (parts[key].getAttribute('position').count > 0) group.add(new THREE.Mesh(parts[key], tennisShared[key]));
+      }
+      return group;
+    },
+  },
+  {
+    // 有明コロシアム（PLATEAU に箱が無いので、そのまま置く）。x = 長い向き（東から 18.4°）
+    gmlId: '',
+    ...around(35.63641, 139.79005, 18.4),
+    front: -1,
+    build: (length) => {
+      const flat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.7, side: THREE.DoubleSide, ...extra });
+      coliseumShared ??= {
+        wall: createColiseumWallMaterial(),
+        roof: flat(0xf1f2f3, { roughness: 0.45 }),
+        dark: flat(0x262b31),
+        court: createTennisCourtMaterial(),
+        seats: flat(0x3b4f68),
+      };
+      const parts = buildAriakeColiseum(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof ColiseumParts>) {
+        group.add(new THREE.Mesh(parts[key], coliseumShared[key]));
+      }
+      return group;
+    },
+  },
   {
     // 東京国際フォーラム（ガラス棟とホール棟の PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_861e9fa3-3ab6-443b-a1b0-6457f4d2e6dd',
@@ -808,6 +864,8 @@ function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 let forumShared: Record<keyof ForumParts, THREE.Material> | null = null;
+let tennisShared: Record<keyof TennisParts, THREE.Material> | null = null;
+let coliseumShared: Record<keyof ColiseumParts, THREE.Material> | null = null;
 let yaesuShared: Record<keyof MidtownYaesuParts, THREE.Material> | null = null;
 let parkShared: Record<keyof ParkBuildingParts, THREE.Material> | null = null;
 let ichigokanShared: Record<keyof IchigokanParts, THREE.Material> | null = null;
