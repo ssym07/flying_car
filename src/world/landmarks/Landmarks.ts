@@ -20,7 +20,12 @@ import {
   createLouverMaterial,
   createScrambleGlassMaterial,
 } from './shibuyaScrambleSquare';
-import { type HikarieParts, buildHikarie, createHikarieGlassMaterial, createHikarieTowerMaterial } from './shibuyaHikarie';
+import {
+  type HikarieParts,
+  buildHikarie,
+  createHikarieGlassMaterial,
+  createHikarieTowerMaterial,
+} from './shibuyaHikarie';
 import {
   type SakuraParts,
   buildSakuraStage,
@@ -31,8 +36,23 @@ import {
 import { type AxshParts, buildShibuyaAxsh, createAxshLowerMaterial, createAxshUpperMaterial } from './shibuyaAxsh';
 import { type CeruleanParts, buildCeruleanTower, createCeruleanStoneMaterial } from './ceruleanTower';
 import { type MetroGovParts, buildMetroGov, createMetroGovStoneMaterial } from './tokyoMetroGov';
-import { type DocomoParts, buildDocomoYoyogi, createDocomoShaftMaterial, createDocomoTierMaterial } from './docomoYoyogi';
+import {
+  type DocomoParts,
+  buildDocomoYoyogi,
+  createDocomoShaftMaterial,
+  createDocomoTierMaterial,
+} from './docomoYoyogi';
 import { type DomeParts, buildTokyoDome, createDomeGlassMaterial, createDomeMembraneMaterial } from './tokyoDome';
+import {
+  type MarunouchiParts,
+  buildMaruBuilding,
+  buildShinMarunouchi,
+  createMaruPodiumMaterial,
+  createMaruTowerMaterial,
+  createMarunouchiGlassMaterial,
+  createShinMaruPodiumMaterial,
+  createShinMaruTowerMaterial,
+} from './marunouchiTowers';
 import { type BudokanParts, buildBudokan, createBudokanLouverMaterial } from './budokan';
 import {
   type StadiumParts,
@@ -87,6 +107,42 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
 const TORANOMON_DEG = 109;
 
 const LANDMARKS: Landmark[] = [
+  {
+    // 丸ビル（PLATEAU の低い箱を消して置く）。x = 北北東、z = 東京駅の側
+    gmlId: 'bldg_a98349a1-56c0-4ec4-b22c-abe49301bd04',
+    ...around(35.68106, 139.76381, 75),
+    front: -1,
+    build: (length) => {
+      maruShared ??= {
+        podium: createMaruPodiumMaterial(),
+        tower: createMaruTowerMaterial(),
+        glass: createMarunouchiGlassMaterial('#8ea7bb'),
+        dark: new THREE.MeshStandardMaterial({ color: 0x3b4148, roughness: 0.4, metalness: 0.3 }),
+        trim: new THREE.MeshStandardMaterial({ color: 0xd3c6ad, roughness: 0.75 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x8a8c8e, roughness: 0.8 }),
+        green: new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.9 }),
+      };
+      return marunouchiGroup(buildMaruBuilding(length / 2), maruShared);
+    },
+  },
+  {
+    // 新丸ビル（PLATEAU の低い箱を消して置く）
+    gmlId: 'bldg_104b6adf-6a30-41d4-9bdc-dc866513368e',
+    ...around(35.6826, 139.7643, 75),
+    front: -1,
+    build: (length) => {
+      shinMaruShared ??= {
+        podium: createShinMaruPodiumMaterial(),
+        tower: createShinMaruTowerMaterial(),
+        glass: createMarunouchiGlassMaterial('#a3bccf'),
+        dark: new THREE.MeshStandardMaterial({ color: 0x2e353c, roughness: 0.35, metalness: 0.3 }),
+        trim: new THREE.MeshStandardMaterial({ color: 0x5a5753, roughness: 0.6 }),
+        roof: new THREE.MeshStandardMaterial({ color: 0x7a7c7e, roughness: 0.8 }),
+        green: new THREE.MeshStandardMaterial({ color: 0x4a7536, roughness: 0.9 }),
+      };
+      return marunouchiGroup(buildShinMarunouchi(length / 2), shinMaruShared);
+    },
+  },
   {
     // 東京ドーム（PLATEAU の箱を消して置く。ドームシティは作らない）。x・z = 角の丸い四角の辺の向き
     gmlId: 'bldg_369e50ad-eaf1-4484-9d31-9802cc32ab5a',
@@ -322,7 +378,12 @@ const LANDMARKS: Landmark[] = [
       sakuraShared ??= {
         glass: createSakuraGlassMaterial(),
         pink: createSakuraPinkMaterial(),
-        green: new THREE.MeshStandardMaterial({ color: 0x7fb8a8, roughness: 0.15, metalness: 0.4, side: THREE.DoubleSide }),
+        green: new THREE.MeshStandardMaterial({
+          color: 0x7fb8a8,
+          roughness: 0.15,
+          metalness: 0.4,
+          side: THREE.DoubleSide,
+        }),
         residence: createSakuraResidenceMaterial(),
         white: new THREE.MeshStandardMaterial({ color: 0xe2e5e7, roughness: 0.5 }),
         podium: new THREE.MeshStandardMaterial({ color: 0xcfc6b6, roughness: 0.8 }),
@@ -365,7 +426,12 @@ const LANDMARKS: Landmark[] = [
       scrambleShared ??= {
         glass: createScrambleGlassMaterial(),
         louver: createLouverMaterial(),
-        inner: new THREE.MeshStandardMaterial({ color: 0x9fb4c0, roughness: 0.25, metalness: 0.4, side: THREE.DoubleSide }),
+        inner: new THREE.MeshStandardMaterial({
+          color: 0x9fb4c0,
+          roughness: 0.25,
+          metalness: 0.4,
+          side: THREE.DoubleSide,
+        }),
         white: new THREE.MeshStandardMaterial({ color: 0xdfe3e6, roughness: 0.5 }),
         deck: new THREE.MeshStandardMaterial({ color: 0xb48e66, roughness: 0.85 }),
         grass: new THREE.MeshStandardMaterial({ color: 0x74a84f, roughness: 0.95 }),
@@ -515,8 +581,20 @@ const LANDMARKS: Landmark[] = [
 /** 位置と uv だけにそろえる（まとめるため） */
 function keepPositionUv(g: THREE.BufferGeometry): THREE.BufferGeometry {
   for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'uv') g.deleteAttribute(name);
-  if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+  if (!g.getAttribute('uv'))
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
+}
+
+let maruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
+let shinMaruShared: Record<keyof MarunouchiParts, THREE.Material> | null = null;
+
+function marunouchiGroup(parts: MarunouchiParts, shared: Record<keyof MarunouchiParts, THREE.Material>): THREE.Group {
+  const group = new THREE.Group();
+  for (const key of Object.keys(parts) as Array<keyof MarunouchiParts>) {
+    if (parts[key].getAttribute('position').count > 0) group.add(new THREE.Mesh(parts[key], shared[key]));
+  }
+  return group;
 }
 
 let domeShared: Record<keyof DomeParts, THREE.Material> | null = null;
@@ -548,7 +626,13 @@ function toranomonGroup(parts: ToranomonParts): THREE.Group {
     glass: createBlueGlassMaterial(),
     dark: createDarkFacadeMaterial(),
     station: createStationGlassMaterial(),
-    accent: new THREE.MeshStandardMaterial({ color: 0x7fb3a0, roughness: 0.15, metalness: 0.4, transparent: true, opacity: 0.9 }),
+    accent: new THREE.MeshStandardMaterial({
+      color: 0x7fb3a0,
+      roughness: 0.15,
+      metalness: 0.4,
+      transparent: true,
+      opacity: 0.9,
+    }),
     white: new THREE.MeshStandardMaterial({ color: 0xe3e6e9, roughness: 0.5 }),
     podium: new THREE.MeshStandardMaterial({ color: 0x9a9890, roughness: 0.8 }),
     green: new THREE.MeshStandardMaterial({ color: 0x6c9a4c, roughness: 0.9 }),
@@ -637,12 +721,21 @@ export class Landmarks implements ChunkListener {
     terrain.addListener(this);
   }
 
-  onChunkAdded(x: number, y: number): void {
+  /** 両端が隣のチャンクにかかると、隣が読まれるまで置けないので、どのチャンクが読まれても置けていないものを試す */
+  onChunkAdded(): void {
     for (const lm of LANDMARKS) {
-      if (this.built.has(lm) || chunkOf(lm) !== `${x}/${y}`) continue;
-      const object = this.place(lm);
+      if (this.built.has(lm)) continue;
+      // 作るのに失敗しても、地形のチャンクの読込（この呼び出し元）を巻き込まない
+      let object: THREE.Group | null = null;
+      try {
+        object = this.place(lm);
+      } catch (e) {
+        console.warn('[Landmarks] 作れませんでした', lm.gmlId, e);
+        this.built.set(lm, { chunk: '', object: new THREE.Group() });
+        continue;
+      }
       if (!object) continue;
-      this.built.set(lm, { chunk: `${x}/${y}`, object });
+      this.built.set(lm, { chunk: chunkOf(lm), object });
       this.group.add(object);
     }
   }

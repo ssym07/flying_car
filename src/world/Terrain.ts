@@ -83,7 +83,8 @@ export class Terrain {
     const box = new THREE.Box3();
     for (const line of lines) for (const p of line) box.expandByPoint(p);
     this.trenches.set(key, { lines, box });
-    for (const chunk of this.chunks.values()) if (chunk.mesh && this.trenchTouches(chunk, box)) this.updateTrenchMask(chunk);
+    for (const chunk of this.chunks.values())
+      if (chunk.mesh && this.trenchTouches(chunk, box)) this.updateTrenchMask(chunk);
   }
 
   removeTrench(key: string): void {
@@ -110,8 +111,7 @@ export class Terrain {
   /** チャンクの「描かない所」の画像を、かかる掘割すべてから作り直す（赤 = 中心線からの距離 / maskRange） */
   private updateTrenchMask(chunk: Chunk): void {
     const uniform = (chunk.mesh?.material as THREE.Material[] | undefined)?.[0]?.userData.trench as
-      | { value: THREE.Texture }
-      | undefined;
+      { value: THREE.Texture } | undefined;
     if (!uniform) return;
     const { maskSize: S, maskRange } = RAILWAYS.portal;
     const n = 2 ** TERRAIN.demZoom;
@@ -342,7 +342,10 @@ export class Terrain {
         return;
       }
       // 地面の種類（データが無くても住宅地の敷地のテンプレートで塗る）があるので、チャンクごとに材質を作る
-      chunk.mesh = new THREE.Mesh(geometry, createMaterials(map, water, parks?.texture ?? null, landuse?.texture ?? null));
+      chunk.mesh = new THREE.Mesh(
+        geometry,
+        createMaterials(map, water, parks?.texture ?? null, landuse?.texture ?? null),
+      );
       applyCarves(chunk.mesh, [...this.carves.values()], false);
       geometry.computeBoundingBox();
       this.updateTrenchMask(chunk);
@@ -629,7 +632,12 @@ function fillNoData(heights: Float32Array, size: number): void {
         if (!Number.isNaN(src[idx])) continue;
         let sum = 0;
         let count = 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
           const nx = x + dx;
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
@@ -701,14 +709,18 @@ async function fetchPhoto(x: number, y: number, z: number, zoomOffset: number): 
   return texture;
 }
 
+/** 国土地理院の通信は時々返事が来ないまま止まるので、15秒で打ち切ってもう1回だけ取り直す（止まるとチャンクがずっと読めない） */
 async function fetchImage(url: string): Promise<ImageBitmap | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return await createImageBitmap(await res.blob());
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return null;
+      return await createImageBitmap(await res.blob());
+    } catch {
+      // 打ち切り・通信の失敗はもう1回
+    }
   }
+  return null;
 }
 
 function tileUrl(template: string, x: number, y: number, z: number): string {
