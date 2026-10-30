@@ -28,8 +28,8 @@ const MAX_SCALE = 120;
 const LABEL_TRANSFER = 9;
 const LABEL_ALL = 22;
 /** 普通の駅の丸を出し始める拡大率と、はっきり出す拡大率 */
-const DOTS_FROM = 8;
-const DOTS_FULL = 16;
+const DOTS_FROM = 20;
+const DOTS_FULL = 34;
 const THREE_CLAMP = (v: number) => Math.min(1, Math.max(0, v));
 /** これより動いたらクリックではなくドラッグ (px) */
 const DRAG_THRESHOLD = 5;
