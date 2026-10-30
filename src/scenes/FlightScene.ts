@@ -27,6 +27,8 @@ export class FlightScene implements GameScene {
   private minimap!: Minimap;
   private search!: StationSearch;
   private routeMap!: RouteMap;
+  /** ホーム（行き先を選ぶタイトル）へ戻るボタン */
+  private homeButton!: HTMLButtonElement;
   /** 地形の読込を待っているジャンプ先 */
   private pendingJump: { lat: number; lon: number } | null = null;
   private readonly ahead = new THREE.Vector3();
@@ -74,6 +76,14 @@ export class FlightScene implements GameScene {
       () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
     );
 
+    this.homeButton = document.createElement('button');
+    this.homeButton.type = 'button';
+    this.homeButton.className = 'home-button';
+    this.homeButton.textContent = 'ホーム';
+    this.homeButton.title = '行き先（東京・大阪）を選ぶ画面へ戻る';
+    this.homeButton.addEventListener('click', () => this.ctx.go.title());
+    this.ctx.overlay.appendChild(this.homeButton);
+
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });
   }
@@ -89,6 +99,7 @@ export class FlightScene implements GameScene {
     this.minimap.dispose();
     this.search.dispose();
     this.routeMap.dispose();
+    this.homeButton.remove();
   }
 
   /**

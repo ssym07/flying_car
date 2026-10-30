@@ -405,6 +405,28 @@ body {
   pointer-events: auto;
 }
 
+.home-button {
+  position: absolute;
+  top: 16px;
+  /* 路線図のボタン（幅 72px）の左 */
+  right: calc(16px + min(280px, calc(100vw - 32px)) + 8px + 72px + 8px);
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.home-button:hover {
+  background: rgba(102, 204, 255, 0.35);
+}
+
 .route-map-toggle:hover,
 .route-map-toggle.active {
   background: rgba(102, 204, 255, 0.35);

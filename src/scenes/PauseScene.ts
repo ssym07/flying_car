@@ -19,7 +19,7 @@ export class PauseScene implements GameScene {
       `
       <h1>PAUSE</h1>
       <button type="button" data-resume>再開（Esc）</button>
-      <button type="button" data-title>タイトルへ</button>
+      <button type="button" data-title>ホームへ（行き先を選ぶ）</button>
       `,
     );
     this.el.querySelector('[data-resume]')!.addEventListener('click', () => this.resume());
