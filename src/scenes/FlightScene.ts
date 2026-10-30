@@ -7,6 +7,7 @@ import { Hud } from '../ui/hud';
 import { Instruments } from '../ui/instruments';
 import { LocationLabel } from '../ui/locationLabel';
 import { Minimap } from '../ui/minimap';
+import { RouteMap } from '../ui/routeMap';
 import { StationSearch } from '../ui/stationSearch';
 import { forwardOf, step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
@@ -25,6 +26,7 @@ export class FlightScene implements GameScene {
   private location!: LocationLabel;
   private minimap!: Minimap;
   private search!: StationSearch;
+  private routeMap!: RouteMap;
   /** 地形の読込を待っているジャンプ先 */
   private pendingJump: { lat: number; lon: number } | null = null;
   private readonly ahead = new THREE.Vector3();
@@ -66,6 +68,11 @@ export class FlightScene implements GameScene {
       (station) => this.jumpTo(station.lat, station.lon),
       () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
     );
+    this.routeMap = new RouteMap(
+      this.ctx.overlay,
+      (station) => this.jumpTo(station.lat, station.lon),
+      () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
+    );
 
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });
@@ -81,6 +88,7 @@ export class FlightScene implements GameScene {
     this.location.dispose();
     this.minimap.dispose();
     this.search.dispose();
+    this.routeMap.dispose();
   }
 
   /**
@@ -168,6 +176,7 @@ export class FlightScene implements GameScene {
       }
     }
 
+    this.routeMap.update();
     world.render(frameDt);
   }
 

@@ -354,3 +354,135 @@ body {
 .instrument-heading {
   grid-area: heading;
 }
+
+/* 路線図：駅検索の左のボタンで開く、画面右のスマホくらいの大きさの板 */
+.route-map-toggle {
+  position: absolute;
+  top: 16px;
+  right: calc(16px + min(280px, calc(100vw - 32px)) + 8px);
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.route-map-toggle:hover,
+.route-map-toggle.active {
+  background: rgba(102, 204, 255, 0.35);
+}
+
+.route-map {
+  position: absolute;
+  top: 132px;
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  height: min(640px, calc(100vh - 148px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  background: #f7f8fa;
+  pointer-events: auto;
+}
+
+.route-map[hidden] {
+  display: none;
+}
+
+.route-map-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  background: #1d2433;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.route-map-hint {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fg-dim);
+}
+
+.route-map-close {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.route-map-body {
+  position: relative;
+  flex: 1;
+}
+
+.route-map-body canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.route-map-zoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-map-zoom button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  background: #fff;
+  color: #1d1f24;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.route-map-tip {
+  position: absolute;
+  max-width: 190px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(20, 24, 32, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.route-map-tip span {
+  margin-left: 6px;
+  color: var(--fg-dim);
+}
+
+.route-map-tip i {
+  display: inline-block;
+  width: 10px;
+  height: 4px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
