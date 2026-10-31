@@ -138,4 +138,9 @@ export const WARDS: Ward[] = [
   { code: '27126', name: '大阪市平野区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/de/f68892-cd4e-476e-899e-7a9818f41fee/27100_osaka-shi_city_2025_citygml_1_op_bldg_3dtiles_27126_hirano-ku_lod1/tileset.json' },
   { code: '27127', name: '大阪市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/73/bc9017-e521-43f2-8777-2837eefd9795/27100_osaka-shi_city_2025_citygml_1_op_bldg_3dtiles_27127_kita-ku_lod1/tileset.json' },
   { code: '27128', name: '大阪市中央区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/6e/cc10bb-07ec-4f6c-949d-aaace115b581/27100_osaka-shi_city_2025_citygml_1_op_bldg_3dtiles_27128_chuo-ku_lod1/tileset.json' },
+  // 大阪のまわり：豊中市・東大阪市は PLATEAU、吹田市・尼崎市は PLATEAU が無いので国土地理院の建物の形から作る
+  { code: '27203', name: '豊中市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/09/2491e2-5b7b-4908-b207-be3e5f645837/27203_toyonaka-shi_city_2020_citygml_7_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '27227', name: '東大阪市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/7a/3fae2f-6614-4e74-a3aa-b2e41e775b32/27227_higashiosaka-shi_city_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '27205', name: '吹田市', kind: 'lod1', url: '' },
+  { code: '28202', name: '尼崎市', kind: 'lod1', url: '' },
 ];

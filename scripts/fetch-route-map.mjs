@@ -110,6 +110,8 @@ for (const rel of relations.values()) {
     .replace(/\s*[:：].*$/, '')
     .replace(/\s+\S*(→|->|⇒).*$/, '')
     .replace(/(上り|下り|各駅)$/, '')
+    // OpenStreetMap の綴りの誤り
+    .replace(/^Osaka Metor/, 'Osaka Metro')
     .trim();
   if (!base) continue;
   const key = `${t.operator ?? ''}|${base}`;
