@@ -605,9 +605,31 @@ export const LANDUSE = {
     sand: 0xe6d6b0,
     sand2: 0xd6c39a,
     wetSand: 0xa48c68,
+    /** 空港の芝地（刈り込んだ明るい緑の2色の縞）と、駐機場の明るいコンクリート */
+    airfield: 0x86ad5c,
+    airfield2: 0x9bbd6c,
+    apron: 0xb9bab6,
   },
   /** 砂浜から海側へ「砂浜の前の海」とみなす距離 (m)。浅瀬の色と寄せる波を描く範囲 */
   beachReach: 100,
+};
+
+/** 空港の滑走路・誘導路・駐機している飛行機（src/world/Airports.ts） */
+export const AIRPORTS = {
+  /** 中心線を区切る間隔 (m) */
+  densifyStep: 12,
+  /** 地面から浮かせる高さ (m)：誘導路・滑走路・滑走路の印（重なった時に上に来る順） */
+  taxiwayLift: 0.3,
+  runwayLift: 0.4,
+  markingLift: 0.05,
+  /** 滑走路の中心線の破線の周期 (m)（30m の線と 20m のすき間） */
+  dashPeriod: 50,
+  /** 進入端の印（縞模様と番号）を描く、端からの長さ (m) */
+  thresholdLength: 84,
+  /** 搭乗橋：通路の幅・高さ (m)、床の高さ（ターミナルの側・飛行機の扉の側, m）、脚を立てる先からの距離 (m) */
+  jetBridge: { width: 2.8, height: 2.9, floorStart: 5.5, floorEnd: 4.2, legFromEnd: 6 },
+  /** 尾翼の色（白・赤・紺・水色・黄緑など） */
+  tailColors: [0xf4f5f6, 0xd7262e, 0x14336e, 0x2f8fd5, 0x7cc04b, 0xf5a623, 0x1b4f9c],
 };
 
 /** 高速道路（首都高・湾岸線・外環道など。scripts/fetch-expressways.mjs → build-expressways.mjs で作る） */

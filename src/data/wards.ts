@@ -143,4 +143,6 @@ export const WARDS: Ward[] = [
   { code: '27227', name: '東大阪市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/7a/3fae2f-6614-4e74-a3aa-b2e41e775b32/27227_higashiosaka-shi_city_2024_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '27205', name: '吹田市', kind: 'lod1', url: '' },
   { code: '28202', name: '尼崎市', kind: 'lod1', url: '' },
+  // 伊丹市：大阪国際空港（伊丹空港）のターミナルのある市。PLATEAU が無いので国土地理院の建物の形から作る
+  { code: '28207', name: '伊丹市', kind: 'lod1', url: '' },
 ];

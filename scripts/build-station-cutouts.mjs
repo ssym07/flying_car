@@ -206,7 +206,68 @@ for (const x of await readdir(ROOF_DIR)) {
     }
   }
 }
-console.log(`${trackCorridors} track corridors, ${corridors.length - trackCorridors} platforms`);
+// 空港の搭乗橋（public/airports.json、scripts/fetch-airports.mjs）：PLATEAU では建物と同じ高さの箱になっているので、
+// 地面から JET_BRIDGE_TOP m まで丸ごと切り抜く（搭乗橋は src/world/Airports.ts で描く）。ターミナルの側の端は
+// 壁を削らないよう JET_BRIDGE_SKIP m 手前から
+const JET_BRIDGE_HALF = 3.5;
+const JET_BRIDGE_TOP = 30;
+const JET_BRIDGE_SKIP = 3;
+let jetBridges = 0;
+const airports = JSON.parse(await readFile(regionPath('public/airports.json'), 'utf8').catch(() => '{}'));
+// 搭乗橋の付け根（ターミナルから突き出た細い通路）：通路の高さ（地面から JET_BRIDGE_FLOOR〜JET_BRIDGE_ROOF m）だけ残し、
+// その下と上を切り抜く（scripts/build-airport-fixed-links.mjs が探した、付け根ごとの凸包の形）
+const JET_BRIDGE_FLOOR = 5.3;
+const JET_BRIDGE_ROOF = 8.6;
+for (const coords of JSON.parse(await readFile(regionPath('data/airports/fixed-links.json'), 'utf8').catch(() => '[]'))) {
+  const pts = decode(coords);
+  const [lat, lon] = pts[0];
+  const ground = (heightAt(lat, lon) ?? 3) + GEOID;
+  const ring = pts.map(([la, lo]) => [lo * MX, la * MY]);
+  addCorridor(ring, ground - 2, ground + JET_BRIDGE_FLOOR);
+  addCorridor(ring, ground + JET_BRIDGE_ROOF, ground + JET_BRIDGE_TOP);
+  jetBridges += 2;
+}
+for (const coords of airports.j ?? []) {
+  const pts = decode(coords).map(([lat, lon]) => [lon * MX, lat * MY]);
+  const ground = (() => {
+    const [lat, lon] = decode(coords)[0];
+    return heightAt(lat, lon) ?? 3;
+  })();
+  let skip = JET_BRIDGE_SKIP;
+  for (let i = 1; i < pts.length; i++) {
+    let a = pts[i - 1];
+    const b = pts[i];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 0.1) continue;
+    const ux = (b[0] - a[0]) / len;
+    const uy = (b[1] - a[1]) / len;
+    if (skip > 0) {
+      if (len <= skip) {
+        skip -= len;
+        continue;
+      }
+      a = [a[0] + ux * skip, a[1] + uy * skip];
+      skip = 0;
+    }
+    const nx = -uy * JET_BRIDGE_HALF;
+    const ny = ux * JET_BRIDGE_HALF;
+    // 先の端は少し延ばす（飛行機の側の端の箱も残さない）
+    const e = i === pts.length - 1 ? 3 : 0;
+    const bb = [b[0] + ux * e, b[1] + uy * e];
+    addCorridor(
+      [
+        [a[0] + nx, a[1] + ny],
+        [bb[0] + nx, bb[1] + ny],
+        [bb[0] - nx, bb[1] - ny],
+        [a[0] - nx, a[1] - ny],
+      ],
+      ground + GEOID - 2,
+      ground + GEOID + JET_BRIDGE_TOP,
+    );
+    jetBridges++;
+  }
+}
+console.log(`${trackCorridors} track corridors, ${corridors.length - trackCorridors - jetBridges} platforms, ${jetBridges} jet bridge pieces`);
 // 探しやすくする格子（50m）
 const CELL = 50;
 const grid = new Map();

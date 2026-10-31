@@ -4,7 +4,8 @@ import { LANDUSE } from '../core/config';
 import { roadMask } from './roadMask';
 
 /**
- * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場・砂浜。
+ * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場・砂浜、
+ * 空港の芝地・駐機場（scripts/fetch-airports.mjs が足す）。
  * public/landuse、scripts/fetch-landuse.mjs で作る）から、地形チャンクごとに「地面の種類」の画像を作り、
  * 種類ごとのテンプレート（アスファルトと白線・砂利・墓石の並び など）で地形の色を塗り替える。
  * データの無い所は「住宅地の敷地」のテンプレートで塗る（航空写真のぼやけと、写り込んだ屋根を見せない）。
@@ -436,13 +437,23 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
             // 広場・商業地：タイル舗装（1m 角、1枚ごとに少し色を変える）
             col = lu_paving * (0.92 + luHash(floor(w)) * 0.12);
             col *= 1.0 - 0.2 * clamp(luLine(w.x, 1.0, 0.04) + luLine(w.y, 1.0, 0.04), 0.0, 1.0);
-          } else {
+          } else if (kind < 10.5) {
             // 砂浜：明るい砂の大きなむらと、風紋（細かい縞）。波打ち際の湿った砂は水面の処理で描く
             float ripple = sin(dot(w, vec2(0.8, 0.6)) * 7.0 + big * 9.0) * 0.5 + 0.5;
             float rippleFade = 1.0 - clamp(fwidth(w.x) * 1.5, 0.0, 1.0);
             col = mix(lu_sand, lu_sand2, smoothstep(0.3, 0.8, big)) * (0.95 + fine * 0.07 + (ripple - 0.5) * 0.06 * rippleFade);
             photoMix = 0.06;
             luIsBeach = 1.0;
+          } else if (kind < 11.5) {
+            // 空港の芝地：刈り込んだ芝の、幅 12m の明暗の縞（東西の向き）
+            float stripe = step(0.5, fract(w.x / 24.0));
+            col = mix(lu_airfield, lu_airfield2, stripe * 0.7 + big * 0.3) * (0.95 + fine * 0.08);
+            photoMix = 0.05;
+          } else {
+            // 駐機場：明るいコンクリートの板（7.5m 角の目地、板ごとに少し色を変える）
+            col = lu_apron * (0.94 + luHash(floor(w / 7.5)) * 0.08 + fine * 0.03);
+            col *= 1.0 - 0.18 * clamp(luLine(w.x, 7.5, 0.12) + luLine(w.y, 7.5, 0.12), 0.0, 1.0);
+            photoMix = 0.05;
           }
           diffuseColor.rgb = mix(col, photo, photoMix);
         }`,

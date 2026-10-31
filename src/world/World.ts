@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CAMERA, TERRAIN, WORLD } from '../core/config';
 import { REGION } from '../core/region';
 import { WARDS } from '../data/wards';
+import { Airports } from './Airports';
 import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
 import { ExpresswayNetwork } from './ExpresswayNetwork';
@@ -37,6 +38,7 @@ export class World {
   readonly landmarks: Landmarks;
   /** 空を流れる車の列 */
   readonly skyTraffic: SkyTraffic;
+  readonly airports: Airports;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
@@ -86,6 +88,7 @@ export class World {
     this.stationRoofs = new StationRoofs(this.terrain);
     this.landmarks = new Landmarks(this.terrain);
     this.skyTraffic = new SkyTraffic(this.terrain);
+    this.airports = new Airports(this.terrain);
     this.scene.add(
       ...this.layers.map((l) => l.group),
       this.terrain.group,
@@ -96,6 +99,7 @@ export class World {
       this.stationRoofs.group,
       this.landmarks.group,
       this.skyTraffic.group,
+      this.airports.group,
     );
     this.colliders = [
       ...this.layers.map((l) => l.group),
