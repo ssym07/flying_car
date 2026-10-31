@@ -41,6 +41,12 @@ const elevatedPlatforms = new Set(
 
 /** 高架の高さ (m) と、上に重なる線路の1段あたりの追加 (m) */
 const VIADUCT = 8;
+/**
+ * 跨座式のモノレール（軌間 0）の桁の上面の高さ：OpenStreetMap の layer ごと（道路や高速道路・ほかの線路を越える所ほど高い）。
+ * 地上の区間も、桁の高さ（約 1.5m）の分は上げる
+ */
+const MONORAIL_HEIGHTS = [12, 12, 15, 19, 23];
+const MONORAIL_GROUND = 2.5;
 const STACK = 5;
 /** 向きがこの角度より違うホーム・線路は、交差する別の路線とみなす（ラジアン） */
 const CROSSING_ANGLE = (30 * Math.PI) / 180;
@@ -404,6 +410,9 @@ runs.forEach((r, i) => {
 runs.forEach((r, i) => {
   let base = 0;
   if (r.bridge && (componentLength.get(find(i)) >= MIN_VIADUCT_LENGTH || r.layer >= 2)) base = VIADUCT;
+  if (r.gauge === 0 && !r.tunnel) {
+    base = r.bridge ? MONORAIL_HEIGHTS[Math.min(Math.max(r.layer, 0), MONORAIL_HEIGHTS.length - 1)] : MONORAIL_GROUND;
+  }
   for (const k of r.keys) nodes.get(k).base = Math.max(nodes.get(k).base, base);
 });
 

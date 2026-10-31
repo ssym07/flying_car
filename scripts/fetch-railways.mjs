@@ -127,13 +127,29 @@ await writeFile(
 );
 console.log(`${covered} covered sections added as tracks, ${tunnelEnds.length} tunnel ends`);
 
+/**
+ * 跨座式のモノレール（コンクリートの桁の上を走る。東京モノレール・大阪モノレール）は軌間を 0 にして、レールの無い桁として描く。
+ * 名前の無い車両基地の線（yard・siding）は、それぞれの路線のまわりの範囲 [南, 西, 北, 東] にあるものを含める
+ */
+const STRADDLE_MONORAIL = /東京モノレール|Tokyo Monorail|大阪モノレール/;
+const STRADDLE_YARDS = [
+  [35.54, 139.73, 35.66, 139.8],
+  [34.7, 135.43, 34.86, 135.62],
+];
+function isStraddleMonorail(t, g) {
+  if (t.railway !== 'monorail') return false;
+  if (t.name) return STRADDLE_MONORAIL.test(t.name);
+  const { lat, lon } = g[0];
+  return STRADDLE_YARDS.some(([s, w, n, e]) => lat >= s && lat <= n && lon >= w && lon <= e);
+}
+
 const tiles = new Map();
 for (const way of ways.values()) {
   const t = way.tags;
   const bridge = t.bridge !== undefined && t.bridge !== 'no' ? 1 : 0;
   // layer が負でトンネルでないものは掘割（切り通し）。地形を削って、その底に線路を置く
   const layer = parseInt(t.layer ?? '0', 10) || 0;
-  const gauge = parseInt(t.gauge ?? '1067', 10) || 1067;
+  const gauge = isStraddleMonorail(t, way.geometry) ? 0 : parseInt(t.gauge ?? '1067', 10) || 1067;
   const subway = t.railway === 'subway' ? 1 : 0;
   const g = way.geometry;
   // 線分の中点が入るタイルごとに、ひと続きの区間に分ける

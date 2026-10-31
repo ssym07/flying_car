@@ -41,6 +41,12 @@ export class RailNetwork implements ChunkListener {
     roughness: 0.85,
     side: THREE.DoubleSide,
   });
+  /** 跨座式のモノレールの桁と橋脚 */
+  private readonly monorailMaterial = new THREE.MeshStandardMaterial({
+    color: RAILWAYS.monorail.color,
+    roughness: 0.8,
+    side: THREE.DoubleSide,
+  });
   /** トンネルの入口・擁壁のコンクリート（型枠の継ぎ目と雨だれの汚れ） */
   private readonly portalMaterial = createPortalConcreteMaterial();
   /** トンネルの内壁（頂点色で、入口から奥へ暗くする。光の届かない所なのでライティングしない） */
@@ -90,6 +96,7 @@ export class RailNetwork implements ChunkListener {
     const narrow = new MeshBuilder();
     const standard = new MeshBuilder();
     const viaduct = new MeshBuilder();
+    const monorail = new MeshBuilder();
     const noPier = data.x.map(([lat, lon, r]) => [lat / 1e6, lon / 1e6, r] as const);
     const cuts: THREE.Vector3[][] = [];
     // トンネルの入口へ下りる掘割（両側に擁壁を立てる）
@@ -109,6 +116,8 @@ export class RailNetwork implements ChunkListener {
         noPier,
         gauge >= 1400 ? standard : narrow,
         viaduct,
+        // 軌間 0 は跨座式のモノレール（レールの無いコンクリートの桁）
+        gauge === 0 ? monorail : null,
       );
       if (!built) continue;
       const floor = (p: THREE.Vector3) => p.clone().setY(p.y - RAILWAYS.lift - RAILWAYS.cutDepthBelow);
@@ -149,7 +158,11 @@ export class RailNetwork implements ChunkListener {
     for (const p of data.p ?? []) portals.addPortal(p);
     portals.addRetainingWalls(approaches);
     // 掘割の内側の地形は描かない（地形の頂点の間隔では、深く細い掘割を削りきれない）
-    if (approaches.length > 0) this.terrain.addTrench(`rail:${key}`, approaches.map((ap) => ap.pts));
+    if (approaches.length > 0)
+      this.terrain.addTrench(
+        `rail:${key}`,
+        approaches.map((ap) => ap.pts),
+      );
     // 掘割の線路のまわりの地形を削る
     if (cuts.length > 0) this.terrain.addCarve(`rail:${key}`, cuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
     // 入口へ下りる掘割も同じく削る（地形の頂点の間隔が広いので、擁壁の幅では削りきれない。壁の外は斜面になる）
@@ -163,6 +176,7 @@ export class RailNetwork implements ChunkListener {
     add(narrow.build(), this.trackMaterials.narrow);
     add(standard.build(), this.trackMaterials.standard);
     add(viaduct.build(), this.concreteMaterial);
+    add(monorail.build(), this.monorailMaterial);
     const { concrete, lining } = portals.build();
     add(concrete, this.portalMaterial);
     add(lining, this.liningMaterial);
@@ -182,6 +196,7 @@ export class RailNetwork implements ChunkListener {
     noPier: ReadonlyArray<readonly [number, number, number]>,
     track: MeshBuilder,
     viaduct: MeshBuilder,
+    monorail: MeshBuilder | null,
   ): { pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[] } | null {
     // 細かく区切った点と、中心線に沿った距離 s、地面からの高さ
     const samples: Array<[number, number]> = [];
@@ -219,7 +234,9 @@ export class RailNetwork implements ChunkListener {
         // 割合は前後の点の間で補間し、地面の高さは割合の大きい方の駅のもの
         const b = weight >= pweight ? (base ?? pbase) : (pbase ?? base);
         stationBase.push(b);
-        stationWeight.push(b === null ? 0 : (base === null ? 0 : weight) * t + (pbase === null ? 0 : pweight) * (1 - t));
+        stationWeight.push(
+          b === null ? 0 : (base === null ? 0 : weight) * t + (pbase === null ? 0 : pweight) * (1 - t),
+        );
       }
     }
     if (samples.length < 2) return null;
@@ -232,7 +249,9 @@ export class RailNetwork implements ChunkListener {
     let last = raw.find((g) => g !== null) ?? 0;
     const ground = raw.map((g) => (last = g ?? last));
     // 均した地面：場所だけで決まる平均（周りの格子点の地形の平均）にして、隣を並んで走る線路と同じ高さにする
-    const smooth = samples.map(([lat, lon], i) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius) ?? ground[i]);
+    const smooth = samples.map(
+      ([lat, lon], i) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius) ?? ground[i],
+    );
     const heights = ground.map((g, i) => {
       // 高架ほど均した地面に寄せる（地上の線路は地形に沿わせる）
       let base = THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1));
@@ -257,7 +276,14 @@ export class RailNetwork implements ChunkListener {
     });
     const half = RAILWAYS.ballastWidth / 2;
     const at = (i: number, across: number, dy: number) =>
-      pts[i].clone().addScaledVector(sides[i], across).setY(pts[i].y + dy);
+      pts[i]
+        .clone()
+        .addScaledVector(sides[i], across)
+        .setY(pts[i].y + dy);
+    if (monorail) {
+      this.buildMonorailBeam(monorail, samples, s, lift, ground, pts, sides, at, noPier);
+      return { pts, lift, sides };
+    }
 
     // 道床（u：幅方向 0..1、v：枕木の繰り返し）
     let prev: [number, number] | null = null;
@@ -286,12 +312,27 @@ export class RailNetwork implements ChunkListener {
       }
     };
     // 側壁は立てない（並んだ線路それぞれに立つと、線路の間が壁だらけになる）。桁の側面だけ
-    strip((i) => at(i, edge, -0.05), (i) => at(i, edge, -RAILWAYS.viaductDepth));
-    strip((i) => at(i, -edge, -RAILWAYS.viaductDepth), (i) => at(i, -edge, -0.05));
-    strip((i) => at(i, edge, -RAILWAYS.viaductDepth), (i) => at(i, -edge, -RAILWAYS.viaductDepth));
+    strip(
+      (i) => at(i, edge, -0.05),
+      (i) => at(i, edge, -RAILWAYS.viaductDepth),
+    );
+    strip(
+      (i) => at(i, -edge, -RAILWAYS.viaductDepth),
+      (i) => at(i, -edge, -0.05),
+    );
+    strip(
+      (i) => at(i, edge, -RAILWAYS.viaductDepth),
+      (i) => at(i, -edge, -RAILWAYS.viaductDepth),
+    );
     // 道床の脇の平らな部分（道床と側壁の間）
-    strip((i) => at(i, edge, -0.05), (i) => at(i, half, -0.05));
-    strip((i) => at(i, -half, -0.05), (i) => at(i, -edge, -0.05));
+    strip(
+      (i) => at(i, edge, -0.05),
+      (i) => at(i, half, -0.05),
+    );
+    strip(
+      (i) => at(i, -half, -0.05),
+      (i) => at(i, -edge, -0.05),
+    );
 
     // 橋脚
     for (let i = 1; i < pts.length; i++) {
@@ -310,7 +351,12 @@ export class RailNetwork implements ChunkListener {
         [-1, 1],
         [-1, -1],
         [1, -1],
-      ].map(([a, b]) => pts[i].clone().addScaledVector(sides[i], a * t).addScaledVector(tangent, b * t));
+      ].map(([a, b]) =>
+        pts[i]
+          .clone()
+          .addScaledVector(sides[i], a * t)
+          .addScaledVector(tangent, b * t),
+      );
       for (let k = 0; k < 4; k++) {
         const p = corners[k];
         const q = corners[(k + 1) % 4];
@@ -322,6 +368,87 @@ export class RailNetwork implements ChunkListener {
       }
     }
     return { pts, lift, sides };
+  }
+
+  /**
+   * 跨座式のモノレールの桁（上面が走る面）と橋脚。低い所は桁の下を地面まで壁にする。
+   * トンネルの入口へ下りる所（地面より下）は桁だけ
+   */
+  private buildMonorailBeam(
+    b: MeshBuilder,
+    samples: Array<[number, number]>,
+    s: number[],
+    lift: number[],
+    ground: number[],
+    pts: THREE.Vector3[],
+    sides: THREE.Vector3[],
+    at: (i: number, across: number, dy: number) => THREE.Vector3,
+    noPier: ReadonlyArray<readonly [number, number, number]>,
+  ): void {
+    const M = RAILWAYS.monorail;
+    const w = M.beamWidth / 2;
+    const groundY = (i: number) => this.terrain.toLocal(samples[i][0], samples[i][1], ground[i] - 0.5).y;
+    // 桁：上面・両側面・底面。低い所は側面を地面まで下ろす
+    const low = (i: number) => lift[i] < M.wallBelow && lift[i] >= 0;
+    const strip = (fa: (i: number) => THREE.Vector3, fb: (i: number) => THREE.Vector3) => {
+      let p: [number, number] | null = null;
+      for (let i = 0; i < pts.length; i++) {
+        const va = b.vertex(fa(i), s[i] / 4, 0);
+        const vb = b.vertex(fb(i), s[i] / 4, 1);
+        if (p) b.quad(p[0], p[1], va, vb);
+        p = [va, vb];
+      }
+    };
+    const bottom = (i: number) => (low(i) ? groundY(i) - pts[i].y : -M.beamDepth);
+    strip(
+      (i) => at(i, w, 0),
+      (i) => at(i, -w, 0),
+    );
+    strip(
+      (i) => at(i, w, bottom(i)),
+      (i) => at(i, w, 0),
+    );
+    strip(
+      (i) => at(i, -w, 0),
+      (i) => at(i, -w, bottom(i)),
+    );
+    strip(
+      (i) => at(i, -w, bottom(i)),
+      (i) => at(i, w, bottom(i)),
+    );
+    // 橋脚：桁の下の四角い柱（下を通る道路の上には立てない）
+    for (let i = 1; i < pts.length; i++) {
+      if (Math.floor(s[i] / M.pierSpacing) === Math.floor(s[i - 1] / M.pierSpacing)) continue;
+      if (lift[i] < M.wallBelow) continue;
+      const [plat, plon] = samples[i];
+      if (noPier.some(([lat, lon, r]) => approxMeters(lat, lon, plat, plon) < r + M.pierThickness)) continue;
+      const top = pts[i].y - M.beamDepth;
+      const base = groundY(i);
+      if (top - base < 1) continue;
+      const tangent = new THREE.Vector3(-sides[i].z, 0, sides[i].x);
+      const t = M.pierThickness / 2;
+      const corners = [
+        [1, 1],
+        [-1, 1],
+        [-1, -1],
+        [1, -1],
+      ].map(([a, c]) =>
+        pts[i]
+          .clone()
+          .addScaledVector(sides[i], a * t)
+          .addScaledVector(tangent, c * t),
+      );
+      for (let k = 0; k < 4; k++) {
+        const p = corners[k];
+        const q = corners[(k + 1) % 4];
+        b.quad(
+          b.vertex(p.clone().setY(base), 0, 0),
+          b.vertex(q.clone().setY(base), 1, 0),
+          b.vertex(p.clone().setY(top), 0, 1),
+          b.vertex(q.clone().setY(top), 1, 1),
+        );
+      }
+    }
   }
 }
 
@@ -342,7 +469,7 @@ function createTrackMaterial(gauge: number): THREE.MeshStandardMaterial {
   g.fillStyle = '#6b5544';
   g.fillRect(0, 0, w, h);
   let seed = 7;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 2200; i++) {
     const v = 70 + rand() * 70;
     g.fillStyle = `rgb(${v + 25},${v + 8},${v - 8})`;
@@ -400,7 +527,7 @@ function createPortalConcreteMaterial(): THREE.MeshStandardMaterial {
   g.fillStyle = '#b3b1aa';
   g.fillRect(0, 0, size, size);
   let seed = 11;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   // ざらつき
   for (let i = 0; i < 3000; i++) {
     const v = 150 + rand() * 50;

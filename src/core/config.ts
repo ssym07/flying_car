@@ -478,6 +478,18 @@ export const RAILWAYS = {
   /** 中心線を区切る間隔 (m)。地形のメッシュ（約19m）の折れ目に沿えるよう細かめ */
   densifyStep: 4,
   concreteColor: 0xb4b6ba,
+  /**
+   * 跨座式のモノレール（軌間 0）：コンクリートの桁の幅・高さ (m)、橋脚の間隔 (m)・太さ (m)・色。
+   * 桁の上面が走る面（線路の高さ）。低い所（地上の区間）は桁の下を地面まで壁にする
+   */
+  monorail: {
+    beamWidth: 0.85,
+    beamDepth: 1.5,
+    pierSpacing: 30,
+    pierThickness: 1.3,
+    wallBelow: 4,
+    color: 0xc8c9c6,
+  },
   /** トンネルの奥へ描く長さ (m)、入口の壁の上端を決める時に見る入口から奥への距離 (m)、
    * トンネルの内壁の入口近くの色と、奥の暗がりの色 */
   portalDepth: 25,

@@ -1080,10 +1080,12 @@ function candidateUris(tileset) {
 
 const exists = (url) => stat(url).then(() => true, () => false);
 const wards = JSON.parse(await readFile(new URL('wards.json', PLATEAU), 'utf8'));
+// 区を指定しない時は、この地域の区だけ（別の地域の区を、この地域の線路で作り直すと、切り抜きが消える）
 const only = process.argv.slice(2);
+const inRegion = (w) => SETTINGS.prefectures.some((p) => w.startsWith(p));
 let totalTiles = 0;
 let totalBuildings = 0;
-for (const ward of only.length > 0 ? wards.filter((w) => only.includes(w)) : wards) {
+for (const ward of only.length > 0 ? wards.filter((w) => only.includes(w)) : wards.filter(inRegion)) {
   const tileset = JSON.parse(await readFile(new URL(`${ward}/tileset.json`, PLATEAU), 'utf8'));
   const uris = candidateUris(tileset);
   let tiles = 0;
