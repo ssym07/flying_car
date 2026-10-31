@@ -145,4 +145,13 @@ export const WARDS: Ward[] = [
   { code: '28202', name: '尼崎市', kind: 'lod1', url: '' },
   // 伊丹市：大阪国際空港（伊丹空港）のターミナルのある市。PLATEAU が無いので国土地理院の建物の形から作る
   { code: '28207', name: '伊丹市', kind: 'lod1', url: '' },
+  { code: '27204', name: '池田市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/aa/d4a47c-1d7b-4552-ba59-0d63ea6a02b1/27204_ikeda-shi_city_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '27207', name: '高槻市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/0b/b6f845-85c4-4fed-83e4-1f4640f087b8/27207_takatsuki-shi_city_2020_citygml_7_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '27209', name: '守口市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/4f/abad05-6296-46ea-b93f-3478dd085d5c/27209_moriguchi-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '27223', name: '門真市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/19/9efc28-b73a-4fb1-93a8-917043ee2fe4/27223_kadoma-shi_pref_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  // 茨木・枚方・寝屋川・八尾は PLATEAU が無いので国土地理院の建物の形から作る
+  { code: '27211', name: '茨木市', kind: 'lod1', url: '' },
+  { code: '27210', name: '枚方市', kind: 'lod1', url: '' },
+  { code: '27215', name: '寝屋川市', kind: 'lod1', url: '' },
+  { code: '27212', name: '八尾市', kind: 'lod1', url: '' },
 ];
