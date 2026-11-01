@@ -13,7 +13,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import Pbf from 'pbf';
 import { GEOID, heightAt, prepareDem } from './lib/dem.mjs';
-import { regionPath } from './lib/region.mjs';
+import { AREAS, regionPath } from './lib/region.mjs';
 
 const [CODE, NAME, PREF] = process.argv.slice(2);
 if (!CODE || !NAME) throw new Error('使い方: node scripts/build-gsi-buildings.mjs 市区町村コード 市の名前 都道府県名');
@@ -434,6 +434,13 @@ for (const ring of rings) {
     e = Math.max(e, lon);
   }
 }
+// 市の境界のうち、地域のデータを取る範囲（scripts/lib/region.mjs の AREAS）の中だけ作る（神戸市の山の方など、
+// 道路や線路を取っていない所に建物だけ並ばないように）
+const inAreas = (lat, lon) => AREAS.some(([as, aw, an, ae]) => lat >= as && lat <= an && lon >= aw && lon <= ae);
+s = Math.max(s, Math.min(...AREAS.map((a) => a[0])));
+n = Math.min(n, Math.max(...AREAS.map((a) => a[2])));
+w = Math.max(w, Math.min(...AREAS.map((a) => a[1])));
+e = Math.min(e, Math.max(...AREAS.map((a) => a[3])));
 const x0 = Math.floor(tileX(w, SRC_ZOOM));
 const x1 = Math.floor(tileX(e, SRC_ZOOM));
 const y0 = Math.floor(tileY(n, SRC_ZOOM));
@@ -453,7 +460,17 @@ const seen = new Set();
 let total = 0;
 let dropped = 0;
 const jobs = [];
-for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) jobs.push([x, y]);
+for (let x = x0; x <= x1; x++) {
+  for (let y = y0; y <= y1; y++) {
+    // 地域の範囲にかからない元のタイルは取らない
+    const lon0 = (x / 2 ** SRC_ZOOM) * 360 - 180;
+    const lon1 = ((x + 1) / 2 ** SRC_ZOOM) * 360 - 180;
+    const lat = (yy) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * yy) / 2 ** SRC_ZOOM))) * 180) / Math.PI;
+    const [la0, la1] = [lat(y + 1), lat(y)];
+    if (!AREAS.some(([as, aw, an, ae]) => la1 >= as && la0 <= an && lon1 >= aw && lon0 <= ae)) continue;
+    jobs.push([x, y]);
+  }
+}
 let next = 0;
 let done = 0;
 await Promise.all(
@@ -468,7 +485,7 @@ await Promise.all(
         for (const [lat, lon] of outer) (clat += lat), (clon += lon);
         clat /= outer.length;
         clon /= outer.length;
-        if (!inside(rings, clon, clat)) continue;
+        if (!inside(rings, clon, clat) || !inAreas(clat, clon)) continue;
         if (LANDMARKS.some(([la, lo, r]) => Math.hypot((la - clat) * MY, (lo - clon) * MY * Math.cos(clat * K)) < r)) continue;
         // タイルの境目で切れた建物が重ならないよう、同じ形は1回だけ
         const key = outer.map(([a, b]) => `${a.toFixed(6)},${b.toFixed(6)}`).join(';');

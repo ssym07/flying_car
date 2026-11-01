@@ -154,4 +154,8 @@ export const WARDS: Ward[] = [
   { code: '27210', name: '枚方市', kind: 'lod1', url: '' },
   { code: '27215', name: '寝屋川市', kind: 'lod1', url: '' },
   { code: '27212', name: '八尾市', kind: 'lod1', url: '' },
+  // 神戸市・西宮市・芦屋市：PLATEAU が無いので国土地理院の建物の形から作る（神戸市は海側の市街地だけ。範囲は scripts/lib/region.mjs）
+  { code: '28100', name: '神戸市', kind: 'lod1', url: '' },
+  { code: '28204', name: '西宮市', kind: 'lod1', url: '' },
+  { code: '28206', name: '芦屋市', kind: 'lod1', url: '' },
 ];
