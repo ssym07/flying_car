@@ -30,8 +30,9 @@ const MIN_SCALE = 14;
 const MAX_SCALE = 120;
 const LABEL_TRANSFER = 9;
 const LABEL_ALL = 22;
-/** 背景（焦げ茶） */
+/** 背景（焦げ茶）＝陸地と、海の水色 */
 const BG = '#2a211c';
+const SEA = '#7cc0e4';
 /** 普通の駅の丸を出し始める拡大率と、はっきり出す拡大率 */
 const DOTS_FROM = 20;
 const DOTS_FULL = 34;
@@ -63,6 +64,8 @@ export class RouteMap {
   private pinch: { distance: number; scale: number } | null = null;
   private lat0 = REGION.origin.latDeg;
   private dirty = true;
+  /** 海（模式図の座標の形。scripts/build-route-map-sea.mjs の public/route-map-sea.json） */
+  private sea: Path2D | null = null;
   private opened = false;
 
   /**
@@ -103,6 +106,22 @@ export class RouteMap {
       .then((res) => (res.ok ? (res.json() as Promise<RouteMapData>) : null))
       .then((data) => data && this.setData(data))
       .catch((e) => console.warn('[RouteMap] 読込に失敗しました', e));
+    fetch(regionUrl('route-map-sea.json'))
+      .then((res) =>
+        res.ok && res.headers.get('content-type')?.includes('json') ? (res.json() as Promise<{ p: number[][] }>) : null,
+      )
+      .then((data) => {
+        if (!data) return;
+        const path = new Path2D();
+        for (const pts of data.p) {
+          path.moveTo(pts[0], pts[1]);
+          for (let i = 2; i < pts.length; i += 2) path.lineTo(pts[i], pts[i + 1]);
+          path.closePath();
+        }
+        this.sea = path;
+        this.dirty = true;
+      })
+      .catch((e) => console.warn('[RouteMap] 海の読込に失敗しました', e));
   }
 
   dispose(): void {
@@ -344,6 +363,24 @@ export class RouteMap {
     g.fillRect(0, 0, w, h);
     const margin = 40;
     const visible = (x: number, y: number) => x > -margin && y > -margin && x < w + margin && y < h + margin;
+
+    // 海：模式図の座標の形を、そのまま画面の拡大・位置で塗る。形のつなぎ目に細い線が出ないよう、同じ色の細い縁も付ける
+    if (this.sea) {
+      g.setTransform(
+        ratio * this.scale,
+        0,
+        0,
+        ratio * this.scale,
+        ratio * (w / 2 - this.cx * this.scale),
+        ratio * (h / 2 - this.cy * this.scale),
+      );
+      g.fillStyle = SEA;
+      g.strokeStyle = SEA;
+      g.lineWidth = 1 / this.scale;
+      g.fill(this.sea);
+      g.stroke(this.sea);
+      g.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
 
     // 路線（同じ駅の間を何本も通る時は、上に描いた路線の色が見える）
     const width = Math.max(2, Math.min(5, this.scale / 6));

@@ -21,7 +21,7 @@ export const WATER_SURFACE = 0.8;
 export const WATER_CLEARANCE = 2.5;
 
 /** PNG（8bit の RGB・RGBA・パレット）を RGB の配列にする */
-function decodePng(buf) {
+export function decodePng(buf) {
   let pos = 8;
   let width = 0;
   let height = 0;
