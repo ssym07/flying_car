@@ -122,7 +122,25 @@ for (const rel of relations.values()) {
 // まとめる：快速・急行・直通運転などの種別は除き、各駅に止まる路線だけにする。
 // 駅の多い路線から順に、まだ描いていない駅の間（隣どうしの駅の組）を半分以上持つものだけを残す
 const SERVICE = /快速|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか/;
-const inArea = (i) => AREAS.some(([s, w, n, e]) => stations[i].lat >= s && stations[i].lat <= n && stations[i].lon >= w && stations[i].lon <= e);
+// 載せる駅：データを取る範囲の中で、建物を作っている所（public/plateau のこの地域の区の、中身のある細かいタイルの範囲）にある駅だけ
+const builtBoxes = [];
+{
+  const wards = JSON.parse(await readFile(new URL('../public/plateau/wards.json', import.meta.url), 'utf8').catch(() => '[]'));
+  for (const ward of wards.filter((w) => SETTINGS.prefectures.some((p) => w.startsWith(p)))) {
+    const tileset = JSON.parse(await readFile(new URL(`../public/plateau/${ward}/tileset.json`, import.meta.url), 'utf8').catch(() => 'null'));
+    const walk = (node) => {
+      const r = node.boundingVolume?.region;
+      // 中身のあるタイルのうち、幅 0.03 度より細かいもの（区全体を覆う粗いタイルは使わない）
+      if (node.content && r && (r[2] - r[0]) / K <= 0.03) builtBoxes.push(r.slice(0, 4).map((v) => v / K));
+      for (const c of node.children ?? []) walk(c);
+    };
+    if (tileset) walk(tileset.root);
+  }
+}
+const built = (lat, lon) => builtBoxes.some(([w, s, e, n]) => lat >= s && lat <= n && lon >= w && lon <= e);
+const inArea = (i) =>
+  AREAS.some(([s, w, n, e]) => stations[i].lat >= s && stations[i].lat <= n && stations[i].lon >= w && stations[i].lon <= e) &&
+  built(stations[i].lat, stations[i].lon);
 const edgeKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 const drawn = new Set();
 const kept = [];
