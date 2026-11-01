@@ -8,7 +8,7 @@
 // - 出力：升の中心を結んだ格子の四角ごとに、海の部分の多角形（マーチングスクエア。海岸線が斜めにつながる）。
 //   全部が海の四角は横につないで、長くても STRIP 個で区切る（曲がりに沿わせる）。座標は模式図（km、0.01 単位）
 //
-// 出力の形式: { "p": [[x, y, x, y, ...], ...] }
+// 出力の形式: { "b": [左, 上, 右, 下]（路線図を動かせる範囲）, "p": [[x, y, x, y, ...], ...] }
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { decodePng } from './lib/dem.mjs';
 import { BOUNDS, regionPath, SETTINGS } from './lib/region.mjs';
@@ -174,9 +174,9 @@ const sea = new Uint8Array(cols * rows);
     front = next;
   }
 }
-// 海の中の小さな陸（地図の文字の跡・小さな人工島）は海にする：格子の端に触れない、HOLE km² より小さい陸のかたまり
+// 海の中の小さな陸（地図の海の名前の文字の跡・小さな島）は海にする：格子の端に触れない、HOLE km² より小さい陸のかたまり
 {
-  const HOLE = 1.5;
+  const HOLE = 6;
   const seen = new Uint8Array(cols * rows);
   const maxCells = (HOLE * 1e6) / (CELL * CELL);
   for (let start = 0; start < cols * rows; start++) {
@@ -272,7 +272,44 @@ const vertex = (r, c) => {
   if (!vert.has(k)) vert.set(k, toSchematic(N - (r + 0.5) * dLat, W + (c + 0.5) * dLon));
   return vert.get(k);
 };
-const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+// ---- 海岸線のデフォルメ：海を 0/1 の値にして SMOOTH m ぼかし、0.5 の所を海岸線にする（入り組んだ港・小さな岬が丸くなる） ----
+const SMOOTH = 900;
+const field = Float32Array.from(sea);
+{
+  const rad = Math.max(1, Math.round(SMOOTH / CELL / 2));
+  const tmp = new Float32Array(field.length);
+  // 箱型のぼかしを横・縦に 3 回ずつ（ガウスのぼかしに近い）。格子の外は端の値を延ばす
+  for (let pass = 0; pass < 3; pass++) {
+    for (let r = 0; r < rows; r++) {
+      let sum = 0;
+      const at = (c) => field[r * cols + Math.min(cols - 1, Math.max(0, c))];
+      for (let c = -rad; c <= rad; c++) sum += at(c);
+      for (let c = 0; c < cols; c++) {
+        tmp[r * cols + c] = sum / (2 * rad + 1);
+        sum += at(c + rad + 1) - at(c - rad);
+      }
+    }
+    for (let c = 0; c < cols; c++) {
+      let sum = 0;
+      const at = (r) => tmp[Math.min(rows - 1, Math.max(0, r)) * cols + c];
+      for (let r = -rad; r <= rad; r++) sum += at(r);
+      for (let r = 0; r < rows; r++) {
+        field[r * cols + c] = sum / (2 * rad + 1);
+        sum += at(r + rad + 1) - at(r - rad);
+      }
+    }
+  }
+}
+const valueAt = (r, c) => field[Math.min(rows - 1, Math.max(0, r)) * cols + Math.min(cols - 1, Math.max(0, c))];
+/** 角 a・b の間の、値が 0.5 になる所（線形に補間） */
+const cross = (a, b) => {
+  const va = valueAt(a[0], a[1]);
+  const vb = valueAt(b[0], b[1]);
+  const t = Math.min(1, Math.max(0, (0.5 - va) / (vb - va || 1e-6)));
+  const pa = vertex(a[0], a[1]);
+  const pb = vertex(b[0], b[1]);
+  return [pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t];
+};
 /** その点のまわり（広げた後の座標で 4×SIGMA km）に駅が無いか */
 const farFromStations = (r, c) => {
   const [ex, ey] = expand(N - (r + 0.5) * dLat, W + (c + 0.5) * dLon);
@@ -281,7 +318,7 @@ const farFromStations = (r, c) => {
   for (let i = bx - 2; i <= bx + 2; i++) for (let j = by - 2; j <= by + 2; j++) if (bins.has(`${i},${j}`)) return false;
   return true;
 };
-const isSea = (r, c) => (r < 0 || c < 0 || r >= rows || c >= cols ? 0 : sea[r * cols + c]);
+const isSea = (r, c) => (valueAt(r, c) >= 0.5 ? 1 : 0);
 
 // ---- マーチングスクエア：4つの升の中心を角とする四角ごとに、海の部分の多角形 ----
 const polys = [];
@@ -313,14 +350,24 @@ for (let r = 0; r < rows - 1; r++) {
         const a = corners[k];
         const b = corners[(k + 1) % 4];
         if (inside[k]) pts.push(vertex(a[0], a[1]));
-        if (inside[k] !== inside[(k + 1) % 4]) pts.push(mid(vertex(a[0], a[1]), vertex(b[0], b[1])));
+        if (inside[k] !== inside[(k + 1) % 4]) pts.push(cross(a, b));
       }
       if (pts.length >= 3) push(pts);
     }
     c++;
   }
 }
-await writeFile(OUT, JSON.stringify({ p: polys }));
+// 動かせる範囲：格子の外周をゆがめた形の、内側に収まる長方形 [左, 上, 右, 下]（ゆがんだ外周の角の外を見せない）
+const inner = [-Infinity, -Infinity, Infinity, Infinity];
+for (let c = 0; c < cols; c += 4) {
+  inner[1] = Math.max(inner[1], vertex(0, c)[1]);
+  inner[3] = Math.min(inner[3], vertex(rows - 1, c)[1]);
+}
+for (let r = 0; r < rows; r += 4) {
+  inner[0] = Math.max(inner[0], vertex(r, 0)[0]);
+  inner[2] = Math.min(inner[2], vertex(r, cols - 1)[0]);
+}
+await writeFile(OUT, JSON.stringify({ b: inner.map(round), p: polys }));
 console.log(
   `${cols}×${rows} cells, ${sea.reduce((a, b) => a + b, 0)} sea cells → ${polys.length} polygons → ${OUT.pathname}`,
 );

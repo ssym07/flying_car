@@ -68,6 +68,8 @@ export class RouteMap {
   private dirty = true;
   /** 海（模式図の座標の形。scripts/build-route-map-sea.mjs の public/route-map-sea.json） */
   private sea: Path2D | null = null;
+  /** 動かせる範囲（海と陸を描いている範囲の内側の長方形。模式図の座標 [左, 上, 右, 下]） */
+  private bounds: [number, number, number, number] | null = null;
   private opened = false;
 
   /**
@@ -110,17 +112,28 @@ export class RouteMap {
       .catch((e) => console.warn('[RouteMap] 読込に失敗しました', e));
     fetch(regionUrl('route-map-sea.json'))
       .then((res) =>
-        res.ok && res.headers.get('content-type')?.includes('json') ? (res.json() as Promise<{ p: number[][] }>) : null,
+        res.ok && res.headers.get('content-type')?.includes('json')
+          ? (res.json() as Promise<{ b?: [number, number, number, number]; p: number[][] }>)
+          : null,
       )
       .then((data) => {
         if (!data) return;
         const path = new Path2D();
+        const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
         for (const pts of data.p) {
+          for (let i = 0; i < pts.length; i += 2) {
+            b[0] = Math.min(b[0], pts[i]);
+            b[1] = Math.min(b[1], pts[i + 1]);
+            b[2] = Math.max(b[2], pts[i]);
+            b[3] = Math.max(b[3], pts[i + 1]);
+          }
           path.moveTo(pts[0], pts[1]);
           for (let i = 2; i < pts.length; i += 2) path.lineTo(pts[i], pts[i + 1]);
           path.closePath();
         }
         this.sea = path;
+        this.bounds = data.b ?? b;
+        this.clampView();
         this.dirty = true;
       })
       .catch((e) => console.warn('[RouteMap] 海の読込に失敗しました', e));
@@ -201,6 +214,7 @@ export class RouteMap {
       this.cx = h.x;
       this.cy = h.y;
     }
+    this.clampView();
     this.dirty = true;
   }
 
@@ -215,7 +229,18 @@ export class RouteMap {
     const after = this.toMap(sx, sy);
     this.cx += before.x - after.x;
     this.cy += before.y - after.y;
+    this.clampView();
     this.dirty = true;
+  }
+
+  /** 画面が地図を描いている範囲（bounds）の外へはみ出さないよう、中心を寄せる（範囲より画面が広ければ真ん中に） */
+  private clampView(): void {
+    if (!this.bounds) return;
+    const [x0, y0, x1, y1] = this.bounds;
+    const hw = this.canvas.clientWidth / 2 / this.scale;
+    const hh = this.canvas.clientHeight / 2 / this.scale;
+    this.cx = x1 - x0 > hw * 2 ? Math.min(x1 - hw, Math.max(x0 + hw, this.cx)) : (x0 + x1) / 2;
+    this.cy = y1 - y0 > hh * 2 ? Math.min(y1 - hh, Math.max(y0 + hh, this.cy)) : (y0 + y1) / 2;
   }
 
   private toScreen(x: number, y: number): [number, number] {
@@ -282,6 +307,7 @@ export class RouteMap {
         if (this.drag.moved) {
           this.cx = this.drag.cx - dx / this.scale;
           this.cy = this.drag.cy - dy / this.scale;
+          this.clampView();
           this.dirty = true;
         }
         return;
