@@ -158,4 +158,23 @@ export const WARDS: Ward[] = [
   { code: '28100', name: '神戸市', kind: 'lod1', url: '' },
   { code: '28204', name: '西宮市', kind: 'lod1', url: '' },
   { code: '28206', name: '芦屋市', kind: 'lod1', url: '' },
+  // 京都市：PLATEAU（市街地の範囲だけ取る。scripts/build-local-buildings.mjs --clip）
+  { code: '26101', name: '京都市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e7/2aaaf0-1ab3-40e8-af5b-db3310fb4f15/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26101_kita-ku_lod1/tileset.json' },
+  { code: '26102', name: '京都市上京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/7f/4d517a-10cc-4489-b1b2-5c754caa0561/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26102_kamigyo-ku_lod1/tileset.json' },
+  { code: '26103', name: '京都市左京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/95/ec9c15-9c08-4c97-b073-029636f84818/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26103_sakyo-ku_lod1/tileset.json' },
+  { code: '26104', name: '京都市中京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/65/c601e9-7ba9-42f2-8400-bd1ec5282421/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26104_nakagyo-ku_lod1/tileset.json' },
+  { code: '26105', name: '京都市東山区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/ce/6e26ee-9c98-4df7-bc06-4ea5049162c3/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26105_higashiyama-ku_lod1/tileset.json' },
+  { code: '26106', name: '京都市下京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/64/f8be59-d43b-47fe-a7f0-ce936ae5bc8e/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26106_shimogyo-ku_lod1/tileset.json' },
+  { code: '26107', name: '京都市南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/af/70c122-184c-46e7-8200-056f326851a9/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26107_minami-ku_lod1/tileset.json' },
+  { code: '26108', name: '京都市右京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/1c/369350-e66e-4526-bdb0-ff014a15460e/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26108_ukyo-ku_lod1/tileset.json' },
+  { code: '26109', name: '京都市伏見区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d2/d06236-cb09-4229-a086-469dac391966/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26109_fushimi-ku_lod1/tileset.json' },
+  { code: '26110', name: '京都市山科区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/ac/8c8272-b229-42b9-8091-fcace8039948/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26110_yamashina-ku_lod1/tileset.json' },
+  { code: '26111', name: '京都市西京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e4/bab58f-04c7-4673-a6c0-e36f58f5237f/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26111_nishikyo-ku_lod1/tileset.json' },
+  // 京都府の南：PLATEAU が無いので国土地理院の建物の形から作る（宇治市は市街地の範囲だけ）
+  { code: '26303', name: '大山崎町', kind: 'lod1', url: '' },
+  { code: '26208', name: '向日市', kind: 'lod1', url: '' },
+  { code: '26209', name: '長岡京市', kind: 'lod1', url: '' },
+  { code: '26210', name: '八幡市', kind: 'lod1', url: '' },
+  { code: '26322', name: '久御山町', kind: 'lod1', url: '' },
+  { code: '26204', name: '宇治市', kind: 'lod1', url: '' },
 ];

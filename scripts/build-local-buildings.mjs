@@ -8,6 +8,7 @@
 //   public/plateau は大きい（数百MB）ので git には入れない（.gitignore）。
 //   --restrip を付けると、保存済みのタイルにも取り除く処理をかけ直す（取り除く内容を変えた時用。ダウンロードはしない）
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { AREAS } from './lib/region.mjs';
 
 const OUT = new URL('../public/plateau/', import.meta.url);
 /** 同時ダウンロード数（回線を使い切らないよう少なめ） */
@@ -19,6 +20,9 @@ const wards = [...source.matchAll(/^ {2}\{ code: '(\d+)', name: '([^']+)', kind:
   ([, code, name, url]) => ({ code, name, url }),
 );
 const RESTRIP = process.argv.includes('--restrip');
+// --clip を付けると、地域のデータを取る範囲（scripts/lib/region.mjs の AREAS）にかからないタイルは取らない
+// （京都市の左京区・右京区・北区の山奥など、道路や線路を取っていない所に建物だけ並ばないように。REGION=osaka などで地域を選ぶ）
+const CLIP = process.argv.includes('--clip');
 const only = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const targets = only.length > 0 ? wards.filter((w) => only.includes(w.code)) : wards;
 
@@ -185,6 +189,18 @@ function stripContent(buf) {
   return buf;
 }
 
+/** 範囲（boundingVolume.region、ラジアン）が地域のデータを取る範囲にかからない子のタイルを外す */
+function clipToAreas(tileset) {
+  const D = 180 / Math.PI;
+  const hits = (r) => AREAS.some(([s, w, n, e]) => r[1] * D <= n && r[3] * D >= s && r[0] * D <= e && r[2] * D >= w);
+  const walk = (node) => {
+    if (!node.children) return;
+    node.children = node.children.filter((c) => !c.boundingVolume?.region || hits(c.boundingVolume.region));
+    for (const c of node.children) walk(c);
+  };
+  walk(tileset.root);
+}
+
 /** tileset.json の中のタイルの URI を全部集める */
 function contentUris(tileset) {
   const out = [];
@@ -202,6 +218,7 @@ for (const ward of targets) {
   const dir = new URL(`${ward.code}/`, OUT);
   const base = ward.url.slice(0, ward.url.lastIndexOf('/') + 1);
   const tileset = JSON.parse((await fetchRetry(ward.url)).toString('utf8'));
+  if (CLIP) clipToAreas(tileset);
   const uris = contentUris(tileset);
   let downloaded = 0;
   let savedBytes = 0;

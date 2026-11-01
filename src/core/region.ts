@@ -38,12 +38,12 @@ export const REGIONS: Record<Region['id'], Region> = {
   osaka: {
     id: 'osaka',
     name: '大阪',
-    subtitle: '大阪市と北摂・河内・阪神間・神戸',
+    subtitle: '大阪・京都・神戸と、そのあいだの街',
     // 大阪駅（うめきた側）
     origin: { latDeg: 34.7025, lonDeg: 135.4959, ellipsoidHeight: 41 },
     geoidHeight: 37.59,
     dataDir: 'osaka/',
-    prefectures: ['27', '28'],
+    prefectures: ['26', '27', '28'],
     searchExample: '梅田',
   },
 };
