@@ -17,13 +17,15 @@ const ROUTE_MAP = regionPath('public/route-map.json');
 const OUT = regionPath('public/route-map-sea.json');
 const CACHE = new URL('../data/cache/pale/', import.meta.url);
 const ZOOM = 11;
-/** 範囲の外へ広げる量（度）：路線図の端の向こうの海も塗る */
-const MARGIN = 0.12;
+/** 範囲の外へ広げる量（度）：路線図を引いて見た時の、端の向こうの海も塗る */
+const MARGIN = 0.7;
 /** 海の升の大きさ (m)、川を落とす幅 (m)、海とみなす広さ (km²)、帯の長さ（升） */
 const CELL = 125;
 const RIVER = 250;
 const MIN_SEA = 8;
 const STRIP = 10;
+/** 駅から遠い所（模式図のずれがほとんど無い所）は、全部が海の四角を長くつなぐ */
+const STRIP_FAR = 80;
 
 const K = Math.PI / 180;
 const n = 2 ** ZOOM;
@@ -271,6 +273,14 @@ const vertex = (r, c) => {
   return vert.get(k);
 };
 const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+/** その点のまわり（広げた後の座標で 4×SIGMA km）に駅が無いか */
+const farFromStations = (r, c) => {
+  const [ex, ey] = expand(N - (r + 0.5) * dLat, W + (c + 0.5) * dLon);
+  const bx = Math.floor(ex / BIN);
+  const by = Math.floor(ey / BIN);
+  for (let i = bx - 2; i <= bx + 2; i++) for (let j = by - 2; j <= by + 2; j++) if (bins.has(`${i},${j}`)) return false;
+  return true;
+};
 const isSea = (r, c) => (r < 0 || c < 0 || r >= rows || c >= cols ? 0 : sea[r * cols + c]);
 
 // ---- マーチングスクエア：4つの升の中心を角とする四角ごとに、海の部分の多角形 ----
@@ -284,7 +294,8 @@ for (let r = 0; r < rows - 1; r++) {
     if (full(c)) {
       // 全部が海の四角は横につなぐ
       const c0 = c;
-      while (c < cols - 1 && full(c) && c - c0 < STRIP) c++;
+      const far = farFromStations(r, c0);
+      while (c < cols - 1 && full(c) && c - c0 < (far ? STRIP_FAR : STRIP)) c++;
       push([vertex(r, c0), vertex(r, c), vertex(r + 1, c), vertex(r + 1, c0)]);
       continue;
     }

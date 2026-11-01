@@ -33,6 +33,8 @@ const LABEL_ALL = 22;
 /** 背景（焦げ茶）＝陸地と、海の水色 */
 const BG = '#2a211c';
 const SEA = '#7cc0e4';
+/** 路線のまわりの、必ず陸にする幅（片側、km） */
+const LAND_AROUND = 0.7;
 /** 普通の駅の丸を出し始める拡大率と、はっきり出す拡大率 */
 const DOTS_FROM = 20;
 const DOTS_FULL = 34;
@@ -379,6 +381,26 @@ export class RouteMap {
       g.lineWidth = 1 / this.scale;
       g.fill(this.sea);
       g.stroke(this.sea);
+      // 線路はいつも陸の上に：路線と駅のまわり（LAND_AROUND km）を陸の色で塗り直す（模式図のゆがみで海岸線と路線がずれても、
+      // 海の上を線路が走らないように。陸を少し広げる形で海岸線をデフォルメする）
+      g.strokeStyle = BG;
+      g.fillStyle = BG;
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.lineWidth = LAND_AROUND * 2;
+      g.beginPath();
+      for (const line of this.lines) {
+        if (line.ring) {
+          g.moveTo(line.ring[0] + line.ring[2], line.ring[1]);
+          g.arc(line.ring[0], line.ring[1], line.ring[2], 0, Math.PI * 2);
+          continue;
+        }
+        line.ids.forEach((id, k) => {
+          if (k === 0) g.moveTo(this.stops[id].x, this.stops[id].y);
+          else g.lineTo(this.stops[id].x, this.stops[id].y);
+        });
+      }
+      g.stroke();
       g.setTransform(ratio, 0, 0, ratio, 0, 0);
     }
 
