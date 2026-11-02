@@ -22,17 +22,23 @@ way["highway"~"^(trunk|primary|secondary)$"]["name"](${BBOX});
 out geom;`;
 
 async function fetchElements() {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 10; attempt++) {
     for (const endpoint of ENDPOINTS) {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'User-Agent': 'sky-drive-dev/0.1 (road label script)' },
-        body: new URLSearchParams({ data: query }),
-      });
-      if (res.ok) return (await res.json()).elements;
-      console.warn(`${endpoint} → ${res.status}`);
+      // つながらない取得先（通信の失敗・タイムアウト）は飛ばして次へ
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'User-Agent': 'sky-drive-dev/0.1 (road label script)' },
+          body: new URLSearchParams({ data: query }),
+          signal: AbortSignal.timeout(180000),
+        });
+        if (res.ok) return (await res.json()).elements;
+        console.warn(`${endpoint} → ${res.status}`);
+      } catch (e) {
+        console.warn(`${endpoint} → ${e.message}`);
+      }
     }
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 20000));
   }
   throw new Error('Overpass API から取得できませんでした');
 }
