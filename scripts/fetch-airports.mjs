@@ -222,7 +222,7 @@ for (const t of towers) {
   if (outTowers.some(([la, lo]) => meters([la / 1e6, lo / 1e6], c) < 30)) continue;
   outTowers.push([q(c[0]), q(c[1]), Math.round(parseFloat(t.tags.height ?? '') || 60)]);
 }
-for (const [la, lo, h] of EXTRA_TOWERS[REGION_ID]) outTowers.push([q(la), q(lo), h]);
+for (const [la, lo, h] of EXTRA_TOWERS[REGION_ID] ?? []) outTowers.push([q(la), q(lo), h]);
 
 // ---- 搭乗橋：ターミナルに近い方の端から並べる ----
 const outBridges = elements
