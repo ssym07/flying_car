@@ -49,7 +49,7 @@ export const REGIONS: Record<Region['id'], Region> = {
   fukuoka: {
     id: 'fukuoka',
     name: '福岡',
-    subtitle: '福岡市',
+    subtitle: '福岡市と春日・大野城・筑紫野・太宰府',
     // 博多駅
     origin: { latDeg: 33.5897, lonDeg: 130.4207, ellipsoidHeight: 38 },
     geoidHeight: 32.61,

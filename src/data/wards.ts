@@ -185,4 +185,9 @@ export const WARDS: Ward[] = [
   { code: '40135', name: '福岡市西区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/2a/710dae-225a-4d0b-b144-c0af9b121609/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40135_nishi-ku_lod1/tileset.json' },
   { code: '40136', name: '福岡市城南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/c2/716542-908e-46dc-958e-3670dc503372/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40136_jonan-ku_lod1/tileset.json' },
   { code: '40137', name: '福岡市早良区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d4/f3cdf5-d809-4f78-97c8-26d5b8874d2b/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40137_sawara-ku_lod1/tileset.json' },
+  // 春日・大野城・筑紫野・太宰府：PLATEAU が無いので国土地理院の建物の形から作る（範囲は scripts/lib/region.mjs）
+  { code: '40218', name: '春日市', kind: 'lod1', url: '' },
+  { code: '40219', name: '大野城市', kind: 'lod1', url: '' },
+  { code: '40217', name: '筑紫野市', kind: 'lod1', url: '' },
+  { code: '40221', name: '太宰府市', kind: 'lod1', url: '' },
 ];
