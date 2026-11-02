@@ -8,7 +8,7 @@
  */
 const ROOT = new URL('../../', import.meta.url);
 
-export const REGION_ID = process.env.REGION === 'osaka' ? 'osaka' : 'tokyo';
+export const REGION_ID = ['osaka', 'fukuoka'].includes(process.env.REGION) ? process.env.REGION : 'tokyo';
 
 /**
  * データを取る範囲：[南, 西, 北, 東] の長方形のならび。
@@ -49,6 +49,8 @@ const REGION_AREAS = {
     [34.98, 135.66, 35.08, 135.84],
     [34.86, 135.75, 34.98, 135.84],
   ],
+  // 福岡：福岡市の市街地（姪浜〜天神・博多〜香椎、大橋、福岡空港、百道浜）
+  fukuoka: [[33.52, 130.3, 33.67, 130.48]],
 };
 export const AREAS = REGION_AREAS[REGION_ID];
 
@@ -75,6 +77,15 @@ const REGION_SETTINGS = {
     hubs: ['大阪', '梅田', '難波', '天王寺', '京橋', '新大阪', '本町', '弁天町', '鶴橋', '十三', '江坂', '千里中央', '尼崎', '布施', '高槻', '茨木', '枚方市', '守口市', '八尾', '池田', '三ノ宮', '元町', '神戸', '西宮', '芦屋', '垂水', '京都', '烏丸', '京都河原町', '二条', '山科', '宇治', '長岡天神'],
     ringLine: /大阪環状線/,
     prefectures: ['26', '27', '28'],
+  },
+  fukuoka: {
+    center: [33.5897, 130.4207],
+    lat0: 33.59,
+    geoid: 32.61,
+    hubs: ['博多', '天神', '中洲川端', '薬院', '西新', '香椎', '姪浜', '大橋', '福岡空港', '千早'],
+    // 環状線は無い
+    ringLine: /^$/,
+    prefectures: ['40'],
   },
 };
 export const SETTINGS = REGION_SETTINGS[REGION_ID];

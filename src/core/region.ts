@@ -1,13 +1,13 @@
 /**
- * 遊ぶ地域（ワールド）。URL の ?region=osaka で選ぶ（無ければ東京）。
+ * 遊ぶ地域（ワールド）。URL の ?region=osaka・?region=fukuoka で選ぶ（無ければ東京）。
  * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
  *
  * 地域で作るデータ（道路・線路・地面の種類などのタイル、路線図・空路・駅の形）は、地域ごとに dataDir の下に置く
- * （東京は public の直下、大阪は public/osaka）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
+ * （東京は public の直下、大阪は public/osaka、福岡は public/fukuoka）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
  * 地域で分けておかないと、片方を作り直した時にもう片方が消える。建物（public/plateau）は区ごとなので共通
  */
 export interface Region {
-  id: 'tokyo' | 'osaka';
+  id: 'tokyo' | 'osaka' | 'fukuoka';
   name: string;
   /** タイトルの説明 */
   subtitle: string;
@@ -46,11 +46,22 @@ export const REGIONS: Record<Region['id'], Region> = {
     prefectures: ['26', '27', '28'],
     searchExample: '梅田',
   },
+  fukuoka: {
+    id: 'fukuoka',
+    name: '福岡',
+    subtitle: '福岡市',
+    // 博多駅
+    origin: { latDeg: 33.5897, lonDeg: 130.4207, ellipsoidHeight: 38 },
+    geoidHeight: 32.61,
+    dataDir: 'fukuoka/',
+    prefectures: ['40'],
+    searchExample: '天神',
+  },
 };
 
 function pick(): Region {
   const id = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('region');
-  return id === 'osaka' ? REGIONS.osaka : REGIONS.tokyo;
+  return id === 'osaka' || id === 'fukuoka' ? REGIONS[id] : REGIONS.tokyo;
 }
 
 export const REGION: Region = pick();

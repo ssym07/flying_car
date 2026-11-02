@@ -17,10 +17,11 @@ export interface RoadLabelEntry {
   b: number;
 }
 
-const osaka = REGION.id === 'osaka';
-export const STATIONS: StationEntry[] = (
-  osaka ? await import('./osaka/stations.json') : await import('./stations.json')
-).default;
-export const ROAD_LABELS: RoadLabelEntry[] = (
-  osaka ? await import('./osaka/roadLabels.json') : await import('./roadLabels.json')
-).default as RoadLabelEntry[];
+const loaders = {
+  tokyo: () => Promise.all([import('./stations.json'), import('./roadLabels.json')]),
+  osaka: () => Promise.all([import('./osaka/stations.json'), import('./osaka/roadLabels.json')]),
+  fukuoka: () => Promise.all([import('./fukuoka/stations.json'), import('./fukuoka/roadLabels.json')]),
+};
+const [stationsModule, roadLabelsModule] = await loaders[REGION.id]();
+export const STATIONS: StationEntry[] = stationsModule.default;
+export const ROAD_LABELS: RoadLabelEntry[] = roadLabelsModule.default as RoadLabelEntry[];

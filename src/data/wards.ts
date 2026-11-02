@@ -177,4 +177,12 @@ export const WARDS: Ward[] = [
   { code: '26210', name: '八幡市', kind: 'lod1', url: '' },
   { code: '26322', name: '久御山町', kind: 'lod1', url: '' },
   { code: '26204', name: '宇治市', kind: 'lod1', url: '' },
+  // 福岡市（福岡のワールド。市街地の範囲だけ取る：scripts/build-local-buildings.mjs --clip）
+  { code: '40131', name: '福岡市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d2/833c4a-acbd-476c-8fe7-c0cde4d9d579/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40131_higashi-ku_lod1/tileset.json' },
+  { code: '40132', name: '福岡市博多区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/19/b41be6-0ae1-4e9a-90b6-fe059b4d1ade/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40132_hakata-ku_lod1/tileset.json' },
+  { code: '40133', name: '福岡市中央区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/39/0650bd-2980-4f07-8a33-ec9908ba8f80/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40133_chuo-ku_lod1/tileset.json' },
+  { code: '40134', name: '福岡市南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/c4/b21110-51c3-4e3b-9e72-7bdbfdd45a41/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40134_minami-ku_lod1/tileset.json' },
+  { code: '40135', name: '福岡市西区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/2a/710dae-225a-4d0b-b144-c0af9b121609/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40135_nishi-ku_lod1/tileset.json' },
+  { code: '40136', name: '福岡市城南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/c2/716542-908e-46dc-958e-3670dc503372/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40136_jonan-ku_lod1/tileset.json' },
+  { code: '40137', name: '福岡市早良区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d4/f3cdf5-d809-4f78-97c8-26d5b8874d2b/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40137_sawara-ku_lod1/tileset.json' },
 ];
