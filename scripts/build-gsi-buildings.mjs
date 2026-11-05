@@ -59,12 +59,21 @@ async function boundary() {
   const file = new URL(`boundary-${CODE}.json`, CACHE);
   let geo = await readFile(file, 'utf8').then(JSON.parse, () => null);
   if (!geo) {
-    const q = encodeURIComponent(`${NAME},${PREF ?? ''}`);
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&polygon_geojson=1&limit=5`, {
-      headers: { 'User-Agent': 'sky-drive-dev/0.1 (gsi building script)' },
-    });
-    const list = await res.json();
-    const hit = list.find((r) => r.class === 'boundary' && /Polygon/.test(r.geojson?.type));
+    // 自由文で引けない市（太宰府市など）があるので、だめなら市・県を分けて引き直す
+    const queries = [
+      `q=${encodeURIComponent(`${NAME},${PREF ?? ''}`)}`,
+      `city=${encodeURIComponent(NAME)}${PREF ? `&state=${encodeURIComponent(PREF)}` : ''}&country=jp`,
+    ];
+    let hit;
+    for (const q of queries) {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?${q}&format=json&polygon_geojson=1&limit=5`, {
+        headers: { 'User-Agent': 'sky-drive-dev/0.1 (gsi building script)' },
+      });
+      const list = await res.json();
+      hit = list.find((r) => r.class === 'boundary' && /Polygon/.test(r.geojson?.type));
+      if (hit) break;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
     if (!hit) throw new Error(`${NAME} の境界が見つかりません`);
     geo = hit.geojson;
     await mkdir(CACHE, { recursive: true });
