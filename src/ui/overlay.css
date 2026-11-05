@@ -47,7 +47,88 @@ body {
 }
 
 .screen.title {
-  background: linear-gradient(180deg, #0b1a33 0%, #24507f 60%, #9cc8ee 100%);
+  background: radial-gradient(ellipse at 50% 40%, #111a29 0%, #06080d 75%);
+}
+
+/* 背景の点の日本列島。文字やボタンは、列島の空いている左上（日本海）と右下（太平洋）に重ねる */
+.screen.title .title-panel {
+  position: absolute;
+  top: 8vh;
+  left: 6vw;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  text-align: left;
+}
+
+.screen.title .title-panel .regions {
+  justify-content: flex-start;
+}
+
+.screen.title .start-hint {
+  position: absolute;
+  right: 6vw;
+  bottom: 6vh;
+  z-index: 1;
+}
+
+.japan-map {
+  position: absolute;
+  inset: 4vh 4vw;
+  width: calc(100% - 8vw);
+  height: calc(100% - 8vh);
+}
+
+.japan-map .dots {
+  fill: rgba(255, 255, 255, 0.2);
+}
+
+.japan-map .pin {
+  cursor: pointer;
+}
+
+.japan-map .pin .dot {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 0.25;
+}
+
+.japan-map .pin .pulse {
+  fill: var(--accent);
+  opacity: 0.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pin-pulse 2s ease-out infinite;
+}
+
+.japan-map .pin text {
+  font-size: 2.2px;
+  font-weight: 700;
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: #06080d;
+  stroke-width: 0.5px;
+}
+
+.japan-map .pin.current .dot {
+  fill: #fff;
+}
+
+.japan-map .pin:hover text {
+  fill: var(--accent);
+}
+
+@keyframes pin-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(3);
+    opacity: 0;
+  }
 }
 
 .screen h1 {
@@ -505,4 +586,26 @@ body {
   margin-right: 5px;
   vertical-align: middle;
   border-radius: 2px;
+}
+
+/* 狭い画面：地域ボタンを1行に並べ、列島はその下に描く */
+@media (max-width: 600px) {
+  .screen.title .title-panel {
+    left: 16px;
+    right: 16px;
+  }
+
+  .screen.title .title-panel .regions {
+    gap: 8px;
+  }
+
+  .screen.title button.region {
+    min-width: 0;
+    padding: 12px 20px;
+  }
+
+  .japan-map {
+    top: 34vh;
+    height: calc(100% - 34vh - 8vh);
+  }
 }
