@@ -76,20 +76,34 @@ const tunnelEnds = new Set(
     (p) => `${Math.round(p[0] * 1e6)},${Math.round(p[1] * 1e6)}`,
   ),
 );
-const ways = raw.map(([link, bridge, cutting, layer, lanes, name, pts]) => ({
+/** 道の点の間を DENSIFY m ごとに区切る（隣の道の判定・分岐の付け根の高さを、点の粗さに左右されないように） */
+const DENSIFY = 10;
+const densify = (pts) => {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const n = Math.max(1, Math.round(meters(pts[i - 1], pts[i]) / DENSIFY));
+    for (let k = 1; k < n; k++) {
+      const t = k / n;
+      out.push([pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t]);
+    }
+    out.push(pts[i]);
+  }
+  return out;
+};
+const ways = raw.map(([link, bridge, cutting, layer, lanes, name, rawPts]) => ({
   link,
   bridge,
   // トンネルの入口につながる地上の道は掘割にする（地形を削って入口へ下りる）
   cut:
     cutting === 1 ||
     (layer < 0 && !bridge) ||
-    (!bridge && [pts[0], pts[pts.length - 1]].some((p) => tunnelEnds.has(key(p)))),
+    (!bridge && [rawPts[0], rawPts[rawPts.length - 1]].some((p) => tunnelEnds.has(key(p)))),
   layer,
   lanes,
   name,
-  pts,
-  keys: pts.map(key),
+  pts: densify(rawPts),
 }));
+for (const w of ways) w.keys = w.pts.map(key);
 const nodes = new Map();
 for (const w of ways) {
   w.pts.forEach((p, i) => {
@@ -286,10 +300,19 @@ const SHOULDER = 1.0;
 /** 同じ向きの道は、路面の縁どうしがこれより近ければつなぐ (m)。逆向きはこれより近ければ間に分離帯 */
 const JOIN_GAP = 1.5;
 const MEDIAN_GAP = 8;
-/** 隣とみなす高さの差 (m)：つなぐ所・分離帯。付け根をそろえる前は、坂を上り始めた分岐も拾うよう広めに */
+/** 隣とみなす高さの差 (m)：つなぐ所・分離帯 */
 const SAME_LEVEL = 0.3;
 const MEDIAN_LEVEL = 1.0;
-const LEVEL_SEARCH = 4;
+/**
+ * 付け根をそろえる時に拾う高さの差 (m) と回数。差の小さい所からそろえ、坂を広げてから次の点を拾う、を繰り返して
+ * 付け根から少しずつ伸ばす（一度に大きな差を拾うと、2層の高架の別の層にそろえてしまう）
+ */
+const LEVEL_SEARCH = 1.5;
+const LEVEL_ROUNDS = 6;
+/** 左右の隣の判定の、短い途切れ・短い区間をならす長さ (m)、すき間をならす範囲（前後 m） */
+const FILL_SHORT = 30;
+const DROP_SHORT = 10;
+const SMOOTH_GAP = 15;
 /** 付け根をそろえた後の坂の上限（足りない所は少し急にする） */
 const GRADE_MAX = 0.08;
 const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
@@ -372,8 +395,9 @@ function neighbors(joinLevel, medianLevel) {
 }
 
 // 分岐・合流の付け根：同じ向きの道と路面が重なる・くっつく間は、順位の高い道の高さにそろえる（坂は離れてから）
-{
-  const fixed = new Map();
+const fixed = new Map();
+for (let round = 0; round < LEVEL_ROUNDS; round++) {
+  const before = fixed.size;
   const found = neighbors(LEVEL_SEARCH, 0);
   ways.forEach((w, wi) => {
     found[wi].forEach((best, i) => {
@@ -439,19 +463,69 @@ function neighbors(joinLevel, medianLevel) {
   };
   const upper = spread(1);
   const lower = spread(-1);
+  // 本線（連絡路でない道）の点は動かさない（低い連絡路にそろえた点から坂が広がって、本線の高架まで下がらないように）
+  const onMain = new Set();
+  for (const w of ways) if (!w.link) for (const k of w.keys) onMain.add(k);
   for (const [k, n] of nodes) {
-    if (fixed.has(k)) continue;
+    if (fixed.has(k) || onMain.has(k)) continue;
     if (upper.has(k)) n.offset = Math.min(n.offset, upper.get(k));
     if (lower.has(k)) n.offset = Math.max(n.offset, lower.get(k));
     // 地上に固定した点からの坂（行き止まりの出入口）は、そろえた高さより優先
     if (ceil.has(k)) n.offset = Math.min(n.offset, ceil.get(k) * (GRADE_MAX / GRADE));
   }
-  console.log(`levelled ${fixed.size} points where lanes in the same direction overlap`);
+  if (fixed.size === before) break;
 }
+console.log(`levelled ${fixed.size} points where lanes in the same direction overlap`);
 
 // 描く時の左右の隣（高さをそろえた後）。join の値に「譲る（重なる所で自分の路面を切る）」を足す
 {
   const found = neighbors(SAME_LEVEL, MEDIAN_LEVEL);
+  // 道に沿ってならす：隣のある区間の間の短い途切れは埋め、短すぎる区間は外す。すき間は前後でならす
+  ways.forEach((w, wi) => {
+    const along = [0];
+    for (let i = 1; i < w.xy.length; i++) along.push(along[i - 1] + Math.hypot(w.xy[i][0] - w.xy[i - 1][0], w.xy[i][1] - w.xy[i - 1][1]));
+    for (const side of [1, -1]) {
+      const list = found[wi].map((b) => b[side]);
+      const kindOf = (n) => (n ? n.kind : 0);
+      // 区間（同じ種類の続き）に分ける
+      const runs = [];
+      for (let i = 0; i < list.length; i++) {
+        const k = kindOf(list[i]);
+        if (runs.length && runs[runs.length - 1].k === k) runs[runs.length - 1].end = i;
+        else runs.push({ k, start: i, end: i });
+      }
+      const len = (r) => along[r.end] - along[r.start];
+      // 両側が同じ種類の隣で挟まれた短い途切れ（隣無し）は、その種類で埋める
+      for (let r = 1; r < runs.length - 1; r++) {
+        const run = runs[r];
+        if (run.k !== 0 || runs[r - 1].k !== runs[r + 1].k || len(run) > FILL_SHORT) continue;
+        const a = list[runs[r - 1].end];
+        const b = list[runs[r + 1].start];
+        for (let i = run.start; i <= run.end; i++) {
+          const t = (along[i] - along[run.start - 1]) / (along[run.end + 1] - along[run.start - 1] || 1);
+          list[i] = { ...a, gap: a.gap + (b.gap - a.gap) * t };
+        }
+      }
+      // 短すぎる隣の区間は外す（道の端の点だけ拾った、などのちらつき）
+      for (const run of runs) {
+        if (run.k === 0 || len(run) >= DROP_SHORT) continue;
+        const touchesEnd = run.start === 0 || run.end === list.length - 1;
+        if (touchesEnd && run.end > run.start) continue;
+        for (let i = run.start; i <= run.end; i++) if (kindOf(list[i]) === run.k) list[i] = null;
+      }
+      // すき間をならす（同じ種類が続く所だけ）
+      const gaps = list.map((n) => n?.gap);
+      for (let i = 0; i < list.length; i++) {
+        if (!list[i]) continue;
+        let sum = 0;
+        let cnt = 0;
+        for (let j = i; j >= 0 && along[i] - along[j] <= SMOOTH_GAP && kindOf(list[j]) === list[i].kind; j--) (sum += gaps[j]), cnt++;
+        for (let j = i + 1; j < list.length && along[j] - along[i] <= SMOOTH_GAP && kindOf(list[j]) === list[i].kind; j++) (sum += gaps[j]), cnt++;
+        list[i] = { ...list[i], gap: sum / cnt };
+      }
+      list.forEach((n, i) => (found[wi][i] = { ...found[wi][i], [side]: n }));
+    }
+  });
   let joined = 0;
   let medians = 0;
   ways.forEach((w, wi) => {

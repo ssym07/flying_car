@@ -69,12 +69,14 @@ const tunnelElements = [];
 for (const [index, area] of (process.argv[2] ? [[SOUTH, WEST, NORTH, EAST]] : AREAS).entries()) {
   const bbox = area.join(',');
   const name = index === 0 && !process.argv[2] ? 'expressway-tunnels.json' : `expressway-tunnels-${bbox}.json`;
-  const tunnelCache = new URL(`../data/cache/${name}`, import.meta.url);
+  // 地域ごとの置き場（以前は全地域で data/cache/ を共有していて、東京以外が東京のトンネルを読んでいた）
+  const tunnelCache = regionPath(`data/cache/${name}`);
   let elements = await readFile(tunnelCache, 'utf8').then(JSON.parse, () => null);
   if (!elements) {
     elements = await overpass(`[out:json][timeout:250];
       way["highway"~"^(motorway|motorway_link)$"]["tunnel"~"^(yes|building_passage|covered)$"](${bbox});
       out geom qt;`);
+    await mkdir(new URL('./', tunnelCache), { recursive: true });
     await writeFile(tunnelCache, JSON.stringify(elements));
   }
   tunnelElements.push(...elements);
