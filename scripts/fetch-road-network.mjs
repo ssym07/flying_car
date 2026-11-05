@@ -55,6 +55,8 @@ async function overpass(query, offset = 0) {
           method: 'POST',
           headers: { 'User-Agent': 'sky-drive-dev/0.1 (road network script)' },
           body: new URLSearchParams({ data: query }),
+          // 返事が来ないまま止まることがあるので4分で打ち切って次の取得先へ
+          signal: AbortSignal.timeout(240000),
         });
         if (res.ok) return (await res.json()).elements;
         console.warn(`${endpoint} → ${res.status}`);
