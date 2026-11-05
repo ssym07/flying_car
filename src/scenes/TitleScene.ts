@@ -14,7 +14,7 @@ export class TitleScene implements GameScene {
       .map(
         (r) => `
         <button type="button" class="region${r.id === REGION.id ? ' current' : ''}" data-region="${r.id}">
-          <span class="name">${r.name}</span><span class="desc">${r.subtitle}</span>
+          <span class="name">${r.name}</span>
         </button>`,
       )
       .join('');
@@ -23,6 +23,7 @@ export class TitleScene implements GameScene {
       'title',
       `
       <h1>SKY DRIVE</h1>
+      <div class="sub">空飛ぶ車で街の上空へ。行き先を選んでください</div>
       <div class="regions">${buttons}</div>
       <div class="sub">Enter / Space で ${REGION.name} へ</div>
       `,

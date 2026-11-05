@@ -9,8 +9,6 @@
 export interface Region {
   id: 'tokyo' | 'osaka' | 'fukuoka';
   name: string;
-  /** タイトルの説明 */
-  subtitle: string;
   /** 飛行開始地点。ここがローカル原点になる */
   origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
   /** 開始地点まわりのジオイド高 (m)。標高 = 楕円体高 - ジオイド高 */
@@ -27,7 +25,6 @@ export const REGIONS: Record<Region['id'], Region> = {
   tokyo: {
     id: 'tokyo',
     name: '東京',
-    subtitle: '東京・横浜・川崎・埼玉・千葉',
     // 東京駅 丸の内側
     origin: { latDeg: 35.6812, lonDeg: 139.7671, ellipsoidHeight: 40 },
     geoidHeight: 36.76,
@@ -38,7 +35,6 @@ export const REGIONS: Record<Region['id'], Region> = {
   osaka: {
     id: 'osaka',
     name: '大阪',
-    subtitle: '大阪・京都・神戸と、そのあいだの街',
     // 大阪駅（うめきた側）
     origin: { latDeg: 34.7025, lonDeg: 135.4959, ellipsoidHeight: 41 },
     geoidHeight: 37.59,
@@ -49,7 +45,6 @@ export const REGIONS: Record<Region['id'], Region> = {
   fukuoka: {
     id: 'fukuoka',
     name: '福岡',
-    subtitle: '福岡市と春日・大野城・筑紫野・太宰府',
     // 博多駅
     origin: { latDeg: 33.5897, lonDeg: 130.4207, ellipsoidHeight: 38 },
     geoidHeight: 32.61,
