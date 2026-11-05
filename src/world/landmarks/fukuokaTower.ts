@@ -43,7 +43,7 @@ function corners(cx: number, grow = 0): Array<[number, number]> {
 const topOf = (k: number) => (k === 0 ? TOP_SOUTH : TOP_NORTH);
 
 /** 2点を結ぶ角材 */
-function beam(out: THREE.BufferGeometry[], a: THREE.Vector3, b: THREE.Vector3, w: number): void {
+export function beam(out: THREE.BufferGeometry[], a: THREE.Vector3, b: THREE.Vector3, w: number): void {
   const len = a.distanceTo(b);
   if (len < 1e-3) return;
   const g = new THREE.BoxGeometry(w, w, len);

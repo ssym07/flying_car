@@ -121,6 +121,12 @@ import { type CastleParts, buildCinderellaCastle } from './cinderellaCastle';
 import { type SompoParts, buildSompoJapan, createSompoCoreMaterial, createSompoFinMaterial } from './sompoJapan';
 import { type CocoonParts, buildCocoonTower, createCocoonGlassMaterial } from './cocoonTower';
 import { type FukuokaTowerParts, buildFukuokaTower, createFukuokaTowerGlassMaterial } from './fukuokaTower';
+import {
+  type PortTowerParts,
+  buildHakataPortTower,
+  createPortTowerCoreMaterial,
+  createPortTowerWindowMaterial,
+} from './hakataPortTower';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -559,6 +565,26 @@ const LANDMARKS: Landmark[] = [
     },
   },
   {
+    // 博多ポートタワー（PLATEAU に塔は無い。足元の低い建物の箱はそのままで、脚がまたぐ）。建物の座標は x・z = 塔の辺の向き
+    gmlId: '',
+    ...around(33.6043, 130.39776, 0),
+    front: -1,
+    build: (length) => {
+      portTowerShared ??= {
+        steel: new THREE.MeshStandardMaterial({ color: 0xc9261d, roughness: 0.5, metalness: 0.2 }),
+        core: createPortTowerCoreMaterial(),
+        white: new THREE.MeshStandardMaterial({ color: 0xeeefed, roughness: 0.55, side: THREE.DoubleSide }),
+        window: createPortTowerWindowMaterial(),
+      };
+      const parts = buildHakataPortTower(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof PortTowerParts>) {
+        group.add(new THREE.Mesh(parts[key], portTowerShared[key]));
+      }
+      return group;
+    },
+  },
+  {
     // 福岡タワー（PLATEAU には塔が無く、足元の低い建物の箱だけがあるので、それを消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_478d8445-d980-4744-a2ca-3dbb47074129',
     ...around(33.59328, 130.35152, 0),
@@ -938,6 +964,7 @@ let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
 let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let fukuokaTowerShared: Record<keyof FukuokaTowerParts, THREE.Material> | null = null;
+let portTowerShared: Record<keyof PortTowerParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
 
 let metroGovShared: Record<keyof MetroGovParts, THREE.Material> | null = null;
