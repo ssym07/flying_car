@@ -267,6 +267,18 @@ const rings = [];
     move[i][1] += dy * w;
     move[i][2] += w;
   };
+  // 並びを保つ駅の組：実際の距離が近い（1.5 km 以内）、隣どうしでない駅。[i, j, i への向き x, y]
+  const sides = [];
+  if (SETTINGS.keepSides) {
+    for (let i = 0; i < geo.length; i++) {
+      for (let j = i + 1; j < geo.length; j++) {
+        const dx = geo[i][0] - geo[j][0];
+        const dy = geo[i][1] - geo[j][1];
+        const d = Math.hypot(dx, dy);
+        if (d < 1.5 && !edges.has(`${i}-${j}`)) sides.push([i, j, dx / d, dy / d]);
+      }
+    }
+  }
   const ITER = 2500;
   for (let it = 0; it < ITER; it++) {
     for (const m of move) m.fill(0);
@@ -300,6 +312,16 @@ const rings = [];
     }
     // 元の場所へ弱く
     pos.forEach((p, i) => add(i, geo[i][0] - p[0], geo[i][1] - p[1], 0.03));
+    // 近くを並んで走る別の路線の駅どうしは、実際と同じ向きの並びを保つ（福岡の JR と西鉄が雑餉隈のあたりで入れ替わるのを残す）
+    for (const [i, j, ux, uy] of sides) {
+      const dx = pos[i][0] - pos[j][0];
+      const dy = pos[i][1] - pos[j][1];
+      const L = Math.max(Math.hypot(dx, dy), MIN_GAP);
+      const ex = (ux * L - dx) / 2;
+      const ey = (uy * L - dy) / 2;
+      add(i, ex, ey, 2);
+      add(j, -ex, -ey, 2);
+    }
     // 近すぎる駅を押し離す
     const grid = new Map();
     pos.forEach(([x, y], i) => {

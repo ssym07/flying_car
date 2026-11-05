@@ -91,6 +91,7 @@ const REGION_SETTINGS = {
     // 環状線は無い
     ringLine: /^$/,
     cutLoops: true,
+    keepSides: true,
     prefectures: ['40'],
   },
 };
