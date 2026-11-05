@@ -6,11 +6,12 @@ import type { ChunkListener, Terrain } from './Terrain';
 
 /**
  * 高速道路データ1タイル（scripts/build-expressways.mjs の出力）。
- * w：[連絡路(0/1), 車線数, 掘割(0/1), 名前, 座標（1e-6度、先頭以外は差分）, 各点の地面からの高さ（0.1m）]
+ * w：[連絡路(0/1), 車線数, 掘割(0/1), 名前, 座標（1e-6度、先頭以外は差分）, 各点の地面からの高さ（0.1m）, 各点の左・右の隣]
+ *    隣：0 = 無し、正 = 同じ向きの道（1 + 路面の縁どうしのすき間 0.1m）、負 = 逆向きの道（-(1 + すき間 0.1m)）
  * x：[緯度, 経度（1e-6度）, 半径(m)] 一般道・線路と交わる所（橋脚を立てない）
  */
 interface ExpresswayTile {
-  w: Array<[0 | 1, number, 0 | 1, string, number[], number[]]>;
+  w: Array<[0 | 1, number, 0 | 1, string, number[], number[], number[]?, number[]?]>;
   x: Array<[number, number, number]>;
 }
 
@@ -20,7 +21,8 @@ const TEXTURE_LENGTH_M = 12;
 /**
  * 高速道路（首都高・湾岸線・外環道など）。写真を参考に、白い高架・壁高欄・路面標示・街灯で作る。
  * - 路面：濃いアスファルトに白い外側線と破線の車線境界（車線数ごとの画像）
- * - 壁高欄：両側の白いコンクリートの低い壁と、上の手すり
+ * - 壁高欄：外側の白いコンクリートの低い壁と、上の手すり。同じ向きの道が隣に並ぶ側（合流・分岐）は壁を付けずに
+ *   路面をつなぎ、逆向きの道（上下線）が並ぶ側は、間に分離帯の壁を置く
  * - 高架：白い桁の側面、少し暗い裏側、白い丸柱＋T字の梁の橋脚
  * - カーブの外側：白いしましま（減速を促す路面標示）
  * - 街灯、路面の路線名
@@ -104,12 +106,14 @@ export class ExpresswayNetwork implements ChunkListener {
     const cuts: THREE.Vector3[][] = [];
     const noPier = data.x.map(([lat, lon, r]) => [lat / 1e6, lon / 1e6, r] as const);
 
-    for (const [link, lanes, cut, name, coords, offsets] of data.w) {
+    for (const [link, lanes, cut, name, coords, offsets, left, right] of data.w) {
       if (!decks.has(lanes)) decks.set(lanes, new MeshBuilder());
       const line = this.buildWay(
         { link: link === 1, lanes, cut: cut === 1, name },
         decode(coords),
         offsets,
+        left ?? [],
+        right ?? [],
         noPier,
         decks.get(lanes)!,
         parts,
@@ -148,6 +152,8 @@ export class ExpresswayNetwork implements ChunkListener {
     way: { link: boolean; lanes: number; cut: boolean; name: string },
     points: Array<[number, number]>,
     offsets: number[],
+    leftCodes: number[],
+    rightCodes: number[],
     noPier: ReadonlyArray<readonly [number, number, number]>,
     deck: MeshBuilder,
     parts: { wall: MeshBuilder; bottom: MeshBuilder; railing: MeshBuilder; zebra: MeshBuilder },
@@ -160,6 +166,14 @@ export class ExpresswayNetwork implements ChunkListener {
     const samples: Array<[number, number]> = [];
     const s: number[] = [];
     const lift: number[] = [];
+    /** 細かく区切った点の左右の隣（区間の両端が同じ種類の時だけその種類、すき間は両端の間をつなぐ） */
+    const sideOf: Array<{ 1: SideKind; [-1]: SideKind }> = [];
+    const kindAt = (codes: number[], i: number): SideKind => {
+      const c = codes[i] ?? 0;
+      return c === 0 ? { kind: 'wall', gap: 0 } : { kind: c > 0 ? 'join' : 'median', gap: (Math.abs(c) - 1) / 10 };
+    };
+    const blend = (a: SideKind, b: SideKind, t: number): SideKind =>
+      a.kind === b.kind ? { kind: a.kind, gap: a.gap + (b.gap - a.gap) * t } : { kind: 'wall', gap: 0 };
     for (let i = 0; i < points.length; i++) {
       const [lat, lon] = points[i];
       const off = offsets[i] / 10;
@@ -167,6 +181,7 @@ export class ExpresswayNetwork implements ChunkListener {
         samples.push([lat, lon]);
         s.push(0);
         lift.push(off);
+        sideOf.push({ 1: kindAt(leftCodes, 0), [-1]: kindAt(rightCodes, 0) });
         continue;
       }
       const [plat, plon] = points[i - 1];
@@ -178,6 +193,11 @@ export class ExpresswayNetwork implements ChunkListener {
         samples.push([plat + (lat - plat) * t, plon + (lon - plon) * t]);
         s.push(s[s.length - 1] + length / steps);
         lift.push(poff + (off - poff) * t);
+        const end = k === steps;
+        sideOf.push({
+          1: end ? kindAt(leftCodes, i) : blend(kindAt(leftCodes, i - 1), kindAt(leftCodes, i), t),
+          [-1]: end ? kindAt(rightCodes, i) : blend(kindAt(rightCodes, i - 1), kindAt(rightCodes, i), t),
+        });
       }
     }
     if (samples.length < 2) return null;
@@ -227,26 +247,64 @@ export class ExpresswayNetwork implements ChunkListener {
       }
     };
 
-    // 路面（左端 u=0 → 右端 u=1、v は進行方向）
-    strip(deck, (i) => at(i, half, 0), (i) => at(i, -half, 0), undefined, 1, TEXTURE_LENGTH_M);
-
-    // 壁高欄：両側の白い壁（内側・上面・外側）と、上の手すり
-    const wallIn = half;
-    const wallOut = half + E.barrierThickness;
-    const h = E.barrierHeight;
-    for (const dir of [1, -1]) {
-      strip(parts.wall, (i) => at(i, dir * wallIn, 0), (i) => at(i, dir * wallIn, h));
-      strip(parts.wall, (i) => at(i, dir * wallIn, h), (i) => at(i, dir * wallOut, h));
-      strip(parts.wall, (i) => at(i, dir * wallOut, h), (i) => at(i, dir * wallOut, elevated[i] ? -E.girderDepth : -0.3));
-      const r = dir * (wallIn + E.barrierThickness / 2);
-      strip(parts.railing, (i) => at(i, r - 0.06, h + E.railHeight), (i) => at(i, r + 0.06, h + E.railHeight));
-      strip(parts.railing, (i) => at(i, r, h + E.railHeight), (i) => at(i, r, h + E.railHeight - 0.12));
+    // 路面（左端 u=0 → 右端 u=1、v は進行方向）。同じ向きの道とつながる側は、外側線が見えないよう u を少し内へずらす
+    const width = way.lanes * E.laneWidth + E.shoulder * 2;
+    const uEdge = (E.shoulder + 0.2) / width;
+    const joins = (i: number, dir: 1 | -1) => sideOf[i][dir].kind === 'join';
+    {
+      let prev: [number, number] | null = null;
+      for (let i = 0; i < pts.length; i++) {
+        const va = deck.vertex(at(i, half, 0), joins(i, 1) ? uEdge : 0, s[i] / TEXTURE_LENGTH_M);
+        const vb = deck.vertex(at(i, -half, 0), joins(i, -1) ? 1 - uEdge : 1, s[i] / TEXTURE_LENGTH_M);
+        if (prev) deck.quad(prev[0], prev[1], va, vb);
+        prev = [va, vb];
+      }
     }
-    // 桁の裏側（高架の所だけ）
+    // つながる側のすき間：隣の路面の縁まで、外側線の外の無地のアスファルト（u = 0）で埋める（少し重ねる）
+    for (const dir of [1, -1] as const) {
+      strip(
+        deck,
+        (i) => at(i, dir * half, -0.02),
+        (i) => at(i, dir * (half + sideOf[i][dir].gap / 2 + 0.3), -0.02),
+        (i) => joins(i, dir),
+        0,
+        TEXTURE_LENGTH_M,
+      );
+    }
+
+    // 壁高欄：外側の白い壁（内側・上面・外側）と、上の手すり。上下線の間は、すき間の真ん中まで寄せた分離帯の壁
+    const h = E.barrierHeight;
+    const wallInAt = (i: number, dir: 1 | -1) =>
+      sideOf[i][dir].kind === 'median' ? half + Math.max(0, sideOf[i][dir].gap / 2 - E.barrierThickness) : half;
+    const edgeAt = (i: number, dir: 1 | -1) =>
+      joins(i, dir) ? half + sideOf[i][dir].gap / 2 + 0.3 : wallInAt(i, dir) + E.barrierThickness;
+    for (const dir of [1, -1] as const) {
+      const walled = (i: number) => !joins(i, dir);
+      const outer = (i: number) => sideOf[i][dir].kind === 'wall';
+      const wi = (i: number) => dir * wallInAt(i, dir);
+      const wo = (i: number) => dir * (wallInAt(i, dir) + E.barrierThickness);
+      // 分離帯の側：壁の手前まで路面を広げる
+      strip(
+        deck,
+        (i) => at(i, dir * half, -0.02),
+        (i) => at(i, wi(i), -0.02),
+        (i) => sideOf[i][dir].kind === 'median',
+        0,
+        TEXTURE_LENGTH_M,
+      );
+      strip(parts.wall, (i) => at(i, wi(i), 0), (i) => at(i, wi(i), h), walled);
+      strip(parts.wall, (i) => at(i, wi(i), h), (i) => at(i, wo(i), h), walled);
+      strip(parts.wall, (i) => at(i, wo(i), h), (i) => at(i, wo(i), outer(i) && elevated[i] ? -E.girderDepth : -0.3), walled);
+      const r = (i: number) => dir * (wallInAt(i, dir) + E.barrierThickness / 2);
+      strip(parts.railing, (i) => at(i, r(i) - 0.06, h + E.railHeight), (i) => at(i, r(i) + 0.06, h + E.railHeight), outer);
+      strip(parts.railing, (i) => at(i, r(i), h + E.railHeight), (i) => at(i, r(i), h + E.railHeight - 0.12), outer);
+    }
+    const wallOut = half + E.barrierThickness;
+    // 桁の裏側（高架の所だけ）。つながる側・分離帯の側は、隣の桁とすき間なく
     strip(
       parts.bottom,
-      (i) => at(i, wallOut, -E.girderDepth),
-      (i) => at(i, -wallOut, -E.girderDepth),
+      (i) => at(i, edgeAt(i, 1), -E.girderDepth),
+      (i) => at(i, -edgeAt(i, -1), -E.girderDepth),
       (i) => elevated[i],
     );
 
@@ -261,7 +319,7 @@ export class ExpresswayNetwork implements ChunkListener {
     const curved = (i: number) => Math.abs(turn[i]) > 1 / E.zebraRadius;
     for (const dir of [1, -1]) {
       // 左カーブ（turn<0）なら外側は右（-1）、右カーブなら外側は左（+1）
-      const outer = (i: number) => curved(i) && Math.sign(-turn[i]) === -dir;
+      const outer = (i: number) => curved(i) && Math.sign(-turn[i]) === -dir && sideOf[i][dir as 1 | -1].kind === 'wall';
       strip(
         parts.zebra,
         (i) => at(i, dir * (half - 0.25), 0.03),
@@ -293,7 +351,8 @@ export class ExpresswayNetwork implements ChunkListener {
         const n = Math.floor(s[i] / E.lampSpacing);
         if (n === lastLamp) continue;
         lastLamp = n;
-        lamps.push({ base: at(i, wallIn + E.barrierThickness / 2, h), inward: sides[i].clone().negate() });
+        if (joins(i, 1)) continue;
+        lamps.push({ base: at(i, wallInAt(i, 1) + E.barrierThickness / 2, h), inward: sides[i].clone().negate() });
       }
     }
 
@@ -448,6 +507,12 @@ interface NameSpot {
   center: THREE.Vector3;
   forward: THREE.Vector3;
   width: number;
+}
+
+/** 道の片側の隣：wall = 外側（壁高欄）、join = 同じ向きの道とつながる、median = 逆向きの道との間の分離帯。gap = 路面の縁どうしのすき間 (m) */
+interface SideKind {
+  kind: 'wall' | 'join' | 'median';
+  gap: number;
 }
 
 /** 路面の画像：濃いアスファルトに白い外側線と、車線の境界の白い破線（幅 = 車線数 × 車線幅 + 路肩×2、長さ 12m） */
