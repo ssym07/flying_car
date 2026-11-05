@@ -132,11 +132,10 @@ export const WORLD = {
 
 /** 国土地理院の標高タイル・航空写真から作る地形。カメラの周りだけ読み、離れたら捨てる */
 export const TERRAIN = {
-  /** 標高タイル（5mメッシュ）。無い所は 10m メッシュで補う */
-  demUrls: [
-    'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png',
-    'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png',
-  ],
+  /** 標高タイル（5mメッシュ）。山などで無い所（タイルごと無い・穴がある）は 10m メッシュで補う */
+  demUrl: 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png',
+  /** 10m メッシュはズーム 14 までしか無いので、1つ粗いタイルの 1/4 を引き伸ばして使う */
+  demFallbackUrl: 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png',
   /** 地形チャンク（＝標高タイル1枚、約1km四方）のズームレベル */
   demZoom: 15,
   /** 地表に貼る航空写真（全国最新写真） */

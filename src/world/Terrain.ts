@@ -658,23 +658,46 @@ function fillNoData(heights: Float32Array, size: number): void {
   for (let k = 0; k < heights.length; k++) if (Number.isNaN(heights[k])) heights[k] = 0;
 }
 
-/** 標高タイルを取得して標高 (m, ジオイド基準) の配列にする。無ければ次の URL を試す */
+/** 標高タイルを取得して標高 (m, ジオイド基準) の配列にする。5m メッシュの無い所・穴は 10m メッシュで埋める */
 async function fetchDem(x: number, y: number, z: number): Promise<Float32Array | null> {
-  for (const template of TERRAIN.demUrls) {
-    const image = await fetchImage(tileUrl(template, x, y, z));
-    if (!image) continue;
-    const canvas = new OffscreenCanvas(TILE_PX, TILE_PX);
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-    ctx.drawImage(image, 0, 0);
-    image.close();
-    const { data } = ctx.getImageData(0, 0, TILE_PX, TILE_PX);
-    const out = new Float32Array(TILE_PX * TILE_PX);
-    for (let k = 0; k < out.length; k++) {
-      out[k] = decodeDem(data[k * 4], data[k * 4 + 1], data[k * 4 + 2]);
+  const fine = await fetchDemImage(tileUrl(TERRAIN.demUrl, x, y, z));
+  if (fine && !fine.some(Number.isNaN)) return fine;
+  // 10m メッシュ：1つ粗いタイルのうち、このタイルにあたる 1/4 を線形補間で引き伸ばす
+  const coarse = await fetchDemImage(tileUrl(TERRAIN.demFallbackUrl, x >> 1, y >> 1, z - 1));
+  if (!coarse) return fine;
+  const out = fine ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
+  const ox = (x & 1) * (TILE_PX / 2);
+  const oy = (y & 1) * (TILE_PX / 2);
+  const at = (i: number, j: number) => coarse[Math.min(j, TILE_PX - 1) * TILE_PX + Math.min(i, TILE_PX - 1)];
+  for (let j = 0; j < TILE_PX; j++) {
+    for (let i = 0; i < TILE_PX; i++) {
+      if (!Number.isNaN(out[j * TILE_PX + i])) continue;
+      const u = ox + i / 2;
+      const v = oy + j / 2;
+      const i0 = Math.floor(u);
+      const j0 = Math.floor(v);
+      const fu = u - i0;
+      const fv = v - j0;
+      out[j * TILE_PX + i] =
+        (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv;
     }
-    return out;
   }
-  return null;
+  return out;
+}
+
+async function fetchDemImage(url: string): Promise<Float32Array | null> {
+  const image = await fetchImage(url);
+  if (!image) return null;
+  const canvas = new OffscreenCanvas(TILE_PX, TILE_PX);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(image, 0, 0);
+  image.close();
+  const { data } = ctx.getImageData(0, 0, TILE_PX, TILE_PX);
+  const out = new Float32Array(TILE_PX * TILE_PX);
+  for (let k = 0; k < out.length; k++) {
+    out[k] = decodeDem(data[k * 4], data[k * 4 + 1], data[k * 4 + 2]);
+  }
+  return out;
 }
 
 /** 国土地理院 標高PNG の RGB → 標高 (m) */
