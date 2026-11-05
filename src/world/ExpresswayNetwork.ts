@@ -7,7 +7,8 @@ import type { ChunkListener, Terrain } from './Terrain';
 /**
  * 高速道路データ1タイル（scripts/build-expressways.mjs の出力）。
  * w：[連絡路(0/1), 車線数, 掘割(0/1), 名前, 座標（1e-6度、先頭以外は差分）, 各点の地面からの高さ（0.1m）, 各点の左・右の隣]
- *    隣：0 = 無し、正 = 同じ向きの道（1 + 路面の縁どうしのすき間 0.1m）、負 = 逆向きの道（-(1 + すき間 0.1m)）
+ *    隣：0 = 無し、正 = 同じ向きの道（1 + 譲る(0/1)×1000 + (路面の縁どうしのすき間 + 50m) を 0.1m で。負のすき間は重なり）、
+ *    負 = 逆向きの道（-(1 + すき間 0.1m)）
  * x：[緯度, 経度（1e-6度）, 半径(m)] 一般道・線路と交わる所（橋脚を立てない）
  */
 interface ExpresswayTile {
@@ -170,10 +171,14 @@ export class ExpresswayNetwork implements ChunkListener {
     const sideOf: Array<{ 1: SideKind; [-1]: SideKind }> = [];
     const kindAt = (codes: number[], i: number): SideKind => {
       const c = codes[i] ?? 0;
-      return c === 0 ? { kind: 'wall', gap: 0 } : { kind: c > 0 ? 'join' : 'median', gap: (Math.abs(c) - 1) / 10 };
+      if (c === 0) return { kind: 'wall', gap: 0, yields: false };
+      if (c < 0) return { kind: 'median', gap: (-c - 1) / 10, yields: false };
+      return { kind: 'join', gap: ((c - 1) % 1000) / 10 - 50, yields: c - 1 >= 1000 };
     };
     const blend = (a: SideKind, b: SideKind, t: number): SideKind =>
-      a.kind === b.kind ? { kind: a.kind, gap: a.gap + (b.gap - a.gap) * t } : { kind: 'wall', gap: 0 };
+      a.kind === b.kind
+        ? { kind: a.kind, gap: a.gap + (b.gap - a.gap) * t, yields: a.yields }
+        : { kind: 'wall', gap: 0, yields: false };
     for (let i = 0; i < points.length; i++) {
       const [lat, lon] = points[i];
       const off = offsets[i] / 10;
@@ -247,15 +252,30 @@ export class ExpresswayNetwork implements ChunkListener {
       }
     };
 
-    // 路面（左端 u=0 → 右端 u=1、v は進行方向）。同じ向きの道とつながる側は、外側線が見えないよう u を少し内へずらす
+    // 路面（左端 u=0 → 右端 u=1、v は進行方向）。同じ向きの道とつながる側は、外側線が見えないよう u を少し内へずらす。
+    // 重なる所で譲る側は、路面を隣の路面の縁で切る。隣の路面にすっぽり入る所は、この道を描かない
     const width = way.lanes * E.laneWidth + E.shoulder * 2;
     const uEdge = (E.shoulder + 0.2) / width;
     const joins = (i: number, dir: 1 | -1) => sideOf[i][dir].kind === 'join';
+    const deckEdge = (i: number, dir: 1 | -1) => {
+      const n = sideOf[i][dir];
+      return n.kind === 'join' && n.yields && n.gap < 0 ? half + n.gap + 0.15 : half;
+    };
+    const hidden = pts.map((_, i) => deckEdge(i, 1) + deckEdge(i, -1) < 0.5);
+    const shown = (i: number) => !hidden[i];
     {
       let prev: [number, number] | null = null;
       for (let i = 0; i < pts.length; i++) {
-        const va = deck.vertex(at(i, half, 0), joins(i, 1) ? uEdge : 0, s[i] / TEXTURE_LENGTH_M);
-        const vb = deck.vertex(at(i, -half, 0), joins(i, -1) ? 1 - uEdge : 1, s[i] / TEXTURE_LENGTH_M);
+        if (hidden[i]) {
+          prev = null;
+          continue;
+        }
+        const eL = deckEdge(i, 1);
+        const eR = deckEdge(i, -1);
+        const uL = eL < half ? (half - eL) / (half * 2) : joins(i, 1) ? uEdge : 0;
+        const uR = eR < half ? 1 - (half - eR) / (half * 2) : joins(i, -1) ? 1 - uEdge : 1;
+        const va = deck.vertex(at(i, eL, 0), uL, s[i] / TEXTURE_LENGTH_M);
+        const vb = deck.vertex(at(i, -eR, 0), uR, s[i] / TEXTURE_LENGTH_M);
         if (prev) deck.quad(prev[0], prev[1], va, vb);
         prev = [va, vb];
       }
@@ -266,7 +286,7 @@ export class ExpresswayNetwork implements ChunkListener {
         deck,
         (i) => at(i, dir * half, -0.02),
         (i) => at(i, dir * (half + sideOf[i][dir].gap / 2 + 0.3), -0.02),
-        (i) => joins(i, dir),
+        (i) => shown(i) && joins(i, dir) && sideOf[i][dir].gap >= 0,
         0,
         TEXTURE_LENGTH_M,
       );
@@ -277,10 +297,12 @@ export class ExpresswayNetwork implements ChunkListener {
     const wallInAt = (i: number, dir: 1 | -1) =>
       sideOf[i][dir].kind === 'median' ? half + Math.max(0, sideOf[i][dir].gap / 2 - E.barrierThickness) : half;
     const edgeAt = (i: number, dir: 1 | -1) =>
-      joins(i, dir) ? half + sideOf[i][dir].gap / 2 + 0.3 : wallInAt(i, dir) + E.barrierThickness;
+      joins(i, dir)
+        ? Math.max(deckEdge(i, dir), half + sideOf[i][dir].gap / 2 + 0.3)
+        : wallInAt(i, dir) + E.barrierThickness;
     for (const dir of [1, -1] as const) {
-      const walled = (i: number) => !joins(i, dir);
-      const outer = (i: number) => sideOf[i][dir].kind === 'wall';
+      const walled = (i: number) => shown(i) && !joins(i, dir);
+      const outer = (i: number) => shown(i) && sideOf[i][dir].kind === 'wall';
       const wi = (i: number) => dir * wallInAt(i, dir);
       const wo = (i: number) => dir * (wallInAt(i, dir) + E.barrierThickness);
       // 分離帯の側：壁の手前まで路面を広げる
@@ -288,7 +310,7 @@ export class ExpresswayNetwork implements ChunkListener {
         deck,
         (i) => at(i, dir * half, -0.02),
         (i) => at(i, wi(i), -0.02),
-        (i) => sideOf[i][dir].kind === 'median',
+        (i) => shown(i) && sideOf[i][dir].kind === 'median',
         0,
         TEXTURE_LENGTH_M,
       );
@@ -305,7 +327,7 @@ export class ExpresswayNetwork implements ChunkListener {
       parts.bottom,
       (i) => at(i, edgeAt(i, 1), -E.girderDepth),
       (i) => at(i, -edgeAt(i, -1), -E.girderDepth),
-      (i) => elevated[i],
+      (i) => shown(i) && elevated[i],
     );
 
     // カーブの外側のしましま：曲がり具合（向きの変化 / 距離）が大きい所
@@ -319,7 +341,8 @@ export class ExpresswayNetwork implements ChunkListener {
     const curved = (i: number) => Math.abs(turn[i]) > 1 / E.zebraRadius;
     for (const dir of [1, -1]) {
       // 左カーブ（turn<0）なら外側は右（-1）、右カーブなら外側は左（+1）
-      const outer = (i: number) => curved(i) && Math.sign(-turn[i]) === -dir && sideOf[i][dir as 1 | -1].kind === 'wall';
+      const outer = (i: number) =>
+        !hidden[i] && curved(i) && Math.sign(-turn[i]) === -dir && sideOf[i][dir as 1 | -1].kind === 'wall';
       strip(
         parts.zebra,
         (i) => at(i, dir * (half - 0.25), 0.03),
@@ -337,7 +360,7 @@ export class ExpresswayNetwork implements ChunkListener {
       const n = Math.floor(s[i] / E.pierSpacing);
       if (n === lastPier) continue;
       lastPier = n;
-      if (lift[i] < E.pierFrom) continue;
+      if (lift[i] < E.pierFrom || hidden[i]) continue;
       const [plat, plon] = samples[i];
       if (noPier.some(([lat, lon, r]) => approxMeters(lat, lon, plat, plon) < r + E.pierRadius + 1)) continue;
       const bottom = this.terrain.toLocal(plat, plon, ground[i] - 1).y;
@@ -351,7 +374,7 @@ export class ExpresswayNetwork implements ChunkListener {
         const n = Math.floor(s[i] / E.lampSpacing);
         if (n === lastLamp) continue;
         lastLamp = n;
-        if (joins(i, 1)) continue;
+        if (joins(i, 1) || hidden[i]) continue;
         lamps.push({ base: at(i, wallInAt(i, 1) + E.barrierThickness / 2, h), inward: sides[i].clone().negate() });
       }
     }
@@ -513,6 +536,8 @@ interface NameSpot {
 interface SideKind {
   kind: 'wall' | 'join' | 'median';
   gap: number;
+  /** join の時：重なる所で、自分の路面を隣の路面の縁で切る側か */
+  yields: boolean;
 }
 
 /** 路面の画像：濃いアスファルトに白い外側線と、車線の境界の白い破線（幅 = 車線数 × 車線幅 + 路肩×2、長さ 12m） */

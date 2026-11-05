@@ -12,11 +12,13 @@
 // - 一般道・線路と交わる所は橋脚を立てない（x）
 // - 隣に高さのほぼ同じ別の道が並ぶ側（点ごと・左右ごと）：同じ向き（合流・分岐）なら縁を付けずに路面をつなぎ、
 //   逆向き（上下線）なら間に分離帯の壁を置く。外側だけに壁高欄が立つようにする
+// - 分岐・合流の付け根で同じ向きの路面が重なる・くっつく間は、本線（順位の高い道）の高さにそろえ、坂は離れてから始める
 //
 // 出力の形式（1タイル）:
 // { "w": [[連絡路(0/1), 車線数, 掘割(0/1), 名前, [緯度,経度,...（1e-6度、先頭以外は差分）], [各点の高さ（0.1m）...],
 //          [各点の左の隣], [各点の右の隣]], ...],
-//   隣：0 = 無し（壁高欄）、正 = 同じ向きの道（1 + 路面の縁どうしのすき間 0.1m）、負 = 逆向きの道（-(1 + すき間 0.1m)）
+//   隣：0 = 無し（壁高欄）、正 = 同じ向きの道（1 + 譲る(0/1)×1000 + (路面の縁どうしのすき間 + 50m) を 0.1m で。
+//   負のすき間は重なり）、負 = 逆向きの道（-(1 + すき間 0.1m)）
 //   "x": [[緯度, 経度（1e-6度）, 半径(m)], ...] }
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { regionPath, SETTINGS } from './lib/region.mjs';
@@ -209,8 +211,8 @@ while (heap.length > 0) {
 }
 
 // 上限：地上に固定した点から、つながりをたどって「勾配 × 距離」より高くしない（地上からの坂）
+const ceil = new Map();
 {
-  const ceil = new Map();
   const queue = [...pinned].map((k) => [0, k]);
   for (const k of pinned) ceil.set(k, 0);
   // 距離の短い順に広げる（点の数が少ないので単純な並べ替えで足りる）
@@ -284,46 +286,53 @@ const SHOULDER = 1.0;
 /** 同じ向きの道は、路面の縁どうしがこれより近ければつなぐ (m)。逆向きはこれより近ければ間に分離帯 */
 const JOIN_GAP = 1.5;
 const MEDIAN_GAP = 8;
-/** 隣とみなす高さの差 (m) */
-const SAME_LEVEL = 2;
-{
-  const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
-  const MY = 111320;
-  const xy = (p) => [p[1] * MX, p[0] * MY];
-  const halfOf = (w) => (w.lanes * LANE_WIDTH) / 2 + SHOULDER;
-  const SCELL = 60;
-  const segs = new Map();
-  ways.forEach((w, wi) => {
-    w.xy = w.pts.map(xy);
-    w.h = w.keys.map((k) => nodes.get(k).offset);
-    for (let j = 1; j < w.xy.length; j++) {
-      const [ax, ay] = w.xy[j - 1];
-      const [bx, by] = w.xy[j];
-      const cells = new Set();
-      const n = Math.ceil(Math.hypot(bx - ax, by - ay) / SCELL) + 1;
-      for (let k = 0; k <= n; k++) {
-        cells.add(`${Math.floor((ax + ((bx - ax) * k) / n) / SCELL)},${Math.floor((ay + ((by - ay) * k) / n) / SCELL)}`);
-      }
-      for (const c of cells) {
-        if (!segs.has(c)) segs.set(c, []);
-        segs.get(c).push([wi, j]);
-      }
+/** 隣とみなす高さの差 (m)：つなぐ所・分離帯。付け根をそろえる前は、坂を上り始めた分岐も拾うよう広めに */
+const SAME_LEVEL = 0.3;
+const MEDIAN_LEVEL = 1.0;
+const LEVEL_SEARCH = 4;
+/** 付け根をそろえた後の坂の上限（足りない所は少し急にする） */
+const GRADE_MAX = 0.08;
+const MX = 111320 * Math.cos(SETTINGS.lat0 * K);
+const MY = 111320;
+const halfOf = (w) => (w.lanes * LANE_WIDTH) / 2 + SHOULDER;
+/** 譲る順：本線 > 連絡路、車線の多い方、同じなら番号の小さい方。順位の低い方が重なる所で路面を切り、高さを合わせる */
+const rank = (wi) => [ways[wi].link ? 0 : 1, ways[wi].lanes, -wi];
+const outranks = (a, b) => {
+  const ra = rank(a);
+  const rb = rank(b);
+  for (let k = 0; k < 3; k++) if (ra[k] !== rb[k]) return ra[k] > rb[k];
+  return false;
+};
+const SCELL = 60;
+const segs = new Map();
+ways.forEach((w, wi) => {
+  w.xy = w.pts.map((p) => [p[1] * MX, p[0] * MY]);
+  for (let j = 1; j < w.xy.length; j++) {
+    const [ax, ay] = w.xy[j - 1];
+    const [bx, by] = w.xy[j];
+    const cells = new Set();
+    const n = Math.ceil(Math.hypot(bx - ax, by - ay) / SCELL) + 1;
+    for (let k = 0; k <= n; k++) {
+      cells.add(`${Math.floor((ax + ((bx - ax) * k) / n) / SCELL)},${Math.floor((ay + ((by - ay) * k) / n) / SCELL)}`);
     }
-  });
-  let joined = 0;
-  let medians = 0;
-  ways.forEach((w, wi) => {
+    for (const c of cells) {
+      if (!segs.has(c)) segs.set(c, []);
+      segs.get(c).push([wi, j]);
+    }
+  }
+});
+
+/** 各点の左右（1 = 進行方向の左、-1 = 右）で一番近い隣：{ oi, gap, kind（1 同じ向き / -1 逆向き）, oh（隣の高さ） } */
+function neighbors(joinLevel, medianLevel) {
+  for (const w of ways) w.h = w.keys.map((k) => nodes.get(k).offset);
+  return ways.map((w, wi) => {
     const hw = halfOf(w);
-    w.left = [];
-    w.right = [];
-    for (let i = 0; i < w.xy.length; i++) {
-      const [px, py] = w.xy[i];
+    return w.xy.map(([px, py], i) => {
       const a = w.xy[Math.max(0, i - 1)];
       const b = w.xy[Math.min(w.xy.length - 1, i + 1)];
       const tl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
       const tx = (b[0] - a[0]) / tl;
       const ty = (b[1] - a[1]) / tl;
-      // 左（進行方向の左）が n、右が -n
       const best = { 1: null, '-1': null };
       const cx = Math.floor(px / SCELL);
       const cy = Math.floor(py / SCELL);
@@ -345,33 +354,131 @@ const SAME_LEVEL = 2;
             const along = qx * tx + qy * ty;
             const across = -qx * ty + qy * tx;
             if (Math.abs(along) > 6 || Math.abs(across) < 0.3) continue;
-            const oh = o.h[j - 1] + (o.h[j] - o.h[j - 1]) * t;
-            if (Math.abs(oh - w.h[i]) > SAME_LEVEL) continue;
             const dot = (sx * tx + sy * ty) / sl;
             if (Math.abs(dot) < 0.7) continue;
+            const kind = dot > 0 ? 1 : -1;
+            const oh = o.h[j - 1] + (o.h[j] - o.h[j - 1]) * t;
+            if (Math.abs(oh - w.h[i]) > (kind === 1 ? joinLevel : medianLevel)) continue;
             const side = across > 0 ? 1 : -1;
             const gap = Math.abs(across) - hw - halfOf(o);
-            const kind = dot > 0 ? 1 : -1;
             if ((kind === 1 && gap > JOIN_GAP) || (kind === -1 && gap > MEDIAN_GAP)) continue;
-            if (!best[side] || gap < best[side].gap) best[side] = { gap, kind };
+            if (!best[side] || gap < best[side].gap) best[side] = { oi, gap, kind, oh };
           }
         }
       }
+      return best;
+    });
+  });
+}
+
+// 分岐・合流の付け根：同じ向きの道と路面が重なる・くっつく間は、順位の高い道の高さにそろえる（坂は離れてから）
+{
+  const fixed = new Map();
+  const found = neighbors(LEVEL_SEARCH, 0);
+  ways.forEach((w, wi) => {
+    found[wi].forEach((best, i) => {
+      for (const side of [1, -1]) {
+        const n = best[side];
+        if (!n || n.kind !== 1 || !outranks(n.oi, wi)) continue;
+        const k = w.keys[i];
+        // 2本以上の道にそろえる時は高い方
+        fixed.set(k, Math.max(fixed.get(k) ?? -Infinity, n.oh));
+      }
+    });
+  });
+  for (const [k, v] of fixed) nodes.get(k).offset = v;
+  // そろえた点から、つながった点を勾配 GRADE_MAX の範囲に収める（上と下の両方から）
+  const spread = (sign) => {
+    const bound = new Map();
+    const heapB = [];
+    const pushB = (k, v) => {
+      heapB.push([v, k]);
+      let i = heapB.length - 1;
+      while (i > 0) {
+        const pi = (i - 1) >> 1;
+        if (sign * heapB[pi][0] <= sign * heapB[i][0]) break;
+        [heapB[pi], heapB[i]] = [heapB[i], heapB[pi]];
+        i = pi;
+      }
+    };
+    const popB = () => {
+      const top = heapB[0];
+      const last = heapB.pop();
+      if (heapB.length > 0) {
+        heapB[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1;
+          const r = l + 1;
+          let m = i;
+          if (l < heapB.length && sign * heapB[l][0] < sign * heapB[m][0]) m = l;
+          if (r < heapB.length && sign * heapB[r][0] < sign * heapB[m][0]) m = r;
+          if (m === i) break;
+          [heapB[m], heapB[i]] = [heapB[i], heapB[m]];
+          i = m;
+        }
+      }
+      return top;
+    };
+    for (const [k, v] of fixed) {
+      bound.set(k, v);
+      pushB(k, v);
+    }
+    while (heapB.length > 0) {
+      const [v, k] = popB();
+      if (sign * v > sign * bound.get(k)) continue;
+      for (const [nk, d] of nodes.get(k).edges) {
+        const h = v + sign * GRADE_MAX * d;
+        if (!bound.has(nk) || sign * h < sign * bound.get(nk)) {
+          bound.set(nk, h);
+          pushB(nk, h);
+        }
+      }
+    }
+    return bound;
+  };
+  const upper = spread(1);
+  const lower = spread(-1);
+  for (const [k, n] of nodes) {
+    if (fixed.has(k)) continue;
+    if (upper.has(k)) n.offset = Math.min(n.offset, upper.get(k));
+    if (lower.has(k)) n.offset = Math.max(n.offset, lower.get(k));
+    // 地上に固定した点からの坂（行き止まりの出入口）は、そろえた高さより優先
+    if (ceil.has(k)) n.offset = Math.min(n.offset, ceil.get(k) * (GRADE_MAX / GRADE));
+  }
+  console.log(`levelled ${fixed.size} points where lanes in the same direction overlap`);
+}
+
+// 描く時の左右の隣（高さをそろえた後）。join の値に「譲る（重なる所で自分の路面を切る）」を足す
+{
+  const found = neighbors(SAME_LEVEL, MEDIAN_LEVEL);
+  let joined = 0;
+  let medians = 0;
+  ways.forEach((w, wi) => {
+    w.left = [];
+    w.right = [];
+    found[wi].forEach((best) => {
       for (const [side, list] of [
         [1, w.left],
         [-1, w.right],
       ]) {
         const n = best[side];
         if (!n) list.push(0);
-        else {
-          list.push(n.kind * (1 + Math.round(Math.max(0, n.gap) * 10)));
-          if (n.kind === 1) joined++;
-          else medians++;
+        else if (n.kind === 1) {
+          joined++;
+          list.push(encodeJoin(n.gap, outranks(n.oi, wi)));
+        } else {
+          medians++;
+          list.push(-(1 + Math.round(Math.max(0, n.gap) * 10)));
         }
       }
-    }
+    });
   });
   console.log(`sides: ${joined} joined to a lane in the same direction, ${medians} next to the opposite direction`);
+}
+/** 同じ向きの隣：1 + 譲る(0/1) × 1000 + (すき間 + 50) × 10。すき間は負（重なり）も -50m まで */
+function encodeJoin(gap, yields) {
+  return 1 + (yields ? 1000 : 0) + Math.round((Math.max(-50, Math.min(JOIN_GAP, gap)) + 50) * 10);
 }
 
 // ---- タイルに分けて書き出す（線分の中点が入るタイル） ----
