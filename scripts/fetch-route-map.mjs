@@ -92,6 +92,8 @@ function nearestStation([lat, lon]) {
   return best;
 }
 
+// 路線名が「門司港 => 博多」のように行き先だけのリレーションは、路線記号から路線名を付ける
+const REF_NAMES = { 'JR Kyushu': { JA: 'JR鹿児島本線' } };
 // 路線（上り・下りの2つのリレーションがあるので、駅の多い方を使う）。路線名は ref か名前の「（…）」より前
 const byLine = new Map();
 for (const rel of relations.values()) {
@@ -105,7 +107,7 @@ for (const rel of relations.values()) {
     if (i >= 0 && stops[stops.length - 1] !== i) stops.push(i);
   }
   if (stops.length < 2) continue;
-  const base = (t['name:ja'] ?? t.name ?? t.ref ?? '')
+  const base = (REF_NAMES[t.operator]?.[t.ref] ?? t['name:ja'] ?? t.name ?? t.ref ?? '')
     .replace(/[（(].*$/, '')
     .replace(/\s*[:：].*$/, '')
     .replace(/\s+\S*(→|->|⇒).*$/, '')
@@ -114,6 +116,27 @@ for (const rel of relations.values()) {
     .replace(/^Osaka Metor/, 'Osaka Metro')
     .trim();
   if (!base) continue;
+  // 環状線でないのに同じ駅へ戻ってくる並び（行きと帰りが1つのリレーションに入っている、終わりが遠くの駅へ飛ぶなど）は、
+  // 戻ったところで切る。戻ったあと新しい駅へ進む（大江戸線の6の字）、近い駅で輪が閉じるものはそのまま。
+  // 東京・大阪はこれで選ばれる路線が変わってしまう（相鉄など）ので、福岡だけ（SETTINGS.cutLoops）
+  if (SETTINGS.cutLoops && !SETTINGS.ringLine.test(base)) {
+    const gap = (a, b) => Math.hypot((stations[a].lat - stations[b].lat) * 111320, (stations[a].lon - stations[b].lon) * 91000);
+    const gaps = stops.slice(1).map((i, k) => gap(stops[k], i)).sort((a, b) => a - b);
+    const median = gaps[gaps.length >> 1];
+    const seen = new Set();
+    for (let k = 0; k < stops.length; k++) {
+      if (!seen.has(stops[k])) {
+        seen.add(stops[k]);
+        continue;
+      }
+      const rest = stops.slice(k + 1);
+      if (rest.length ? rest.every((i) => seen.has(i)) : gap(stops[k - 1], stops[k]) > 2.5 * median) {
+        stops.length = k;
+        break;
+      }
+    }
+    if (stops.length < 2) continue;
+  }
   const key = `${t.operator ?? ''}|${base}`;
   const prev = byLine.get(key);
   if (!prev || stops.length > prev.stops.length) byLine.set(key, { name: base, operator: t.operator ?? '', colour: t.colour, stops });
@@ -121,7 +144,7 @@ for (const rel of relations.values()) {
 
 // まとめる：快速・急行・直通運転などの種別は除き、各駅に止まる路線だけにする。
 // 駅の多い路線から順に、まだ描いていない駅の間（隣どうしの駅の組）を半分以上持つものだけを残す
-const SERVICE = /快速|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|ソニック|きらめき|かもめ|みどり|ハウステンボス|有明/;
+const SERVICE = /快速|区快|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|^ソニック|^きらめき|^かもめ|^みどり|^ハウステンボス|^有明$/;
 // 載せる駅：データを取る範囲の中で、建物を作っている所（public/plateau のこの地域の区の、中身のある細かいタイルの範囲）にある駅だけ
 const builtBoxes = [];
 {
@@ -160,8 +183,12 @@ const used = new Map();
 const outStations = [];
 const lines = [];
 let paletteIndex = 0;
+const colorOf = new Map();
 for (const { name, colour, stops } of kept) {
-  const color = /^#[0-9a-f]{6}$/i.test(colour ?? '') ? colour.toLowerCase() : PALETTE[paletteIndex++ % PALETTE.length];
+  // 同じ名前の路線（別のリレーションから来た区間）は同じ色にする
+  const color =
+    colorOf.get(name) ?? (/^#[0-9a-f]{6}$/i.test(colour ?? '') ? colour.toLowerCase() : PALETTE[paletteIndex++ % PALETTE.length]);
+  colorOf.set(name, color);
   let run = [];
   const flush = () => {
     if (run.length >= 2) lines.push([name, color, run]);
