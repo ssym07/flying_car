@@ -6,3 +6,6 @@ data/cache
 public/plateau
 data/osaka/cache
 data/fukuoka/cache
+
+# 作業の進み具合のログ（一時フォルダへのリンク）
+logs
