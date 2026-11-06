@@ -128,6 +128,25 @@ import {
   createPortTowerWindowMaterial,
 } from './hakataPortTower';
 import {
+  type StationCityKey,
+  type StationCityParts,
+  buildInnogate,
+  buildJpTowerOsaka,
+  buildNorthGateBuilding,
+  buildOsakaStationRoof,
+  buildSouthGateBuilding,
+  createHeliportMaterial,
+  createInnogateCoreMaterial,
+  createInnogateGlassMaterial,
+  createJpPodiumMaterial,
+  createJpTowerGlassMaterial,
+  createNgbGlassMaterial,
+  createNgbLowMaterial,
+  createSgbGlassMaterial,
+  createSgbLowMaterial,
+  createSgbTileMaterial,
+} from './osakaStationCity';
+import {
   type PayPayDomeParts,
   buildPayPayDome,
   createPayPayDomeGlassMaterial,
@@ -172,6 +191,38 @@ function around(lat: number, lon: number, deg: number): { from: [number, number]
   const dLat = (Math.sin(a) * 25) / 111320;
   const dLon = (Math.cos(a) * 25) / (111320 * Math.cos((lat * Math.PI) / 180));
   return { from: [lat - dLat, lon - dLon], to: [lat + dLat, lon + dLon] };
+}
+
+/** 大阪駅の線路の向き（東から北へ, 度）。大阪ステーションシティとまわりのビルの長い向き */
+const OSAKA_STATION_DEG = 31.4;
+
+/** 大阪ステーションシティの材質（建物どうしで共通） */
+function stationCityGroup(parts: StationCityParts): THREE.Group {
+  const flat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+    new THREE.MeshStandardMaterial({ color, roughness: 0.6, side: THREE.DoubleSide, ...extra });
+  stationCityShared ??= {
+    roofGlass: flat(0xcfe0ea, { roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.45 }),
+    steel: flat(0xf1f2f0, { roughness: 0.45, metalness: 0.2 }),
+    white: flat(0xe9eae7),
+    roofTop: flat(0x8f9294, { roughness: 0.85 }),
+    green: flat(0x5d7f45, { roughness: 0.95 }),
+    ngbGlass: createNgbGlassMaterial(),
+    ngbLow: createNgbLowMaterial(),
+    sgbTile: createSgbTileMaterial(),
+    sgbGlass: createSgbGlassMaterial(),
+    sgbLow: createSgbLowMaterial(),
+    heli: createHeliportMaterial(),
+    inoGlass: createInnogateGlassMaterial(),
+    inoCore: createInnogateCoreMaterial(),
+    fin: flat(0xc8cdd1, { metalness: 0.6, roughness: 0.35 }),
+    jpGlass: createJpTowerGlassMaterial(),
+    jpPodium: createJpPodiumMaterial(),
+  };
+  const group = new THREE.Group();
+  for (const [key, g] of Object.entries(parts) as Array<[StationCityKey, THREE.BufferGeometry]>) {
+    group.add(new THREE.Mesh(g, stationCityShared[key]));
+  }
+  return group;
 }
 
 /** 虎ノ門ヒルズの街区の向き（長い向きは北北西） */
@@ -592,6 +643,41 @@ const LANDMARKS: Landmark[] = [
     },
   },
   {
+    // 大阪駅の大屋根（PLATEAU の、線路の上の屋根と駅舎をまとめた 49m の箱を消して置く）。建物の座標は x = 線路の向き、z = 南南東
+    gmlId: 'bldg_9c2c736c-68d2-42b8-837a-dbdf9d7ca1a1',
+    ...around(34.702408, 135.495914, OSAKA_STATION_DEG),
+    front: -1,
+    build: (length) => stationCityGroup(buildOsakaStationRoof(length / 2)),
+  },
+  {
+    // ノースゲートビルディング（PLATEAU の 162m の一つの箱を消して置く）
+    gmlId: 'bldg_a7a0f325-c271-44db-bced-7d3066780c65',
+    ...around(34.703006, 135.49547, OSAKA_STATION_DEG),
+    front: -1,
+    build: (length) => stationCityGroup(buildNorthGateBuilding(length / 2)),
+  },
+  {
+    // サウスゲートビルディング（PLATEAU の 128m の一つの箱を消して置く）
+    gmlId: 'bldg_bfee20ad-5b64-48bc-8d47-fd764e89b70c',
+    ...around(34.701701, 135.496414, OSAKA_STATION_DEG),
+    front: -1,
+    build: (length) => stationCityGroup(buildSouthGateBuilding(length / 2)),
+  },
+  {
+    // イノゲート大阪（PLATEAU の箱を消して置く）
+    gmlId: 'bldg_4fbf020a-6f1c-4298-9136-d881ebd394f0',
+    ...around(34.701775, 135.493247, OSAKA_STATION_DEG),
+    front: -1,
+    build: (length) => stationCityGroup(buildInnogate(length / 2)),
+  },
+  {
+    // JPタワー大阪（PLATEAU は建設前で、敷地の低い箱だけ。scripts/build-station-cutouts.mjs で消す）
+    gmlId: '',
+    ...around(34.70049, 135.494, OSAKA_STATION_DEG),
+    front: -1,
+    build: (length) => stationCityGroup(buildJpTowerOsaka(length / 2)),
+  },
+  {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_ec9150b2-0a27-4b64-a8bf-66cb714d46f0',
     ...around(33.5953, 130.3621, 0),
@@ -997,6 +1083,7 @@ let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
 let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let fukuokaTowerShared: Record<keyof FukuokaTowerParts, THREE.Material> | null = null;
+let stationCityShared: Record<StationCityKey, THREE.Material> | null = null;
 let paypayDomeShared: Record<keyof PayPayDomeParts, THREE.Material> | null = null;
 let portTowerShared: Record<keyof PortTowerParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
