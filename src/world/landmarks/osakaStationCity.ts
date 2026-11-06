@@ -23,6 +23,8 @@ import { beam } from './fukuokaTower';
  *   北の段は少し低い 44m の段（屋上の庭園：木の列と小道）。その上に、真ん中に縦の溝のある濃い灰色の 150m の塔（屋上にヘリポート）
  * - 大阪梅田ツインタワーズ・ノース：阪急うめだ本店の 60m の低層部（足元に茶色のアーチ、茶色のタイル、上は白い横の帯。北西の屋上は
  *   丸い芝生のある庭園と円筒の塔屋）の南東に、白い格子に縦の線の、角を落とした八角形の 187m の塔（屋上にヘリポート）
+ * - 大阪梅田ツインタワーズ・サウス：阪神梅田本店の幅の広い 56m の低層部（濃い灰色に不揃いな縦の模様、北東の角が大きく丸い L 字形。
+ *   屋上に庭園と設備の箱）の北西の上に、濃い青灰色のガラスの格子の 189m の塔（縦に3つに分かれ、真ん中が少し引っ込む）
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
@@ -54,7 +56,9 @@ export type StationCityKey =
   | 'twnTower'
   | 'twnBand'
   | 'twnBrown'
-  | 'twnArch';
+  | 'twnArch'
+  | 'twsTower'
+  | 'twsPodium';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
 type P2 = [number, number];
@@ -666,6 +670,82 @@ export function buildTwinTowersNorth(cx: number): StationCityParts {
   return finish(out);
 }
 
+// ---------------------------------------------------------------- 大阪梅田ツインタワーズ・サウス
+// 座標：中心は敷地（OpenStreetMap の形）の中心、u = 線路の向き（東から北へ 31.4°）、v = 北北西
+
+/** 平面（OpenStreetMap）：北西に長い部分と、南東へ延びる部分の L 字形。間の北東の角が大きく丸い */
+const TWIN_SOUTH: P2[] = [
+  [44, -10],
+  [43, -6],
+  [40, 2],
+  [37, 12],
+  [32, 26],
+  [29, 35],
+  [24, 43],
+  [18, 50],
+  [12, 56],
+  [3, 61],
+  [-5, 65],
+  [-15, 67],
+  [-21, 68],
+  [-95, 67],
+  [-95, 13],
+  [6, 12],
+  [6, -9],
+  [5, -68],
+  [8, -69],
+  [6, -76],
+  [13, -79],
+  [42, -88],
+  [48, -81],
+  [52, -66],
+  [55, -58],
+  [56, -52],
+  [55, -46],
+].reverse() as P2[];
+
+export function buildTwinTowersSouth(cx: number): StationCityParts {
+  const out: Lists = {};
+  const rect = (u0: number, u1: number, v0: number, v1: number): P2[] => [
+    [u0, v0],
+    [u1, v0],
+    [u1, v1],
+    [u0, v1],
+  ];
+  // ---- 低層部（阪神梅田本店、56m）。屋上は塔の東に庭園、南東の部分に設備の箱 ----
+  prism(out, cx, TWIN_SOUTH, 0, 54, () => 'twsPodium');
+  band(out, cx, TWIN_SOUTH, 54, 56.5, 0.3);
+  push(out, 'roofTop', cap(cx, offset(TWIN_SOUTH, -0.2), 56));
+  push(out, 'green', cap(cx, rect(-12, 22, 18, 58), 56.15));
+  for (let k = 0; k < 14; k++) {
+    const u = -9 + (k % 5) * 7 + (k % 2) * 2;
+    const v = 22 + Math.floor(k / 5) * 12 + (k % 3) * 2;
+    const tree = new THREE.IcosahedronGeometry(2.4, 0).toNonIndexed();
+    tree.translate(cx + u, 56 + 2.4, -v);
+    push(out, 'tree', tree);
+  }
+  for (const [u, v, w, d] of [
+    [20, -20, 14, 10],
+    [36, -20, 10, 10],
+    [20, -40, 14, 10],
+    [36, -40, 10, 10],
+    [20, -60, 14, 8],
+    [36, -62, 10, 8],
+    [28, 2, 12, 8],
+  ]) {
+    block(out, cx, u, v, w, d, 56, 60);
+  }
+  // ---- 塔（189m）：縦に3つに分かれ、真ん中の部分は南北の面が少し引っ込む ----
+  prism(out, cx, rect(-91, -63, 17, 63), 56, 189, () => 'twsTower');
+  prism(out, cx, rect(-63, -43, 19, 61), 56, 186, () => 'twsTower');
+  prism(out, cx, rect(-43, -15, 17, 63), 56, 189, () => 'twsTower');
+  band(out, cx, rect(-91, -63, 17, 63), 188, 190, 0.2, 'ngbLow');
+  band(out, cx, rect(-43, -15, 17, 63), 188, 190, 0.2, 'ngbLow');
+  block(out, cx, -77, 40, 18, 30, 189, 195, 'white');
+  block(out, cx, -29, 40, 16, 22, 189, 193, 'roofTop');
+  return finish(out);
+}
+
 // ---------------------------------------------------------------- 材質
 
 /** ノースゲートの高層棟：灰色の壁に、細かい四角の窓（1枚 = 横 3.2m × 1 階に窓 2 つ） */
@@ -1014,4 +1094,41 @@ export function createTwinNorthArchMaterial(): THREE.MeshStandardMaterial {
   );
   m.map!.repeat.set(PANEL / 8, 1 / 2);
   return m;
+}
+
+/** ツインタワーズ・サウスの塔：濃い青灰色のガラスに、明るい格子の枠 */
+export function createTwinSouthTowerMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#9aa3aa';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#3a4652';
+      g.fillRect(W * 0.08, H * 0.08, W * 0.84, H * 0.8);
+      g.fillStyle = 'rgba(170,190,210,0.3)';
+      g.fillRect(W * 0.08, H * 0.08, W * 0.84, H * 0.25);
+    },
+    0.2,
+    0.45,
+  );
+}
+
+/** 阪神梅田本店の低層部：濃い灰色に、不揃いな縦の明るい模様（1枚 = 横 3.2m × 1 階） */
+export function createTwinSouthPodiumMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#4b4f55';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#9ca2a8';
+      const bars = [
+        [2, 0.1, 0.75],
+        [14, 0.3, 0.95],
+        [27, 0.05, 0.6],
+        [38, 0.45, 1],
+        [50, 0.15, 0.8],
+      ];
+      for (const [x, y0, y1] of bars) g.fillRect(x, H * y0, 5, H * (y1 - y0));
+    },
+    0.55,
+    0.2,
+  );
 }

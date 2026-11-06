@@ -137,6 +137,7 @@ import {
   buildOsakaStationRoof,
   buildSouthGateBuilding,
   buildTwinTowersNorth,
+  buildTwinTowersSouth,
   buildYodobashiUmeda,
   createHankyuSignMaterial,
   createHankyuStationMaterial,
@@ -156,6 +157,8 @@ import {
   createTwinNorthBandMaterial,
   createTwinNorthBrownMaterial,
   createTwinNorthTowerMaterial,
+  createTwinSouthPodiumMaterial,
+  createTwinSouthTowerMaterial,
   createYodobashiFinMaterial,
   createYodobashiTowerMaterial,
 } from './osakaStationCity';
@@ -241,6 +244,8 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     twnBand: createTwinNorthBandMaterial(),
     twnBrown: createTwinNorthBrownMaterial(),
     twnArch: createTwinNorthArchMaterial(),
+    twsTower: createTwinSouthTowerMaterial(),
+    twsPodium: createTwinSouthPodiumMaterial(),
     tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
   };
   const group = new THREE.Group();
@@ -724,6 +729,14 @@ const LANDMARKS: Landmark[] = [
     ...around(34.70269, 135.498666, 0),
     front: -1,
     build: (length) => stationCityGroup(buildTwinTowersNorth(length / 2)),
+  },
+  {
+    // 大阪梅田ツインタワーズ・サウス（PLATEAU は建て替え前の大阪神ビル・新阪急ビルの箱なので、敷地の4つの箱を消して置く）。
+    // 建物の座標は x = 線路の向き、z = 南南東
+    gmlId: 'bldg_9f57cdcc-3d71-4c8c-bc87-dafb42e237c7',
+    ...around(34.701007, 135.498427, OSAKA_STATION_DEG),
+    front: -1,
+    build: (length) => stationCityGroup(buildTwinTowersSouth(length / 2)),
   },
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
