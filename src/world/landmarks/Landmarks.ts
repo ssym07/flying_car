@@ -136,6 +136,7 @@ import {
   buildNorthGateBuilding,
   buildOsakaStationRoof,
   buildSouthGateBuilding,
+  buildYodobashiUmeda,
   createHankyuSignMaterial,
   createHankyuStationMaterial,
   createHankyuTerminalMaterial,
@@ -150,6 +151,9 @@ import {
   createSgbGlassMaterial,
   createSgbLowMaterial,
   createSgbTileMaterial,
+  createFutsalMaterial,
+  createYodobashiFinMaterial,
+  createYodobashiTowerMaterial,
 } from './osakaStationCity';
 import {
   type PayPayDomeParts,
@@ -227,6 +231,11 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     hkSkylight: flat(0xd48a7e, { roughness: 0.4, metalness: 0.1 }),
     hkSign: createHankyuSignMaterial(),
     parking: createParkingMaterial(),
+    yodoFin: createYodobashiFinMaterial(),
+    yodoTower: createYodobashiTowerMaterial(),
+    futsal: createFutsalMaterial(),
+    tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
+    net: flat(0x3d5a3f, { transparent: true, opacity: 0.35, depthWrite: false }),
   };
   const group = new THREE.Group();
   for (const [key, g] of Object.entries(parts) as Array<[StationCityKey, THREE.BufferGeometry]>) {
@@ -694,6 +703,14 @@ const LANDMARKS: Landmark[] = [
     ...around(34.70532, 135.49823, 99.8),
     front: -1,
     build: (length) => stationCityGroup(buildHankyuUmeda(length / 2)),
+  },
+  {
+    // ヨドバシ梅田タワー（PLATEAU の、北の段と塔の 170m の一つの箱と、南の店の 65m の箱を消して置く）。
+    // 建物の座標は x = 東から北へ 8.4°、z = 南
+    gmlId: 'bldg_83d21bb8-3fbb-4b8f-b9e2-6385663a9e71',
+    ...around(34.704378, 135.496202, 8.4),
+    front: -1,
+    build: (length) => stationCityGroup(buildYodobashiUmeda(length / 2)),
   },
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南

@@ -19,6 +19,8 @@ import { beam } from './fukuokaTower';
  * - イノゲート大阪：線路と道路に挟まれた、西へ細くなる楔形の平面の 122m の薄いビル。北面はガラスに縦の金属のフィン、南面（線路側）は芯の壁
  * - 阪急大阪梅田駅：ホームを覆う 26m の駅の屋根（屋上はピンクの天窓の列と、北の駐車場。北の端は線路が出るので開ける）と、
  *   南の端の 28m の低い棟。その上に阪急ターミナルビル（76.5m・17階、灰色の格子に暗い窓、屋上に「HANKYU」の看板の塔屋）
+ * - ヨドバシ梅田タワー：南の段は角の丸い銀色の縦のフィンの店（ヨドバシカメラ マルチメディア梅田、52m、屋上にフットサルのコート）、
+ *   北の段は少し低い 44m の段（屋上の庭園：木の列と小道）。その上に、真ん中に縦の溝のある濃い灰色の 150m の塔（屋上にヘリポート）
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
@@ -43,7 +45,12 @@ export type StationCityKey =
   | 'hkStation'
   | 'hkSkylight'
   | 'hkSign'
-  | 'parking';
+  | 'parking'
+  | 'yodoFin'
+  | 'yodoTower'
+  | 'futsal'
+  | 'net'
+  | 'tree';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
 type P2 = [number, number];
@@ -492,6 +499,109 @@ export function buildHankyuUmeda(cx: number): StationCityParts {
   return finish(out);
 }
 
+// ---------------------------------------------------------------- ヨドバシ梅田タワー
+// 座標：中心は敷地の中心、u = 東から北へ 8.4°（北の辺の向き）、v = 北
+
+export function buildYodobashiUmeda(cx: number): StationCityParts {
+  const out: Lists = {};
+  const rect = (u0: number, u1: number, v0: number, v1: number): P2[] => [
+    [u0, v0],
+    [u1, v0],
+    [u1, v1],
+    [u0, v1],
+  ];
+  // ---- 南の段：ヨドバシカメラ マルチメディア梅田（52m）。線路沿いの南東の辺と、丸い東の端 ----
+  const store: P2[] = [
+    [-55, -8],
+    [-58, -16],
+    [-55, -30],
+    [-52, -45],
+    [-49, -60],
+    [-45, -67],
+    [-39, -71],
+    [-30, -71],
+    [57, -34],
+    [66, -27],
+    [71, -18],
+    [74, -8],
+    [75, 0],
+    [75, 16],
+  ];
+  prism(out, cx, store, 0, 50, () => 'yodoFin');
+  band(out, cx, store, 50, 53, 0.4);
+  // 屋上のフットサルのコート（20m × 40m が3面）と、まわりの網
+  for (const [u0, v0] of [
+    [-46, -33],
+    [-46, -55],
+    [-2, -33],
+  ]) {
+    const court = new THREE.BoxGeometry(40, 0.4, 20).toNonIndexed();
+    court.translate(cx + u0 + 20, 50.3, -(v0 + 10));
+    push(out, 'futsal', court);
+    prism(out, cx, rect(u0 - 1, u0 + 41, v0 - 1, v0 + 21), 50.5, 56, () => 'net', null);
+  }
+  // 東の屋上の白い設備の箱
+  block(out, cx, 30, -10, 26, 10, 50, 55);
+  block(out, cx, 52, -14, 14, 16, 50, 56);
+  block(out, cx, 14, -24, 12, 8, 50, 54);
+
+  // ---- 北の段（44m、屋上の庭） ----
+  const north: P2[] = [
+    [-58, -6],
+    [55, 19],
+    [58, 29],
+    [60, 36],
+    [59, 42],
+    [55, 47],
+    [50, 50],
+    [-53, 50],
+    [-59, 47],
+    [-62, 42],
+    [-63, 28],
+  ];
+  prism(out, cx, north, 0, 42, () => 'yodoFin');
+  band(out, cx, north, 42, 44.5, 0.4);
+  push(out, 'green', cap(cx, offset(north, -3), 44.6));
+  // 屋上の庭園：縁に沿って木を並べ、間に白い小道（塔の足元は除く）
+  const inTower = (u: number, v: number) => u > -48 && u < 28 && v > 4 && v < 40;
+  const path = offset(north, -7);
+  for (let i = 0; i < path.length; i++) {
+    const a = path[i];
+    const b = path[(i + 1) % path.length];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    for (let d = 0; d < len; d += 8) {
+      const u = a[0] + ((b[0] - a[0]) * d) / len;
+      const v = a[1] + ((b[1] - a[1]) * d) / len;
+      if (inTower(u, v)) continue;
+      const tree = new THREE.IcosahedronGeometry(2.6, 0).toNonIndexed();
+      tree.scale(1, 0.85, 1);
+      tree.translate(cx + u, 44.6 + 2.6, -v);
+      push(out, 'tree', tree);
+    }
+  }
+  for (const [u0, u1, v0, v1] of [
+    [30, 52, 22, 25],
+    [-58, -50, 0, 44],
+    [30, 33, 25, 44],
+  ]) {
+    const g = new THREE.BoxGeometry(u1 - u0, 0.2, v1 - v0).toNonIndexed();
+    g.translate(cx + (u0 + u1) / 2, 44.75, -(v0 + v1) / 2);
+    push(out, 'white', g);
+  }
+
+  // ---- 塔（150m）：西と東の2つの箱の間に縦の溝。西の箱の上にヘリポート ----
+  prism(out, cx, rect(-45, -20, 7, 37), 44, 150, () => 'yodoTower');
+  prism(out, cx, rect(-16, 25, 7, 37), 44, 147, () => 'yodoTower');
+  prism(out, cx, rect(-20, -16, 10, 34), 44, 147, () => 'yodoTower');
+  band(out, cx, rect(-45, -20, 7, 37), 149, 150.8, 0.2, 'ngbLow');
+  band(out, cx, rect(-16, 25, 7, 37), 146, 147.8, 0.2, 'ngbLow');
+  const pad = new THREE.BoxGeometry(20, 0.6, 20).toNonIndexed();
+  pad.translate(cx - 32.5, 151.1, -22);
+  push(out, 'heli', pad);
+  block(out, cx, 5, 22, 24, 18, 147, 151);
+  return finish(out);
+}
+
 // ---------------------------------------------------------------- 材質
 
 /** ノースゲートの高層棟：灰色の壁に、細かい四角の窓（1枚 = 横 3.2m × 1 階に窓 2 つ） */
@@ -730,4 +840,66 @@ export function createHankyuSignMaterial(): THREE.MeshStandardMaterial {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.6 });
+}
+
+/** ヨドバシの店の壁：銀色の縦のフィンが細かく並ぶ */
+export function createYodobashiFinMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#8f969c';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#dfe3e6';
+      for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 4, H);
+      g.fillStyle = 'rgba(60,65,70,0.25)';
+      g.fillRect(0, H - 3, W, 3);
+    },
+    0.35,
+    0.55,
+  );
+}
+
+/** ヨドバシ梅田タワーの塔：濃い灰色の壁に、縦長の暗い窓と細い明るい縦の線 */
+export function createYodobashiTowerMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#5b6067';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#2c3137';
+      g.fillRect(W * 0.18, H * 0.12, W * 0.5, H * 0.78);
+      g.fillStyle = 'rgba(150,170,190,0.25)';
+      g.fillRect(W * 0.18, H * 0.12, W * 0.5, H * 0.22);
+      g.fillStyle = '#a9afb4';
+      g.fillRect(W * 0.82, 0, W * 0.07, H);
+    },
+    0.5,
+    0.2,
+  );
+}
+
+/** フットサルのコート：緑の人工芝に白い線（箱の上の面に 1 枚） */
+export function createFutsalMaterial(): THREE.MeshStandardMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#4f8a45';
+  g.fillRect(0, 0, 256, 128);
+  g.strokeStyle = '#f2f2ee';
+  g.lineWidth = 3;
+  g.strokeRect(8, 8, 240, 112);
+  g.beginPath();
+  g.moveTo(128, 8);
+  g.lineTo(128, 120);
+  g.stroke();
+  g.beginPath();
+  g.arc(128, 64, 18, 0, Math.PI * 2);
+  g.stroke();
+  for (const x of [8, 248]) {
+    g.beginPath();
+    g.arc(x, 64, 30, x < 128 ? -Math.PI / 2 : Math.PI / 2, x < 128 ? Math.PI / 2 : (3 * Math.PI) / 2);
+    g.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 });
 }
