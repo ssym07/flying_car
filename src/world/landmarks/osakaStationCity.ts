@@ -21,6 +21,8 @@ import { beam } from './fukuokaTower';
  *   南の端の 28m の低い棟。その上に阪急ターミナルビル（76.5m・17階、灰色の格子に暗い窓、屋上に「HANKYU」の看板の塔屋）
  * - ヨドバシ梅田タワー：南の段は角の丸い銀色の縦のフィンの店（ヨドバシカメラ マルチメディア梅田、52m）、
  *   北の段は少し低い 44m の段（屋上の庭園：木の列と小道）。その上に、真ん中に縦の溝のある濃い灰色の 150m の塔（屋上にヘリポート）
+ * - 大阪梅田ツインタワーズ・ノース：阪急うめだ本店の 60m の低層部（足元に茶色のアーチ、茶色のタイル、上は白い横の帯。北西の屋上は
+ *   丸い芝生のある庭園と円筒の塔屋）の南東に、白い格子に縦の線の、角を落とした八角形の 187m の塔（屋上にヘリポート）
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
@@ -48,7 +50,11 @@ export type StationCityKey =
   | 'parking'
   | 'yodoFin'
   | 'yodoTower'
-  | 'tree';
+  | 'tree'
+  | 'twnTower'
+  | 'twnBand'
+  | 'twnBrown'
+  | 'twnArch';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
 type P2 = [number, number];
@@ -589,6 +595,77 @@ export function buildYodobashiUmeda(cx: number): StationCityParts {
   return finish(out);
 }
 
+// ---------------------------------------------------------------- 大阪梅田ツインタワーズ・ノース
+// 座標：中心は敷地（OpenStreetMap の形）の中心、u = 東、v = 北
+
+export function buildTwinTowersNorth(cx: number): StationCityParts {
+  const out: Lists = {};
+  // ---- 低層部（阪急うめだ本店、60m）：南の広い部分と、北西へ延びる細い部分。南西・南東の角が丸い ----
+  const podium: P2[] = [
+    [-63, 45],
+    [-42, -15],
+    [-32, -44],
+    [-22, -58],
+    [-11, -68],
+    [-4, -71],
+    [43, -64],
+    [52, -58],
+    [57, -41],
+    [61, -16],
+    [61, -6],
+    [22, -6],
+    [21, 91],
+    [15, 96],
+    [12, 95],
+    [-3, 85],
+    [-51, 55],
+  ];
+  prism(out, cx, podium, 0, 8.8, () => 'twnArch', null);
+  prism(out, cx, podium, 8.8, 32, () => 'twnBrown', null);
+  prism(out, cx, podium, 32, 58, () => 'twnBand');
+  band(out, cx, podium, 31.5, 33, 0.4);
+  band(out, cx, podium, 57.5, 61, 0.5);
+  // 北西の屋上の庭園：丸い芝生と、まわりの木。円筒の塔屋と小さな暗い円筒
+  const lawn = new THREE.CircleGeometry(12, 32).toNonIndexed();
+  lawn.rotateX(-Math.PI / 2);
+  lawn.translate(cx - 22, 58.15, -38);
+  push(out, 'green', lawn);
+  for (let k = 0; k < 18; k++) {
+    const a = (k / 18) * Math.PI * 2;
+    const tree = new THREE.IcosahedronGeometry(2.4, 0).toNonIndexed();
+    tree.translate(cx - 22 + Math.cos(a) * 17, 58 + 2.4, -(38 + Math.sin(a) * 17));
+    push(out, 'tree', tree);
+  }
+  const drum = new THREE.CylinderGeometry(9, 9, 10, 28).toNonIndexed();
+  drum.translate(cx - 34, 63, 12);
+  push(out, 'white', drum);
+  const drum2 = new THREE.CylinderGeometry(5, 5, 9, 20).toNonIndexed();
+  drum2.translate(cx - 4, 62.5, -4);
+  push(out, 'inoGlass', drum2);
+  block(out, cx, 8, 40, 12, 30, 58, 63);
+  block(out, cx, -30, 10, 10, 14, 58, 62);
+
+  // ---- 塔（187m）：南の広い部分の上に、角を落とした八角形 ----
+  const tower: P2[] = [
+    [-15, -59],
+    [39, -59],
+    [49, -49],
+    [49, -23],
+    [39, -13],
+    [-15, -13],
+    [-25, -23],
+    [-25, -49],
+  ];
+  prism(out, cx, tower, 58, 184, () => 'twnTower');
+  band(out, cx, tower, 184, 187, 0.3, 'ngbLow');
+  const pad = new THREE.BoxGeometry(24, 0.6, 24).toNonIndexed();
+  pad.translate(cx + 12, 185.5, 36);
+  push(out, 'heli', pad);
+  block(out, cx, 12, -20, 30, 8, 184, 188);
+  block(out, cx, 40, -36, 8, 18, 184, 189);
+  return finish(out);
+}
+
 // ---------------------------------------------------------------- 材質
 
 /** ノースゲートの高層棟：灰色の壁に、細かい四角の窓（1枚 = 横 3.2m × 1 階に窓 2 つ） */
@@ -861,4 +938,80 @@ export function createYodobashiTowerMaterial(): THREE.MeshStandardMaterial {
     0.5,
     0.2,
   );
+}
+
+/** ツインタワーズ・ノースの塔：白い格子に、細い縦の暗い窓 */
+export function createTwinNorthTowerMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#dcdfe1';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#4c565e';
+      g.fillRect(W * 0.3, H * 0.1, W * 0.3, H * 0.8);
+      g.fillStyle = 'rgba(170,190,205,0.35)';
+      g.fillRect(W * 0.3, H * 0.1, W * 0.3, H * 0.25);
+      g.fillStyle = '#f4f5f5';
+      g.fillRect(W * 0.8, 0, W * 0.1, H);
+    },
+    0.45,
+    0.25,
+  );
+}
+
+/** 阪急うめだ本店の上の階：白い横の帯と、横長のガラス */
+export function createTwinNorthBandMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#e6e3dc';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#56656e';
+      g.fillRect(0, H * 0.3, W, H * 0.4);
+      g.fillStyle = 'rgba(190,210,225,0.3)';
+      g.fillRect(0, H * 0.3, W, H * 0.12);
+    },
+    0.5,
+    0.15,
+  );
+}
+
+/** 阪急うめだ本店の茶色のタイルの壁：縦の細い窓 */
+export function createTwinNorthBrownMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#86584a';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#3b3533';
+      g.fillRect(W * 0.38, H * 0.15, W * 0.24, H * 0.7);
+      g.fillStyle = 'rgba(230,210,195,0.25)';
+      g.fillRect(0, H - 3, W, 3);
+    },
+    0.75,
+    0.05,
+  );
+}
+
+/** 阪急うめだ本店の足元：茶色の壁に、背の高いアーチの窓（1枚 = 横 8m × 2 階） */
+export function createTwinNorthArchMaterial(): THREE.MeshStandardMaterial {
+  const m = facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#7a4f42';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#2f3134';
+      const x0 = W * 0.2;
+      const x1 = W * 0.8;
+      const r = (x1 - x0) / 2;
+      g.beginPath();
+      g.moveTo(x0, H);
+      g.lineTo(x0, H * 0.25 + r);
+      g.arc(W / 2, H * 0.25 + r, r, Math.PI, 0);
+      g.lineTo(x1, H);
+      g.fill();
+      g.fillStyle = 'rgba(230,200,150,0.35)';
+      g.fillRect(x0, H * 0.7, x1 - x0, H * 0.3);
+    },
+    0.7,
+    0.05,
+  );
+  m.map!.repeat.set(PANEL / 8, 1 / 2);
+  return m;
 }

@@ -136,6 +136,7 @@ import {
   buildNorthGateBuilding,
   buildOsakaStationRoof,
   buildSouthGateBuilding,
+  buildTwinTowersNorth,
   buildYodobashiUmeda,
   createHankyuSignMaterial,
   createHankyuStationMaterial,
@@ -151,6 +152,10 @@ import {
   createSgbGlassMaterial,
   createSgbLowMaterial,
   createSgbTileMaterial,
+  createTwinNorthArchMaterial,
+  createTwinNorthBandMaterial,
+  createTwinNorthBrownMaterial,
+  createTwinNorthTowerMaterial,
   createYodobashiFinMaterial,
   createYodobashiTowerMaterial,
 } from './osakaStationCity';
@@ -232,6 +237,10 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     parking: createParkingMaterial(),
     yodoFin: createYodobashiFinMaterial(),
     yodoTower: createYodobashiTowerMaterial(),
+    twnTower: createTwinNorthTowerMaterial(),
+    twnBand: createTwinNorthBandMaterial(),
+    twnBrown: createTwinNorthBrownMaterial(),
+    twnArch: createTwinNorthArchMaterial(),
     tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
   };
   const group = new THREE.Group();
@@ -708,6 +717,13 @@ const LANDMARKS: Landmark[] = [
     ...around(34.704378, 135.496202, 8.4),
     front: -1,
     build: (length) => stationCityGroup(buildYodobashiUmeda(length / 2)),
+  },
+  {
+    // 大阪梅田ツインタワーズ・ノース（PLATEAU の、南の部分の 200m と北西の部分の 185m の2つの箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_765a3b67-2a33-4a5b-a1d4-0a07feee45d6',
+    ...around(34.70269, 135.498666, 0),
+    front: -1,
+    build: (length) => stationCityGroup(buildTwinTowersNorth(length / 2)),
   },
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
