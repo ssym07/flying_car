@@ -1229,21 +1229,21 @@ export function createHankyuGrandMaterial(): THREE.MeshStandardMaterial {
   );
 }
 
-/** あべのハルカスの塔：淡い青緑のガラスに、細かい明るい格子 */
+/** あべのハルカスの塔：明るい水色のガラスに、白い細い横の線と縦の桟 */
 export function createHarukasGlassMaterial(): THREE.MeshStandardMaterial {
   return facadeMaterial(
     (g, W, H) => {
-      g.fillStyle = '#7fa3ad';
+      g.fillStyle = '#8fc6e6';
       g.fillRect(0, 0, W, H);
-      g.fillStyle = 'rgba(215,235,240,0.35)';
-      g.fillRect(0, 0, W, H * 0.5);
-      g.fillStyle = '#d5e2e5';
+      g.fillStyle = 'rgba(225,242,252,0.45)';
+      g.fillRect(0, 0, W, H * 0.45);
+      g.fillStyle = '#eef5f8';
+      g.fillRect(0, H - 5, W, 5);
+      g.fillStyle = 'rgba(235,245,250,0.7)';
       g.fillRect(0, 0, 2, H);
-      g.fillRect(W / 2, 0, 1, H);
-      g.fillRect(0, H - 3, W, 3);
     },
-    0.1,
-    0.5,
+    0.12,
+    0.3,
   );
 }
 
