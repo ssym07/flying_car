@@ -148,16 +148,18 @@ export const TERRAIN = {
   initialRadius: 1500,
   /** この距離 (m) より離れたチャンクは捨てる（読込と破棄を繰り返さないよう少し大きく） */
   unloadRadius: 3600,
+  /** 読込に失敗したチャンクを読み直すまでの秒数 */
+  retryDelay: 10,
   /** 同時に作るチャンク数 */
   concurrentChunks: 4,
   /** 標高タイル1枚あたりのメッシュ分割数（約8m 間隔。建物の敷地の段を出せる細かさ） */
   segments: 128,
   /**
    * 建物の敷地の地図（scripts/build-building-pads.mjs）。坂では建物の底が敷地の一番低い地面の高さなので、
-   * 敷地とその周り（頂点の間隔ぶん）の地面を底 + clearance m より上に出さない。
-   * 底が地面より maxDig m 以上低い所（地下のある建物など）は下げない
+   * 敷地とその周り（頂点の間隔ぶん）の地面を底 + clearance m より上に出さない。敷地の中で地面が底より低ければ、底まで上げる。
+   * 底が地面より maxDig m 以上低い所（地下のある建物など）は下げず、maxFill m 以上高い所（高架の上の建物など）は上げない
    */
-  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12 },
+  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12, maxFill: 4 },
   /** チャンクの継ぎ目の隙間を隠すため、縁から下に垂らす壁の深さ (m) */
   skirtDepth: 8,
   /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。開始地点付近の値（地域の中の差は1m前後） */

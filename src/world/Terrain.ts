@@ -47,6 +47,8 @@ export class Terrain {
   private wanted: Chunk[] = [];
   private readonly lastCamera = new THREE.Vector3();
   private readonly listeners: ChunkListener[] = [];
+  /** 読込に失敗したチャンク → 読み直してよい時刻（performance.now） */
+  private readonly retryAt = new Map<string, number>();
   /** 地形を削る線（掘割の線路など）。キーごとに登録し、今あるチャンクとこれから作るチャンクに当てる */
   private readonly carves = new Map<string, Carve>();
   /** 地形を描かない掘割（addTrench）。キーごとに登録する */
@@ -277,7 +279,8 @@ export class Terrain {
     this.wanted = wanted;
 
     // 近い順に読み始める
-    const pending = wanted.filter((c) => !c.mesh && !this.chunks.has(key(c)));
+    const now = performance.now();
+    const pending = wanted.filter((c) => !c.mesh && !this.chunks.has(key(c)) && !((this.retryAt.get(key(c)) ?? 0) > now));
     pending.sort((a, b) => distanceTo(a) - distanceTo(b));
     for (const chunk of pending) {
       if (this.loadingCount >= TERRAIN.concurrentChunks) break;
@@ -384,8 +387,9 @@ export class Terrain {
       }
       for (const l of this.listeners) l.onChunkAdded(chunk.x, chunk.y);
     } catch (e) {
-      console.warn('[Terrain] チャンクの読込に失敗しました', chunk.x, chunk.y, e);
+      console.warn('[Terrain] チャンクの読込に失敗しました（少し待って読み直す）', chunk.x, chunk.y, e);
       this.chunks.delete(key(chunk));
+      this.retryAt.set(key(chunk), performance.now() + TERRAIN.retryDelay * 1000);
     }
   }
 
@@ -568,12 +572,24 @@ function buildGeometry(
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) low = Math.min(low, pads[j * TILE_PX + i]);
     return low;
   };
+  /** 頂点が建物の中（頂点を囲む 4 ピクセルがすべて建物）なら、その底の一番低い高さ。でなければ null */
+  const insideAt = (col: number, row: number) => {
+    if (!pads) return null;
+    const i = Math.round((col / seg) * TILE_PX);
+    const j = Math.round((row / seg) * TILE_PX);
+    if (i < 1 || j < 1 || i >= TILE_PX || j >= TILE_PX) return null;
+    const v = Math.min(pads[(j - 1) * TILE_PX + i - 1], pads[(j - 1) * TILE_PX + i], pads[j * TILE_PX + i - 1], pads[j * TILE_PX + i]);
+    return Number.isFinite(v) ? v : null;
+  };
 
   const place = (k: number, col: number, row: number, heightOffset: number) => {
     let h = sampleHeight(heights, TILE_PX, (col / seg) * TILE_PX, (row / seg) * TILE_PX);
-    // 建物の敷地：底より上に地面を出さない（坂の上側の1階を覆わないよう、家ごとの平らな段にする）
+    // 建物の敷地：中は底の高さに平らにならし（坂の下側で浮かない）、周りは底より上に地面を出さない
+    // （坂の上側の1階を覆わないよう、家ごとの平らな段にする）
+    const inside = insideAt(col, row);
     const pad = padAt(col, row) + TERRAIN.pads.clearance;
-    if (pad < h && h - pad < TERRAIN.pads.maxDig) h = pad;
+    if (inside !== null && inside > h && inside - h < TERRAIN.pads.maxFill) h = inside;
+    else if (pad < h && h - pad < TERRAIN.pads.maxDig) h = pad;
     const { lon, lat } = tileToLonLat(x + col / seg, y + row / seg, z);
     WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, h + TERRAIN.geoidHeight + heightOffset, v);
     v.applyMatrix4(ecefToLocal);
@@ -768,18 +784,23 @@ async function fetchPhoto(x: number, y: number, z: number, zoomOffset: number): 
   return texture;
 }
 
-/** 国土地理院の通信は時々返事が来ないまま止まるので、15秒で打ち切ってもう1回だけ取り直す（止まるとチャンクがずっと読めない） */
+/**
+ * 国土地理院の通信は時々返事が来ないまま止まるので、15秒で打ち切ってもう1回だけ取り直す（止まるとチャンクがずっと読めない）。
+ * タイルが無い（404 など）なら null。打ち切り・通信の失敗・混雑（5xx・429）が続いたら投げる
+ * （「データなし」と同じに扱うと、高さ 0 の地形のまま読み直さない）
+ */
 async function fetchImage(url: string): Promise<ImageBitmap | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (res.status >= 500 || res.status === 429) continue;
       if (!res.ok) return null;
       return await createImageBitmap(await res.blob());
     } catch {
       // 打ち切り・通信の失敗はもう1回
     }
   }
-  return null;
+  throw new Error(`取得に失敗しました: ${url}`);
 }
 
 function tileUrl(template: string, x: number, y: number, z: number): string {

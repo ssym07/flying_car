@@ -72,28 +72,52 @@ export function decodePng(buf) {
   }
   return rgb;
 }
-/** 標高タイル（無ければ 10m メッシュ）を標高の配列に。データの無い所はゲームと同じく周りの値で埋める */
-async function loadDem(x, y) {
-  let rgb = null;
-  for (const [i, template] of DEM_URLS.entries()) {
-    const file = new URL(`dem/${i}/${DEM_ZOOM}/${x}/${y}.png`, CACHE);
-    let buf = await readFile(file).catch(() => null);
-    if (!buf) {
-      const res = await fetch(template.replace('{z}', DEM_ZOOM).replace('{x}', x).replace('{y}', y));
-      if (res.status === 404) continue;
-      if (!res.ok) throw new Error(`標高タイルを取得できませんでした: ${res.status} ${x}/${y}`);
-      buf = Buffer.from(await res.arrayBuffer());
-      await mkdir(new URL('./', file), { recursive: true });
-      await writeFile(file, buf);
-    }
-    rgb = decodePng(buf);
-    break;
+/** 標高タイル i（DEM_URLS の何番目か）を RGB に。data/cache/dem/{i}/{z}/{x}/{y}.png に保存する。タイルが無ければ null */
+async function loadTile(i, z, x, y) {
+  const file = new URL(`dem/${i}/${z}/${x}/${y}.png`, CACHE);
+  let buf = await readFile(file).catch(() => null);
+  if (!buf) {
+    const res = await fetch(DEM_URLS[i].replace('{z}', z).replace('{x}', x).replace('{y}', y));
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`標高タイルを取得できませんでした: ${res.status} ${z}/${x}/${y}`);
+    buf = Buffer.from(await res.arrayBuffer());
+    await mkdir(new URL('./', file), { recursive: true });
+    await writeFile(file, buf);
   }
-  const h = new Float32Array(DEM_PX * DEM_PX).fill(rgb ? NaN : 0);
-  if (!rgb) return h;
+  const rgb = decodePng(buf);
+  const h = new Float32Array(DEM_PX * DEM_PX);
   for (let k = 0; k < h.length; k++) {
     const v = rgb[k * 3] * 65536 + rgb[k * 3 + 1] * 256 + rgb[k * 3 + 2];
     h[k] = v === 2 ** 23 ? NaN : (v < 2 ** 23 ? v : v - 2 ** 24) * 0.01;
+  }
+  return h;
+}
+/**
+ * 標高タイルを標高の配列に。Terrain.ts の fetchDem と同じく、5m メッシュの無い所（タイルごと無い・穴がある）は
+ * 10m メッシュ（ズーム 14 までしか無いので、1つ粗いタイルの 1/4 を引き伸ばす）で補い、残りは周りの値で埋める
+ */
+async function loadDem(x, y) {
+  const fine = await loadTile(0, DEM_ZOOM, x, y);
+  if (fine && !fine.some(Number.isNaN)) return fine;
+  const h = fine ?? new Float32Array(DEM_PX * DEM_PX).fill(NaN);
+  const coarse = await loadTile(1, DEM_ZOOM - 1, x >> 1, y >> 1);
+  if (coarse) {
+    const ox = (x & 1) * (DEM_PX / 2);
+    const oy = (y & 1) * (DEM_PX / 2);
+    const at = (i, j) => coarse[Math.min(j, DEM_PX - 1) * DEM_PX + Math.min(i, DEM_PX - 1)];
+    for (let j = 0; j < DEM_PX; j++) {
+      for (let i = 0; i < DEM_PX; i++) {
+        if (!Number.isNaN(h[j * DEM_PX + i])) continue;
+        const u = ox + i / 2;
+        const v = oy + j / 2;
+        const i0 = Math.floor(u);
+        const j0 = Math.floor(v);
+        const fu = u - i0;
+        const fv = v - j0;
+        h[j * DEM_PX + i] =
+          (at(i0, j0) * (1 - fu) + at(i0 + 1, j0) * fu) * (1 - fv) + (at(i0, j0 + 1) * (1 - fu) + at(i0 + 1, j0 + 1) * fu) * fv;
+      }
+    }
   }
   // Terrain.ts の fillNoData と同じ
   for (let pass = 0; pass < 64; pass++) {
