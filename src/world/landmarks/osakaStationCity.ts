@@ -17,7 +17,8 @@ import { beam } from './fukuokaTower';
  * - サウスゲートビルディング：東端に 122m の旧アクティ大阪の塔（ベージュに白い縦の帯、屋上にヘリポート）、その西に青いガラスの塔、
  *   西へ続く 58〜70m の茶色の低い棟と段ごとの屋上の庭
  * - イノゲート大阪：線路と道路に挟まれた、西へ細くなる楔形の平面の 122m の薄いビル。北面はガラスに縦の金属のフィン、南面（線路側）は芯の壁
- * - JPタワー大阪：KITTE大阪の 46m の低層部の上に、角を落とした 188m の塔
+ * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
+ *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
 export type StationCityKey =
   | 'roofGlass'
@@ -64,20 +65,6 @@ function rounded(u0: number, u1: number, v0: number, v1: number, r: [number, num
     }
   }
   return pts;
-}
-
-/** 角を c m 落とした四角。反時計回り */
-function chamfered(hu: number, hv: number, c: number): P2[] {
-  return [
-    [-hu + c, -hv],
-    [hu - c, -hv],
-    [hu, -hv + c],
-    [hu, hv - c],
-    [hu - c, hv],
-    [-hu + c, hv],
-    [-hu, hv - c],
-    [-hu, -hv + c],
-  ];
 }
 
 /**
@@ -395,16 +382,31 @@ export function buildInnogate(cx: number): StationCityParts {
 
 export function buildJpTowerOsaka(cx: number): StationCityParts {
   const out: Lists = {};
-  // KITTE大阪の低層部（46m）
-  const podium = rounded(-46, 46, -34, 34, [4, 4, 4, 4]);
-  prism(out, cx, podium, 0, 46, () => 'jpPodium');
-  band(out, cx, podium, 45, 47.5, 0.3);
-  push(out, 'green', cap(cx, offset(podium, -4), 47.6));
-  // 塔（188m）：角を落とした四角。上の 6m は白い枠
-  const tower = chamfered(30, 24, 7);
-  prism(out, cx, tower, 46, 182, () => 'jpGlass');
-  prism(out, cx, offset(tower, -1.5), 182, 188, () => 'white');
-  for (let y = 46 + 4 * FLOOR * 2; y < 180; y += 8 * FLOOR) band(out, cx, tower, y, y + 0.6, 0.3);
+  const rect = (u0: number, u1: number, v0: number, v1: number): P2[] => [
+    [u0, v0],
+    [u1, v0],
+    [u1, v1],
+    [u0, v1],
+  ];
+  // KITTE大阪の低層部（38m）：白い縦のルーバー。塔の西は屋上の庭と、庭の上の箱
+  const podium = rect(-58, 36, -34, 30);
+  prism(out, cx, podium, 0, 38, () => 'jpPodium');
+  band(out, cx, podium, 37, 39.5, 0.3);
+  push(out, 'green', cap(cx, rect(-55, -32, -31, 27), 39.6));
+  block(out, cx, -44, -12, 14, 16, 38, 46, 'jpPodium');
+  // 南の道沿いの低い棟（22m、屋上の庭）
+  const wing = rect(-58, 14, -44, -34);
+  prism(out, cx, wing, 0, 22, () => 'jpPodium');
+  push(out, 'green', cap(cx, offset(wing, -1.5), 22.2));
+  // 塔：188m の四角い箱と、その南東に 4m 張り出す 128m までの箱。境目に暗い帯
+  const tower = rect(-30, 30, -22, 24);
+  prism(out, cx, tower, 38, 186, () => 'jpGlass');
+  band(out, cx, tower, 186, 188.5, 0.2);
+  const front = rect(-12, 34, -26, 14);
+  prism(out, cx, front, 38, 127, () => 'jpGlass', 'roofTop');
+  band(out, cx, front, 127, 129, 0.1, 'inoGlass');
+  // 屋上の設備
+  block(out, cx, 4, 0, 30, 22, 186, 192);
   return finish(out);
 }
 
@@ -544,17 +546,17 @@ export function createInnogateCoreMaterial(): THREE.MeshStandardMaterial {
   );
 }
 
-/** JPタワー大阪の塔：銀色がかったガラスに、白い縦の細い線 */
+/** JPタワー大阪の塔：青いガラスに、細かい白い縦の線 */
 export function createJpTowerGlassMaterial(): THREE.MeshStandardMaterial {
   return facadeMaterial(
     (g, W, H) => {
-      g.fillStyle = '#6f8698';
+      g.fillStyle = '#3f5f8c';
       g.fillRect(0, 0, W, H);
-      g.fillStyle = 'rgba(220,235,245,0.25)';
-      g.fillRect(0, 0, W, H * 0.4);
-      g.fillStyle = '#e6e9ea';
-      g.fillRect(0, 0, 5, H);
-      g.fillStyle = 'rgba(40,55,70,0.45)';
+      g.fillStyle = 'rgba(200,220,245,0.22)';
+      g.fillRect(0, 0, W, H * 0.45);
+      g.fillStyle = '#e3e8ec';
+      for (let x = 0; x < W; x += 16) g.fillRect(x, 0, 3, H);
+      g.fillStyle = 'rgba(25,40,60,0.55)';
       g.fillRect(0, H - 4, W, 4);
     },
     0.15,
@@ -562,18 +564,18 @@ export function createJpTowerGlassMaterial(): THREE.MeshStandardMaterial {
   );
 }
 
-/** KITTE大阪の低層部：明るい石の壁に、大きなガラスの窓 */
+/** KITTE大阪の低層部：暗いガラスの前に、白い縦のルーバーが細かく並ぶ */
 export function createJpPodiumMaterial(): THREE.MeshStandardMaterial {
   return facadeMaterial(
     (g, W, H) => {
-      g.fillStyle = '#d8d3c8';
+      g.fillStyle = '#56636d';
       g.fillRect(0, 0, W, H);
-      g.fillStyle = '#556572';
-      g.fillRect(W * 0.12, H * 0.15, W * 0.76, H * 0.62);
-      g.fillStyle = 'rgba(200,220,235,0.25)';
-      g.fillRect(W * 0.12, H * 0.15, W * 0.76, H * 0.25);
+      g.fillStyle = '#eceeee';
+      for (let x = 0; x < W; x += 11) g.fillRect(x, 0, 5, H);
+      g.fillStyle = 'rgba(40,45,50,0.4)';
+      g.fillRect(0, H - 3, W, 3);
     },
-    0.6,
+    0.5,
     0.1,
   );
 }

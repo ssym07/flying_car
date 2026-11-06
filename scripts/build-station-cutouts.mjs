@@ -510,6 +510,8 @@ const REPLACED_BY_LANDMARK = new Set([
   'bldg_8e9971c3-7dec-4735-a84d-0f6a5441ca7e',
   'bldg_2fafb2dd-f0ca-4482-bbdf-2ca87966ae42',
   'bldg_abe9dd72-62c1-4a8d-adde-ab310a9d04fe',
+  'bldg_f440ed45-73ca-4d1b-a604-38256090e608',
+  'bldg_e89cdb33-3bbc-44ea-97cf-f4870360a004',
   // みずほPayPayドーム福岡（ドームと周りのデッキをまとめた箱）
   'bldg_ec9150b2-0a27-4b64-a8bf-66cb714d46f0',
   // 東京駅丸の内駅舎
