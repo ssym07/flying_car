@@ -478,14 +478,17 @@ export function buildHankyuUmeda(cx: number): StationCityParts {
   band(out, cx, south, 27, 29, 0.3);
 
   // ---- 阪急ターミナルビル（76.5m・17階）：灰色の格子に暗い窓。上に白い縁、屋上に看板の塔屋 ----
-  const terminal = rect(-141, -105, -14, 46);
+  // 駅の南の端を東から西まで渡る、横に長い板の形
+  const terminal = rect(-141, -105, -64, 46);
   prism(out, cx, terminal, 0, 74.5, () => 'hkTerminal');
   band(out, cx, terminal, 74.5, 77, 0.6);
-  push(out, 'green', cap(cx, rect(-138, -130, -10, 10), 74.6));
+  push(out, 'green', cap(cx, rect(-138, -128, -50, -20), 74.6));
+  push(out, 'green', cap(cx, rect(-138, -128, 14, 36), 74.6));
   const sign = new THREE.BoxGeometry(12, 8, 34).toNonIndexed();
-  sign.translate(cx - 121, 77 + 4, -18);
+  sign.translate(cx - 121, 77 + 4, 9);
   push(out, 'hkSign', sign);
   block(out, cx, -112, 36, 8, 10, 74.5, 79);
+  block(out, cx, -112, -52, 8, 10, 74.5, 79);
   return finish(out);
 }
 
