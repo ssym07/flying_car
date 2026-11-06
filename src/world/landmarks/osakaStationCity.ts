@@ -19,7 +19,7 @@ import { beam } from './fukuokaTower';
  * - イノゲート大阪：線路と道路に挟まれた、西へ細くなる楔形の平面の 122m の薄いビル。北面はガラスに縦の金属のフィン、南面（線路側）は芯の壁
  * - 阪急大阪梅田駅：ホームを覆う 26m の駅の屋根（屋上はピンクの天窓の列と、北の駐車場。北の端は線路が出るので開ける）と、
  *   南の端の 28m の低い棟。その上に阪急ターミナルビル（76.5m・17階、灰色の格子に暗い窓、屋上に「HANKYU」の看板の塔屋）
- * - ヨドバシ梅田タワー：南の段は角の丸い銀色の縦のフィンの店（ヨドバシカメラ マルチメディア梅田、52m、屋上にフットサルのコート）、
+ * - ヨドバシ梅田タワー：南の段は角の丸い銀色の縦のフィンの店（ヨドバシカメラ マルチメディア梅田、52m）、
  *   北の段は少し低い 44m の段（屋上の庭園：木の列と小道）。その上に、真ん中に縦の溝のある濃い灰色の 150m の塔（屋上にヘリポート）
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
@@ -48,8 +48,6 @@ export type StationCityKey =
   | 'parking'
   | 'yodoFin'
   | 'yodoTower'
-  | 'futsal'
-  | 'net'
   | 'tree';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
@@ -529,17 +527,6 @@ export function buildYodobashiUmeda(cx: number): StationCityParts {
   ];
   prism(out, cx, store, 0, 50, () => 'yodoFin');
   band(out, cx, store, 50, 53, 0.4);
-  // 屋上のフットサルのコート（20m × 40m が3面）と、まわりの網
-  for (const [u0, v0] of [
-    [-46, -33],
-    [-46, -55],
-    [-2, -33],
-  ]) {
-    const court = new THREE.BoxGeometry(40, 0.4, 20).toNonIndexed();
-    court.translate(cx + u0 + 20, 50.3, -(v0 + 10));
-    push(out, 'futsal', court);
-    prism(out, cx, rect(u0 - 1, u0 + 41, v0 - 1, v0 + 21), 50.5, 56, () => 'net', null);
-  }
   // 東の屋上の白い設備の箱
   block(out, cx, 30, -10, 26, 10, 50, 55);
   block(out, cx, 52, -14, 14, 16, 50, 56);
@@ -874,32 +861,4 @@ export function createYodobashiTowerMaterial(): THREE.MeshStandardMaterial {
     0.5,
     0.2,
   );
-}
-
-/** フットサルのコート：緑の人工芝に白い線（箱の上の面に 1 枚） */
-export function createFutsalMaterial(): THREE.MeshStandardMaterial {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 128;
-  const g = canvas.getContext('2d')!;
-  g.fillStyle = '#4f8a45';
-  g.fillRect(0, 0, 256, 128);
-  g.strokeStyle = '#f2f2ee';
-  g.lineWidth = 3;
-  g.strokeRect(8, 8, 240, 112);
-  g.beginPath();
-  g.moveTo(128, 8);
-  g.lineTo(128, 120);
-  g.stroke();
-  g.beginPath();
-  g.arc(128, 64, 18, 0, Math.PI * 2);
-  g.stroke();
-  for (const x of [8, 248]) {
-    g.beginPath();
-    g.arc(x, 64, 30, x < 128 ? -Math.PI / 2 : Math.PI / 2, x < 128 ? Math.PI / 2 : (3 * Math.PI) / 2);
-    g.stroke();
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 });
 }

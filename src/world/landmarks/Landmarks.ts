@@ -151,7 +151,6 @@ import {
   createSgbGlassMaterial,
   createSgbLowMaterial,
   createSgbTileMaterial,
-  createFutsalMaterial,
   createYodobashiFinMaterial,
   createYodobashiTowerMaterial,
 } from './osakaStationCity';
@@ -233,9 +232,7 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     parking: createParkingMaterial(),
     yodoFin: createYodobashiFinMaterial(),
     yodoTower: createYodobashiTowerMaterial(),
-    futsal: createFutsalMaterial(),
     tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
-    net: flat(0x3d5a3f, { transparent: true, opacity: 0.35, depthWrite: false }),
   };
   const group = new THREE.Group();
   for (const [key, g] of Object.entries(parts) as Array<[StationCityKey, THREE.BufferGeometry]>) {
