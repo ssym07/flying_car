@@ -17,6 +17,8 @@ import { beam } from './fukuokaTower';
  * - サウスゲートビルディング：東端に 122m の旧アクティ大阪の塔（ベージュに白い縦の帯、屋上にヘリポート）、その西に青いガラスの塔、
  *   西へ続く 58〜70m の茶色の低い棟と段ごとの屋上の庭
  * - イノゲート大阪：線路と道路に挟まれた、西へ細くなる楔形の平面の 122m の薄いビル。北面はガラスに縦の金属のフィン、南面（線路側）は芯の壁
+ * - 阪急大阪梅田駅：ホームを覆う 26m の駅の屋根（屋上はピンクの天窓の列と、北の駐車場。北の端は線路が出るので開ける）と、
+ *   南の端の 28m の低い棟。その上に阪急ターミナルビル（76.5m・17階、灰色の格子に暗い窓、屋上に「HANKYU」の看板の塔屋）
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
@@ -36,7 +38,12 @@ export type StationCityKey =
   | 'inoCore'
   | 'fin'
   | 'jpGlass'
-  | 'jpPodium';
+  | 'jpPodium'
+  | 'hkTerminal'
+  | 'hkStation'
+  | 'hkSkylight'
+  | 'hkSign'
+  | 'parking';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
 type P2 = [number, number];
@@ -77,7 +84,7 @@ function prism(
   pts: P2[],
   y0: number,
   y1: number,
-  pick: (nu: number, nv: number) => StationCityKey,
+  pick: (nu: number, nv: number) => StationCityKey | null,
   roof: StationCityKey | null = 'roofTop',
 ): void {
   const byKey = new Map<StationCityKey, { pos: number[]; nor: number[]; uv: number[] }>();
@@ -90,6 +97,10 @@ function prism(
     const nu = (vb - va) / len;
     const nv = -(ub - ua) / len;
     const key = pick(nu, nv);
+    if (key === null) {
+      s += len;
+      continue;
+    }
     const b = byKey.get(key) ?? { pos: [], nor: [], uv: [] };
     byKey.set(key, b);
     const s0 = s / PANEL;
@@ -410,6 +421,74 @@ export function buildJpTowerOsaka(cx: number): StationCityParts {
   return finish(out);
 }
 
+// ---------------------------------------------------------------- 阪急大阪梅田駅と阪急ターミナルビル
+// 座標：中心は駅（OpenStreetMap の駅舎の形の中心）、u = ホームの向き（北が正）、v = ホームを横切る向き（西が正）
+
+const HK_DECK = 26;
+
+export function buildHankyuUmeda(cx: number): StationCityParts {
+  const out: Lists = {};
+  const rect = (u0: number, u1: number, v0: number, v1: number): P2[] => [
+    [u0, v0],
+    [u1, v0],
+    [u1, v1],
+    [u0, v1],
+  ];
+  // ---- ホームを覆う駅の屋根：ホームの床（約 9.4m）より下は建物の壁、上は東西と南の壁。北の端は開ける ----
+  const shed = rect(-75, 118, -69, 40);
+  prism(out, cx, shed, 0, 8.5, () => 'hkStation', null);
+  prism(out, cx, shed, 8.5, HK_DECK, (nu) => (nu > 0.5 ? null : 'hkStation'), null);
+  band(out, cx, shed, HK_DECK - 2.5, HK_DECK + 1.2, 0.3);
+  // 屋上：南はふつうの屋根、中ほどにピンクの天窓、北は駐車場
+  push(out, 'roofTop', cap(cx, rect(-75, 45, -69, 40), HK_DECK));
+  push(out, 'parking', cap(cx, rect(45, 118, -69, 40), HK_DECK + 0.05));
+  push(out, 'roofTop', cap(cx, shed, HK_DECK - 2.4));
+  // 天窓：ホームの向きに長い、低い三角の屋根が6列
+  {
+    const pos: number[] = [];
+    const U0 = -55;
+    const U1 = 45;
+    for (let k = 0; k < 6; k++) {
+      const v = -60 + k * 18.5;
+      for (const [va, vb] of [
+        [v - 4.5, v],
+        [v, v + 4.5],
+      ]) {
+        const ya = va === v ? HK_DECK + 2.2 : HK_DECK + 0.1;
+        const yb = vb === v ? HK_DECK + 2.2 : HK_DECK + 0.1;
+        const A = [cx + U0, ya, -va];
+        const B = [cx + U1, ya, -va];
+        const C = [cx + U1, yb, -vb];
+        const D = [cx + U0, yb, -vb];
+        pos.push(...A, ...B, ...C, ...A, ...C, ...D);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    push(out, 'hkSkylight', g);
+  }
+  // 屋上の階段・設備の箱
+  block(out, cx, 100, -60, 10, 8, HK_DECK, HK_DECK + 4);
+  block(out, cx, -65, 30, 12, 10, HK_DECK, HK_DECK + 5);
+
+  // ---- 南の端の低い棟（阪急三番街・阪急17番街の入る、28m） ----
+  const south = rect(-143, -75, -66, 47);
+  prism(out, cx, south, 0, 28, () => 'hkStation');
+  band(out, cx, south, 27, 29, 0.3);
+
+  // ---- 阪急ターミナルビル（76.5m・17階）：灰色の格子に暗い窓。上に白い縁、屋上に看板の塔屋 ----
+  const terminal = rect(-141, -105, -14, 46);
+  prism(out, cx, terminal, 0, 74.5, () => 'hkTerminal');
+  band(out, cx, terminal, 74.5, 77, 0.6);
+  push(out, 'green', cap(cx, rect(-138, -130, -10, 10), 74.6));
+  const sign = new THREE.BoxGeometry(12, 8, 34).toNonIndexed();
+  sign.translate(cx - 121, 77 + 4, -18);
+  push(out, 'hkSign', sign);
+  block(out, cx, -112, 36, 8, 10, 74.5, 79);
+  return finish(out);
+}
+
 // ---------------------------------------------------------------- 材質
 
 /** ノースゲートの高層棟：灰色の壁に、細かい四角の窓（1枚 = 横 3.2m × 1 階に窓 2 つ） */
@@ -578,4 +657,74 @@ export function createJpPodiumMaterial(): THREE.MeshStandardMaterial {
     0.5,
     0.1,
   );
+}
+
+/** 阪急ターミナルビル：明るい灰色の格子に、ほぼ四角い暗い窓（1枚 = 横 3.2m × 1 階） */
+export function createHankyuTerminalMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#9d9890';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#2e3033';
+      g.fillRect(W * 0.1, H * 0.18, W * 0.8, H * 0.66);
+      g.fillStyle = 'rgba(150,170,190,0.25)';
+      g.fillRect(W * 0.1, H * 0.18, W * 0.8, H * 0.2);
+    },
+    0.7,
+    0.05,
+  );
+}
+
+/** 阪急の駅の建物の壁：灰色のコンクリートに、小さな窓の列 */
+export function createHankyuStationMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#a7a59f';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#4a4d51';
+      g.fillRect(W * 0.2, H * 0.35, W * 0.6, H * 0.3);
+      g.fillStyle = 'rgba(70,70,70,0.25)';
+      g.fillRect(0, H - 2, W, 2);
+    },
+    0.85,
+    0,
+  );
+}
+
+/** 屋上の駐車場：灰色の舗装に白い区画の線（uv は m 単位） */
+export function createParkingMaterial(): THREE.MeshStandardMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 128;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#8e8f8f';
+  g.fillRect(0, 0, 64, 128);
+  g.fillStyle = '#e6e6e2';
+  g.fillRect(0, 0, 3, 56);
+  g.fillRect(0, 72, 3, 56);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  // 1枚 = 横 2.5m（1台）× 縦 13m（2台の奥行きと通路）
+  texture.repeat.set(1 / 2.5, 1 / 13);
+  return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.9, side: THREE.DoubleSide });
+}
+
+/** 屋上の看板「HANKYU」：紺の地に白い文字 */
+export function createHankyuSignMaterial(): THREE.MeshStandardMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#2e3a4f';
+  g.fillRect(0, 0, 512, 128);
+  g.fillStyle = '#f4f4f0';
+  g.font = 'bold 84px sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('HANKYU', 256, 68);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.6 });
 }

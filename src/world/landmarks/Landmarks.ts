@@ -130,11 +130,15 @@ import {
 import {
   type StationCityKey,
   type StationCityParts,
+  buildHankyuUmeda,
   buildInnogate,
   buildJpTowerOsaka,
   buildNorthGateBuilding,
   buildOsakaStationRoof,
   buildSouthGateBuilding,
+  createHankyuSignMaterial,
+  createHankyuStationMaterial,
+  createHankyuTerminalMaterial,
   createHeliportMaterial,
   createInnogateCoreMaterial,
   createInnogateGlassMaterial,
@@ -142,6 +146,7 @@ import {
   createJpTowerGlassMaterial,
   createNgbGlassMaterial,
   createNgbLowMaterial,
+  createParkingMaterial,
   createSgbGlassMaterial,
   createSgbLowMaterial,
   createSgbTileMaterial,
@@ -217,6 +222,11 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     fin: flat(0xc8cdd1, { metalness: 0.6, roughness: 0.35 }),
     jpGlass: createJpTowerGlassMaterial(),
     jpPodium: createJpPodiumMaterial(),
+    hkTerminal: createHankyuTerminalMaterial(),
+    hkStation: createHankyuStationMaterial(),
+    hkSkylight: flat(0xd48a7e, { roughness: 0.4, metalness: 0.1 }),
+    hkSign: createHankyuSignMaterial(),
+    parking: createParkingMaterial(),
   };
   const group = new THREE.Group();
   for (const [key, g] of Object.entries(parts) as Array<[StationCityKey, THREE.BufferGeometry]>) {
@@ -676,6 +686,14 @@ const LANDMARKS: Landmark[] = [
     ...around(34.70049, 135.494, OSAKA_STATION_DEG),
     front: -1,
     build: (length) => stationCityGroup(buildJpTowerOsaka(length / 2)),
+  },
+  {
+    // 阪急大阪梅田駅（駅の屋根と南の低い棟）と阪急ターミナルビル（PLATEAU の、駅の一つの箱を消して置く）。
+    // 建物の座標は x = ホームの向き（北北西）、z = 東北東
+    gmlId: 'bldg_8e4695fb-0c30-41d2-bd5e-37f2b10c467e',
+    ...around(34.70532, 135.49823, 99.8),
+    front: -1,
+    build: (length) => stationCityGroup(buildHankyuUmeda(length / 2)),
   },
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
