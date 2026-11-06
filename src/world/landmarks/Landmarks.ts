@@ -127,6 +127,13 @@ import {
   createPortTowerCoreMaterial,
   createPortTowerWindowMaterial,
 } from './hakataPortTower';
+import {
+  type PayPayDomeParts,
+  buildPayPayDome,
+  createPayPayDomeGlassMaterial,
+  createPayPayDomeRoofMaterial,
+  createPayPayDomeWallMaterial,
+} from './paypayDome';
 import { buildSkytree } from './tokyoSkytree';
 import {
   type ToranomonParts,
@@ -585,6 +592,32 @@ const LANDMARKS: Landmark[] = [
     },
   },
   {
+    // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_ec9150b2-0a27-4b64-a8bf-66cb714d46f0',
+    ...around(33.5953, 130.3621, 0),
+    front: -1,
+    build: (length) => {
+      const flat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.6, side: THREE.DoubleSide, ...extra });
+      paypayDomeShared ??= {
+        wall: createPayPayDomeWallMaterial(),
+        rim: flat(0xe4e5e2),
+        roof: createPayPayDomeRoofMaterial(),
+        seam: flat(0x6f4a3b, { metalness: 0.5, roughness: 0.4 }),
+        deck: flat(0xb9b6ae, { roughness: 0.85 }),
+        green: flat(0x5f7d45, { roughness: 0.95 }),
+        white: flat(0xeef0ee),
+        glass: createPayPayDomeGlassMaterial(),
+      };
+      const parts = buildPayPayDome(length / 2);
+      const group = new THREE.Group();
+      for (const key of Object.keys(parts) as Array<keyof PayPayDomeParts>) {
+        group.add(new THREE.Mesh(parts[key], paypayDomeShared[key]));
+      }
+      return group;
+    },
+  },
+  {
     // 福岡タワー（PLATEAU には塔が無く、足元の低い建物の箱だけがあるので、それを消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_478d8445-d980-4744-a2ca-3dbb47074129',
     ...around(33.59328, 130.35152, 0),
@@ -964,6 +997,7 @@ let castleShared: Record<keyof CastleParts, THREE.Material> | null = null;
 let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let fukuokaTowerShared: Record<keyof FukuokaTowerParts, THREE.Material> | null = null;
+let paypayDomeShared: Record<keyof PayPayDomeParts, THREE.Material> | null = null;
 let portTowerShared: Record<keyof PortTowerParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
 
