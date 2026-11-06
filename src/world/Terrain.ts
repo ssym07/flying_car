@@ -181,7 +181,8 @@ export class Terrain {
   /**
    * 画面に描いている地形の面の標高（ジオイド基準, m）。heightAt は5mメッシュの標高そのものだが、
    * 地形のメッシュはそれより粗い三角形なので、線路や道路をその上に置く時はこちらを使う
-   * （heightAt に置くと、掘割や斜面でメッシュの面に埋もれる）。読込前なら null
+   * （heightAt に置くと、掘割や斜面でメッシュの面に埋もれる）。読込前なら null。
+   * 建物の敷地の段（TERRAIN.pads）は含まない（道は敷地を下げる前の地面に沿わせる）
    */
   surfaceHeightAt(latDeg: number, lonDeg: number): number | null {
     const t = lonLatToTile(lonDeg, latDeg, TERRAIN.demZoom);
@@ -318,10 +319,11 @@ export class Terrain {
   private async loadChunk(chunk: Chunk): Promise<void> {
     const z = TERRAIN.demZoom;
     try {
-      const [dem, map, waterData] = await Promise.all([
+      const [dem, map, waterData, pads] = await Promise.all([
         fetchDem(chunk.x, chunk.y, z),
         fetchPhoto(chunk.x, chunk.y, z, TERRAIN.photoZoomOffset),
         fetchWaterMask(chunk.x, chunk.y, z),
+        fetchPads(chunk.x, chunk.y),
       ]);
       const heights = dem ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
       fillNoData(heights, TILE_PX);
@@ -331,7 +333,7 @@ export class Terrain {
         fetchParks(chunk.x, chunk.y, z, waterData?.mask ?? null),
         fetchLanduse(chunk.x, chunk.y, z),
       ]);
-      const geometry = buildGeometry(heights, chunk.x, chunk.y, z, this.ecefToLocal!);
+      const geometry = buildGeometry(heights, pads, chunk.x, chunk.y, z, this.ecefToLocal!);
       if (chunk.dead) {
         geometry.dispose();
         map?.dispose();
@@ -539,6 +541,7 @@ function createMaterials(
 /** チャンク (x, y) の地形メッシュを作る。縁には隙間隠しの壁を付ける */
 function buildGeometry(
   heights: Float32Array,
+  pads: Float32Array | null,
   x: number,
   y: number,
   z: number,
@@ -551,9 +554,26 @@ function buildGeometry(
   const uvs = new Float32Array((gridCount + perimeter * 2) * 2);
   const v = new THREE.Vector3();
   const index: number[] = [];
+  /** 頂点の周り（前後の頂点まで）の建物の底の一番低い高さ。無ければ Infinity */
+  const reach = TILE_PX / seg;
+  const padAt = (col: number, row: number) => {
+    let low = Infinity;
+    if (!pads) return low;
+    const cx = (col / seg) * TILE_PX;
+    const cy = (row / seg) * TILE_PX;
+    const i0 = Math.max(0, Math.floor(cx - reach));
+    const i1 = Math.min(TILE_PX - 1, Math.ceil(cx + reach) - 1);
+    const j0 = Math.max(0, Math.floor(cy - reach));
+    const j1 = Math.min(TILE_PX - 1, Math.ceil(cy + reach) - 1);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) low = Math.min(low, pads[j * TILE_PX + i]);
+    return low;
+  };
 
   const place = (k: number, col: number, row: number, heightOffset: number) => {
-    const h = sampleHeight(heights, TILE_PX, (col / seg) * TILE_PX, (row / seg) * TILE_PX);
+    let h = sampleHeight(heights, TILE_PX, (col / seg) * TILE_PX, (row / seg) * TILE_PX);
+    // 建物の敷地：底より上に地面を出さない（坂の上側の1階を覆わないよう、家ごとの平らな段にする）
+    const pad = padAt(col, row) + TERRAIN.pads.clearance;
+    if (pad < h && h - pad < TERRAIN.pads.maxDig) h = pad;
     const { lon, lat } = tileToLonLat(x + col / seg, y + row / seg, z);
     WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, h + TERRAIN.geoidHeight + heightOffset, v);
     v.applyMatrix4(ecefToLocal);
@@ -687,7 +707,25 @@ async function fetchDem(x: number, y: number, z: number): Promise<Float32Array |
 
 async function fetchDemImage(url: string): Promise<Float32Array | null> {
   const image = await fetchImage(url);
-  if (!image) return null;
+  return image ? decodeDemImage(image) : null;
+}
+
+/** 建物の敷地の地図（標高 PNG と同じ形式）。建物の無い所は Infinity。地図の無いチャンクは null */
+async function fetchPads(x: number, y: number): Promise<Float32Array | null> {
+  try {
+    const url = `${import.meta.env.BASE_URL}${TERRAIN.pads.path.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    // 開発サーバーは無いファイルの代わりに HTML を返すので、PNG かどうかで見分ける
+    if (!res.ok || !res.headers.get('content-type')?.includes('png')) return null;
+    const pads = decodeDemImage(await createImageBitmap(await res.blob()));
+    for (let k = 0; k < pads.length; k++) if (Number.isNaN(pads[k])) pads[k] = Infinity;
+    return pads;
+  } catch {
+    return null;
+  }
+}
+
+function decodeDemImage(image: ImageBitmap): Float32Array {
   const canvas = new OffscreenCanvas(TILE_PX, TILE_PX);
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(image, 0, 0);

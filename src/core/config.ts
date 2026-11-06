@@ -150,8 +150,14 @@ export const TERRAIN = {
   unloadRadius: 3600,
   /** 同時に作るチャンク数 */
   concurrentChunks: 4,
-  /** 標高タイル1枚あたりのメッシュ分割数 */
-  segments: 64,
+  /** 標高タイル1枚あたりのメッシュ分割数（約8m 間隔。建物の敷地の段を出せる細かさ） */
+  segments: 128,
+  /**
+   * 建物の敷地の地図（scripts/build-building-pads.mjs）。坂では建物の底が敷地の一番低い地面の高さなので、
+   * 敷地とその周り（頂点の間隔ぶん）の地面を底 + clearance m より上に出さない。
+   * 底が地面より maxDig m 以上低い所（地下のある建物など）は下げない
+   */
+  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12 },
   /** チャンクの継ぎ目の隙間を隠すため、縁から下に垂らす壁の深さ (m) */
   skirtDepth: 8,
   /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。開始地点付近の値（地域の中の差は1m前後） */
