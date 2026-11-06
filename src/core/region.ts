@@ -49,7 +49,7 @@ export const REGIONS: Record<Region['id'], Region> = {
     origin: { latDeg: 33.5897, lonDeg: 130.4207, ellipsoidHeight: 38 },
     geoidHeight: 32.61,
     dataDir: 'fukuoka/',
-    prefectures: ['40'],
+    prefectures: ['40', '41'],
     searchExample: '天神',
   },
 };
