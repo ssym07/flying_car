@@ -413,9 +413,19 @@ export function addLanduse(
             float dark = smoothstep(0.38, 0.28, lum);
             float tanned = smoothstep(0.03, 0.08, photo.r - photo.b) * (1.0 - dark);
             float green = smoothstep(0.01, 0.06, photo.g - max(photo.r, photo.b));
-            // 家の周り（建物から luNatural.x〜y m）は住宅地の敷地：明るい舗装と土のむら。庭木・芝（暗い・緑）は草地
-            vec3 lot = mix(lu_lot, lu_lot2, smoothstep(0.35, 0.75, big)) * (0.94 + fine * 0.1);
-            lot = mix(lot, mix(lu_grass, lu_grass2, big) * (0.92 + fine * 0.12), max(green, dark * 0.6));
+            // 市街地（建物から luNatural.x〜y m）の敷地：12〜18m の不ぞろいな区画ごとに色を変えたつぎはぎ（緑は出さない）。
+            // 白っぽい灰色が主で、暗い灰色（アスファルト）・明るい灰色・薄いベージュ（土の空き地）が混ざる
+            vec2 jitter = vec2(luNoise(w / 11.0), luNoise(w / 11.0 + 7.3)) * 6.0;
+            vec2 cell = floor((w + jitter) / 15.0);
+            float pick = luHash(cell);
+            float tone = luHash(cell + 17.1);
+            vec3 lot = pick < 0.58 ? lu_lot : pick < 0.8 ? lu_lot2 : pick < 0.93 ? lu_lotLight : lu_lotSoil;
+            lot *= 0.93 + tone * 0.1 + fine * 0.06 + (big - 0.5) * 0.06;
+            // 遠くでは区画が細かすぎてちらつくので、平均の色に寄せる
+            vec3 lotAverage = lu_lot * 0.58 + lu_lot2 * 0.22 + lu_lotLight * 0.13 + lu_lotSoil * 0.07;
+            lot = mix(lot, lotAverage, smoothstep(0.3, 1.2, fwidth(w.x) / 15.0 * 8.0));
+            // 写真の暗い所（庭木・影）は少し暗い灰色に
+            lot *= 1.0 - dark * 0.12;
             // 離れた所は自然の地面：野の草のむらに、枯れ草（薄茶）・林の下草（暗い）を混ぜる
             float clump = luNoise(w / 23.0);
             vec3 wild = mix(lu_wild, lu_wild2, smoothstep(0.3, 0.8, big * 0.6 + clump * 0.4)) * (0.9 + fine * 0.14);
@@ -428,8 +438,12 @@ export function addLanduse(
             float meters = texture2D(luNearMap, vMapUv).r * luNearRange;
             float natural = smoothstep(luNatural.x, luNatural.y, meters);
             col = mix(lot, wild, natural);
+            // 斜面の法面も市街地の外だけ
+            steep *= natural;
             col = mix(col, bank, steep * (1.0 - dark * 0.5));
             photoMix = mix(luDefaultPhotoMix, luNaturalPhotoMix, max(natural, steep));
+            // 市街地では写真の色味（庭木の緑など）を抜いて、明るさのむらだけ混ぜる
+            photo = mix(photo, vec3(dot(photo, vec3(0.333))), (1.0 - max(natural, steep)) * 0.85);
           } else if (kind < 0.5) {
             // 駐車場：アスファルトに白線（幅 2.5m・奥行き 5m の区画が、通路 6m をはさんで向かい合う）
             col = lu_parking * (0.9 + fine * 0.15);
@@ -439,8 +453,12 @@ export function addLanduse(
             float edge = luLine(across - 5.0, 16.0, 0.15) + luLine(across - 11.0, 16.0, 0.15);
             col = mix(col, lu_marking, clamp(stall + edge, 0.0, 1.0) * 0.9);
           } else if (kind < 1.5) {
-            // 線路の敷地：砂利
-            col = lu_ballast * (0.7 + luHash(floor(w * 6.0)) * 0.45) * (0.9 + big * 0.15);
+            // 線路の敷地：焦げ茶の砂利。錆びた赤茶のむらと、線路の向きの筋（並んだ線路と枕木の跡）
+            float grain = luHash(floor(w * 6.0));
+            float rust = smoothstep(0.35, 0.8, luNoise(vec2(along / 14.0, across / 3.0)));
+            float streak = luNoise(vec2(along / 30.0, across * 0.7));
+            col = mix(lu_ballast, lu_ballast2, rust * 0.7) * (0.78 + grain * 0.32) * (0.85 + streak * 0.25);
+            photoMix = 0.08;
           } else if (kind < 2.5) {
             // 墓地：白っぽい石張り（不揃いな丸い石の目地）。墓石は立体で並べる（buildGraves）
             col = lu_stone * (0.95 + fine * 0.08);

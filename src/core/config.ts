@@ -584,16 +584,22 @@ export const LANDUSE = {
    * 種類の無い地面の塗り分け。建物から lotNear m までは住宅地の敷地、lotFar m より先は自然の地面（間はなめらかに）。
    * 傾きが bankSlope（1 - 法線の上向き成分）を超える斜面は、建物の近くでも草の法面にする。自然の地面は写真を naturalPhotoMix 混ぜる
    */
-  natural: { lotNear: 14, lotFar: 34, bankSlope: [0.06, 0.14], naturalPhotoMix: 0.12 },
+  natural: { lotNear: 30, lotFar: 60, bankSlope: [0.06, 0.14], naturalPhotoMix: 0.12 },
   colors: {
-    /** 住宅地の敷地（データの無い所）：明るい舗装と土のむら */
-    lot: 0xa8a49c,
-    lot2: 0x9c958a,
+    /**
+     * 市街地の敷地（データの無い所）：区画ごとに色の違うつぎはぎ。白っぽい灰色（コンクリート・屋根の照り返し）が主で、
+     * 暗い灰色（アスファルト）・明るい灰色・薄いベージュ（土・砂利の空き地）が混ざる
+     */
+    lot: 0xbdbbb6,
+    lot2: 0x8e8d8b,
+    lotLight: 0xd2d0cb,
+    lotSoil: 0xb9ad99,
     /** 駐車場のアスファルトと白線 */
     parking: 0x4b4d52,
     marking: 0xe8e8e2,
-    /** 線路の敷地の砂利 */
-    ballast: 0x8c857c,
+    /** 線路の敷地の砂利：焦げ茶と錆びた赤茶 */
+    ballast: 0x5a4c41,
+    ballast2: 0x76594a,
     /** 墓地の石畳と墓石 */
     stone: 0xb9b5ad,
     grave: 0x6f6e6c,
