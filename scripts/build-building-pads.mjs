@@ -87,12 +87,14 @@ function fillTriangle(a, b, c, h) {
 
 /** b3dm 1つの建物の三角形を塗る */
 function readB3dm(buf, sink) {
-  const ftj = buf.readUInt32LE(12);
-  const ftb = buf.readUInt32LE(16);
-  const btj = buf.readUInt32LE(20);
-  const btb = buf.readUInt32LE(24);
+  // 3D Tiles 1.1 の区（台東区など）はタイルが b3dm ではなく glb そのもの
+  const isGlb = buf.toString('ascii', 0, 4) === 'glTF';
+  const ftj = isGlb ? 0 : buf.readUInt32LE(12);
+  const ftb = isGlb ? 0 : buf.readUInt32LE(16);
+  const btj = isGlb ? 0 : buf.readUInt32LE(20);
+  const btb = isGlb ? 0 : buf.readUInt32LE(24);
   const ft = ftj > 0 ? JSON.parse(buf.toString('utf8', 28, 28 + ftj)) : {};
-  const glb = buf.subarray(28 + ftj + ftb + btj + btb);
+  const glb = isGlb ? buf : buf.subarray(28 + ftj + ftb + btj + btb);
   const jsonLength = glb.readUInt32LE(12);
   const json = JSON.parse(glb.toString('utf8', 20, 20 + jsonLength));
   const bin = glb.subarray(20 + jsonLength + 8);

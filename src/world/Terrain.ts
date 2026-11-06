@@ -328,6 +328,7 @@ export class Terrain {
         fetchWaterMask(chunk.x, chunk.y, z),
         fetchPads(chunk.x, chunk.y),
       ]);
+      const near = await fetchBuildingNear(chunk.x, chunk.y, z);
       const heights = dem ?? new Float32Array(TILE_PX * TILE_PX).fill(NO_DATA);
       fillNoData(heights, TILE_PX);
       if (waterData) flattenWater(heights, waterData.mask, waterData.size);
@@ -343,13 +344,14 @@ export class Terrain {
         water?.dispose();
         parks?.texture.dispose();
         landuse?.texture.dispose();
+        near.dispose();
         this.chunks.delete(key(chunk));
         return;
       }
       // 地面の種類（データが無くても住宅地の敷地のテンプレートで塗る）があるので、チャンクごとに材質を作る
       chunk.mesh = new THREE.Mesh(
         geometry,
-        createMaterials(map, water, parks?.texture ?? null, landuse?.texture ?? null),
+        createMaterials(map, water, parks?.texture ?? null, landuse?.texture ?? null, near),
       );
       applyCarves(chunk.mesh, [...this.carves.values()], false);
       geometry.computeBoundingBox();
@@ -409,6 +411,7 @@ export class Terrain {
       (materials[0].userData.waterMap as THREE.Texture | undefined)?.dispose();
       (materials[0].userData.parkMap as THREE.Texture | undefined)?.dispose();
       (materials[0].userData.landuseMap as THREE.Texture | null | undefined)?.dispose();
+      (materials[0].userData.nearMap as THREE.Texture | null | undefined)?.dispose();
       const trench = materials[0].userData.trench as { value: THREE.Texture } | undefined;
       if (trench && trench.value !== noTrench) trench.value.dispose();
       for (const m of materials) m.dispose();
@@ -517,6 +520,7 @@ function createMaterials(
   water: THREE.Texture | null = null,
   park: THREE.Texture | null = null,
   landuse: THREE.Texture | null = null,
+  near: THREE.Texture | null = null,
 ): THREE.Material[] {
   const color = map ? 0xffffff : 0x7d8a72;
   // 道路のポリゴンと同じ高さで重なってもちらつかないよう、地形を奥へずらす
@@ -533,7 +537,7 @@ function createMaterials(
   // 水面の処理より先に芝生を塗る（池の上は水面になる）。addParks は前の処理に続けてつなぐので、水面の後に呼ぶ
   if (park) addParks(ground, park);
   // 地面の種類は公園・水面より先に塗る（公園の芝生・水面が上になる）。同じ理由で最後に呼ぶ
-  addLanduse(ground, landuse);
+  addLanduse(ground, landuse, near);
   addTrenchMask(ground);
   return [
     // 縁の壁も本体と同じ材質で描く（別の材質だと、本体だけ奥へずらすので壁の上の縁が手前に出て、
@@ -726,8 +730,26 @@ async function fetchDemImage(url: string): Promise<Float32Array | null> {
   return image ? decodeDemImage(image) : null;
 }
 
-/** 建物の敷地の地図（標高 PNG と同じ形式）。建物の無い所は Infinity。地図の無いチャンクは null */
-async function fetchPads(x: number, y: number): Promise<Float32Array | null> {
+/** 読んだ建物の敷地の地図（隣のチャンクの建物までの距離を測るのにも使うので、しばらく取っておく） */
+const padCache = new Map<string, Promise<Float32Array | null>>();
+const PAD_CACHE_SIZE = 128;
+
+/** 建物の敷地の地図（標高 PNG と同じ形式）。建物の無い所は Infinity。地図の無いチャンク（建物が無い）は null */
+function fetchPads(x: number, y: number): Promise<Float32Array | null> {
+  const k = `${x}/${y}`;
+  let pads = padCache.get(k);
+  if (pads) {
+    // 使った物を後ろへ（古い物から捨てる）
+    padCache.delete(k);
+  } else {
+    pads = loadPads(x, y);
+    while (padCache.size >= PAD_CACHE_SIZE) padCache.delete(padCache.keys().next().value!);
+  }
+  padCache.set(k, pads);
+  return pads;
+}
+
+async function loadPads(x: number, y: number): Promise<Float32Array | null> {
   try {
     const url = `${import.meta.env.BASE_URL}${TERRAIN.pads.path.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -739,6 +761,74 @@ async function fetchPads(x: number, y: number): Promise<Float32Array | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * 一番近い建物までの距離の画像（R = 距離 / TERRAIN.pads.nearRange、1 で打ち切り）。地面の種類の塗り分け（家の周りは敷地、
+ * 離れた所は草地・土）に使う。チャンクの縁で途切れないよう、周りのチャンクの建物も数える
+ */
+async function fetchBuildingNear(x: number, y: number, z: number): Promise<THREE.DataTexture> {
+  const range = TERRAIN.pads.nearRange;
+  const { lat } = tileToLonLat(x + 0.5, y + 0.5, z);
+  const pxMeters = (40075016 * Math.cos(lat)) / 2 ** z / TILE_PX;
+  const margin = Math.ceil(range / pxMeters);
+  const size = TILE_PX + margin * 2;
+  const around = await Promise.all(grid(3).map(([i, j]) => fetchPads(x + i - 1, y + j - 1)));
+  // 建物のピクセルを 0、ほかを遠くにして、2回なぞる距離変換（斜めは √2）
+  const far = range / pxMeters + 1;
+  const d = new Float32Array(size * size).fill(far);
+  grid(3).forEach(([i, j], n) => {
+    const pads = around[n];
+    if (!pads) return;
+    for (let py = 0; py < TILE_PX; py++) {
+      const gy = (j - 1) * TILE_PX + py + margin;
+      if (gy < 0 || gy >= size) continue;
+      for (let px = 0; px < TILE_PX; px++) {
+        const gx = (i - 1) * TILE_PX + px + margin;
+        if (gx >= 0 && gx < size && Number.isFinite(pads[py * TILE_PX + px])) d[gy * size + gx] = 0;
+      }
+    }
+  });
+  const D = Math.SQRT2;
+  for (let gy = 0; gy < size; gy++) {
+    for (let gx = 0; gx < size; gx++) {
+      const k = gy * size + gx;
+      let v = d[k];
+      if (gx > 0) v = Math.min(v, d[k - 1] + 1);
+      if (gy > 0) {
+        v = Math.min(v, d[k - size] + 1);
+        if (gx > 0) v = Math.min(v, d[k - size - 1] + D);
+        if (gx < size - 1) v = Math.min(v, d[k - size + 1] + D);
+      }
+      d[k] = v;
+    }
+  }
+  for (let gy = size - 1; gy >= 0; gy--) {
+    for (let gx = size - 1; gx >= 0; gx--) {
+      const k = gy * size + gx;
+      let v = d[k];
+      if (gx < size - 1) v = Math.min(v, d[k + 1] + 1);
+      if (gy < size - 1) {
+        v = Math.min(v, d[k + size] + 1);
+        if (gx < size - 1) v = Math.min(v, d[k + size + 1] + D);
+        if (gx > 0) v = Math.min(v, d[k + size - 1] + D);
+      }
+      d[k] = v;
+    }
+  }
+  // 北が上の写真と同じ uv にするので、行を上下逆に入れる
+  const data = new Uint8Array(TILE_PX * TILE_PX);
+  for (let py = 0; py < TILE_PX; py++) {
+    for (let px = 0; px < TILE_PX; px++) {
+      const m = d[(py + margin) * size + px + margin] * pxMeters;
+      data[(TILE_PX - 1 - py) * TILE_PX + px] = Math.round(Math.min(1, m / range) * 255);
+    }
+  }
+  const texture = new THREE.DataTexture(data, TILE_PX, TILE_PX, THREE.RedFormat);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function decodeDemImage(image: ImageBitmap): Float32Array {

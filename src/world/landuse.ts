@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { LANDUSE } from '../core/config';
+import { LANDUSE, TERRAIN } from '../core/config';
 import { roadMask } from './roadMask';
 
 /**
@@ -320,14 +320,23 @@ export function buildGraves(
 
 /** データの無いチャンク用（全体を住宅地の敷地に） */
 const emptyLanduse = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+/** 建物までの距離の画像が無い時：どこも建物のすぐ近く（住宅地の敷地） */
+const nearAll = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+nearAll.needsUpdate = true;
 emptyLanduse.needsUpdate = true;
 
 /**
  * 地形の材質に地面の種類を足す。landuseMap は fetchLanduse の画像（無ければ null）で、写真と同じ uv で貼る。
  * 公園（addParks）・水面（addWater）より先に塗る：それらの後に呼ぶと、こちらの処理がそれらの処理の前に入る
  */
-export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THREE.Texture | null): void {
+export function addLanduse(
+  material: THREE.MeshStandardMaterial,
+  landuseMap: THREE.Texture | null,
+  nearMap: THREE.Texture | null = null,
+): void {
   material.userData.landuseMap = landuseMap;
+  material.userData.nearMap = nearMap;
+  const N = LANDUSE.natural;
   const C = LANDUSE.colors;
   const previous = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
@@ -336,6 +345,11 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
     for (const [name, hex] of Object.entries(C)) shader.uniforms[`lu_${name}`] = { value: new THREE.Color(hex) };
     shader.uniforms.luPhotoMix = { value: LANDUSE.photoMix };
     shader.uniforms.luDefaultPhotoMix = { value: LANDUSE.defaultPhotoMix };
+    // 建物までの距離の画像が無い（読めなかった）時は、今まで通りすべて住宅地の敷地にする
+    shader.uniforms.luNearMap = { value: nearMap ?? nearAll };
+    shader.uniforms.luNatural = { value: new THREE.Vector4(N.lotNear, N.lotFar, ...N.bankSlope) };
+    shader.uniforms.luNaturalPhotoMix = { value: N.naturalPhotoMix };
+    shader.uniforms.luNearRange = { value: TERRAIN.pads.nearRange };
     if (!shader.vertexShader.includes('vLandWorld')) {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\nvarying vec3 vLandWorld;`)
@@ -357,6 +371,10 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
         float luIsBeach = 0.0;
         float luBeachNear = 0.0;
         uniform float luDefaultPhotoMix;
+        uniform sampler2D luNearMap;
+        uniform vec4 luNatural;
+        uniform float luNaturalPhotoMix;
+        uniform float luNearRange;
         varying vec3 vLandWorld;
         float luHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float luNoise(vec2 p) {
@@ -389,11 +407,29 @@ export function addLanduse(material: THREE.MeshStandardMaterial, landuseMap: THR
           vec3 col;
           float photoMix = luPhotoMix;
           if (kind < -0.5) {
-            // 住宅地の敷地：明るい舗装と土のむら。ただし写真が緑っぽい所（印の無い河川敷・芝・庭木）は草地にする
-            col = mix(lu_lot, lu_lot2, smoothstep(0.35, 0.75, big)) * (0.94 + fine * 0.1);
+            // 種類の無い地面。写真の色を3つに分ける（冬の写真は木も青灰色にくすむので、緑かどうかより暗さで見る）：
+            // 暗い所 = 木・林、薄茶色 = 枯れ草・畑、明るい灰色 = その他。緑っぽい所は芝・草
+            float lum = dot(photo, vec3(0.333));
+            float dark = smoothstep(0.38, 0.28, lum);
+            float tanned = smoothstep(0.03, 0.08, photo.r - photo.b) * (1.0 - dark);
             float green = smoothstep(0.01, 0.06, photo.g - max(photo.r, photo.b));
-            col = mix(col, mix(lu_grass, lu_grass2, big) * (0.92 + fine * 0.12), green);
-            photoMix = luDefaultPhotoMix;
+            // 家の周り（建物から luNatural.x〜y m）は住宅地の敷地：明るい舗装と土のむら。庭木・芝（暗い・緑）は草地
+            vec3 lot = mix(lu_lot, lu_lot2, smoothstep(0.35, 0.75, big)) * (0.94 + fine * 0.1);
+            lot = mix(lot, mix(lu_grass, lu_grass2, big) * (0.92 + fine * 0.12), max(green, dark * 0.6));
+            // 離れた所は自然の地面：野の草のむらに、枯れ草（薄茶）・林の下草（暗い）を混ぜる
+            float clump = luNoise(w / 23.0);
+            vec3 wild = mix(lu_wild, lu_wild2, smoothstep(0.3, 0.8, big * 0.6 + clump * 0.4)) * (0.9 + fine * 0.14);
+            wild = mix(wild, lu_dryGrass * (0.9 + fine * 0.12), tanned * 0.8);
+            wild = mix(wild, lu_forestFloor * (0.9 + big * 0.15), dark * 0.7);
+            // 斜面（法面）：建物の近くでも草と土
+            vec3 nrm = normalize(cross(dFdx(vLandWorld), dFdy(vLandWorld)));
+            float steep = smoothstep(luNatural.z, luNatural.w, 1.0 - abs(nrm.y));
+            vec3 bank = mix(lu_bank, lu_bare, smoothstep(0.6, 0.9, big) * 0.5) * (0.9 + fine * 0.14);
+            float meters = texture2D(luNearMap, vMapUv).r * luNearRange;
+            float natural = smoothstep(luNatural.x, luNatural.y, meters);
+            col = mix(lot, wild, natural);
+            col = mix(col, bank, steep * (1.0 - dark * 0.5));
+            photoMix = mix(luDefaultPhotoMix, luNaturalPhotoMix, max(natural, steep));
           } else if (kind < 0.5) {
             // 駐車場：アスファルトに白線（幅 2.5m・奥行き 5m の区画が、通路 6m をはさんで向かい合う）
             col = lu_parking * (0.9 + fine * 0.15);

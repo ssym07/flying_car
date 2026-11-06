@@ -157,9 +157,10 @@ export const TERRAIN = {
   /**
    * 建物の敷地の地図（scripts/build-building-pads.mjs）。坂では建物の底が敷地の一番低い地面の高さなので、
    * 敷地とその周り（頂点の間隔ぶん）の地面を底 + clearance m より上に出さない。敷地の中で地面が底より低ければ、底まで上げる。
-   * 底が地面より maxDig m 以上低い所（地下のある建物など）は下げず、maxFill m 以上高い所（高架の上の建物など）は上げない
+   * 底が地面より maxDig m 以上低い所（地下のある建物など）は下げず、maxFill m 以上高い所（高架の上の建物など）は上げない。
+   * 地面の種類の無い所は、建物から nearRange m までを住宅地の敷地として塗り分ける（LANDUSE.natural）
    */
-  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12, maxFill: 4 },
+  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12, maxFill: 4, nearRange: 48 },
   /** チャンクの継ぎ目の隙間を隠すため、縁から下に垂らす壁の深さ (m) */
   skirtDepth: 8,
   /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。開始地点付近の値（地域の中の差は1m前後） */
@@ -579,6 +580,11 @@ export const LANDUSE = {
   /** 航空写真の色を混ぜる割合（種類の分かる所・データの無い住宅地の敷地） */
   photoMix: 0.15,
   defaultPhotoMix: 0.3,
+  /**
+   * 種類の無い地面の塗り分け。建物から lotNear m までは住宅地の敷地、lotFar m より先は自然の地面（間はなめらかに）。
+   * 傾きが bankSlope（1 - 法線の上向き成分）を超える斜面は、建物の近くでも草の法面にする。自然の地面は写真を naturalPhotoMix 混ぜる
+   */
+  natural: { lotNear: 14, lotFar: 34, bankSlope: [0.06, 0.14], naturalPhotoMix: 0.12 },
   colors: {
     /** 住宅地の敷地（データの無い所）：明るい舗装と土のむら */
     lot: 0xa8a49c,
@@ -603,6 +609,12 @@ export const LANDUSE = {
     /** 草地（2色のむら） */
     grass: 0x78a556,
     grass2: 0x93b863,
+    /** 建物から離れた、種類の無い地面：野の草・枯れ草・林の下草・斜面の法面 */
+    wild: 0x84a656,
+    wild2: 0x9db66a,
+    dryGrass: 0xaaa36c,
+    forestFloor: 0x67874a,
+    bank: 0x86a05a,
     /** 畑の土と作物 */
     soil: 0x86684a,
     crop: 0x6f9a45,
