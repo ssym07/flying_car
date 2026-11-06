@@ -68,6 +68,8 @@ export class RouteMap {
   private dirty = true;
   /** 海（模式図の座標の形。scripts/build-route-map-sea.mjs の public/route-map-sea.json） */
   private sea: Path2D | null = null;
+  /** まだ Path2D にしていない海の多角形 */
+  private seaPolygons: number[][] | null = null;
   /** 動かせる範囲（海と陸を描いている範囲の内側の長方形。模式図の座標 [左, 上, 右, 下]） */
   private bounds: [number, number, number, number] | null = null;
   private opened = false;
@@ -118,21 +120,22 @@ export class RouteMap {
       )
       .then((data) => {
         if (!data) return;
-        const path = new Path2D();
-        const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
-        for (const pts of data.p) {
-          for (let i = 0; i < pts.length; i += 2) {
-            b[0] = Math.min(b[0], pts[i]);
-            b[1] = Math.min(b[1], pts[i + 1]);
-            b[2] = Math.max(b[2], pts[i]);
-            b[3] = Math.max(b[3], pts[i + 1]);
+        // 海の形（数万の多角形）は、初めて開いた時に作る（作るのに時間がかかり、開かなければ要らない）
+        this.seaPolygons = data.p;
+        let bounds = data.b;
+        if (!bounds) {
+          const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+          for (const pts of data.p) {
+            for (let i = 0; i < pts.length; i += 2) {
+              b[0] = Math.min(b[0], pts[i]);
+              b[1] = Math.min(b[1], pts[i + 1]);
+              b[2] = Math.max(b[2], pts[i]);
+              b[3] = Math.max(b[3], pts[i + 1]);
+            }
           }
-          path.moveTo(pts[0], pts[1]);
-          for (let i = 2; i < pts.length; i += 2) path.lineTo(pts[i], pts[i + 1]);
-          path.closePath();
+          bounds = b;
         }
-        this.sea = path;
-        this.bounds = data.b ?? b;
+        this.bounds = bounds;
         this.clampView();
         this.dirty = true;
       })
@@ -377,6 +380,17 @@ export class RouteMap {
 
   private draw(): void {
     this.dirty = false;
+    if (this.seaPolygons) {
+      // 1点ずつ lineTo するより、SVG のパスの文字列でまとめて渡す方がずっと速い
+      const parts: string[] = [];
+      for (const pts of this.seaPolygons) {
+        let d = `M${pts[0]} ${pts[1]}L`;
+        for (let i = 2; i < pts.length; i += 2) d += `${pts[i]} ${pts[i + 1]} `;
+        parts.push(`${d}Z`);
+      }
+      this.sea = new Path2D(parts.join(''));
+      this.seaPolygons = null;
+    }
     const c = this.canvas;
     const ratio = Math.min(window.devicePixelRatio, 2);
     const w = c.clientWidth;
