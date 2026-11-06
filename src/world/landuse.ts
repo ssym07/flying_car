@@ -320,8 +320,8 @@ export function buildGraves(
 
 /** データの無いチャンク用（全体を住宅地の敷地に） */
 const emptyLanduse = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
-/** 建物までの距離の画像が無い時：どこも建物のすぐ近く（住宅地の敷地） */
-const nearAll = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+/** 建物・線路までの距離の画像が無い時：どこも建物のすぐ近く（住宅地の敷地）で、線路から遠い */
+const nearAll = new THREE.DataTexture(new Uint8Array([0, 255, 0, 255]), 1, 1);
 nearAll.needsUpdate = true;
 emptyLanduse.needsUpdate = true;
 
@@ -350,6 +350,8 @@ export function addLanduse(
     shader.uniforms.luNatural = { value: new THREE.Vector4(N.lotNear, N.lotFar, ...N.bankSlope) };
     shader.uniforms.luNaturalPhotoMix = { value: N.naturalPhotoMix };
     shader.uniforms.luNearRange = { value: TERRAIN.pads.nearRange };
+    shader.uniforms.luRailRange = { value: TERRAIN.pads.railRange };
+    shader.uniforms.luRailSide = { value: new THREE.Vector2(LANDUSE.railSide.inner, LANDUSE.railSide.outer) };
     if (!shader.vertexShader.includes('vLandWorld')) {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\nvarying vec3 vLandWorld;`)
@@ -375,6 +377,8 @@ export function addLanduse(
         uniform vec4 luNatural;
         uniform float luNaturalPhotoMix;
         uniform float luNearRange;
+        uniform float luRailRange;
+        uniform vec2 luRailSide;
         varying vec3 vLandWorld;
         float luHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float luNoise(vec2 p) {
@@ -386,6 +390,13 @@ export function addLanduse(
           float d = abs(fract(x / period + 0.5) - 0.5) * period;
           float aa = fwidth(x) * 0.75;
           return 1.0 - smoothstep(w * 0.5 - aa, w * 0.5 + aa, d);
+        }
+        // 焦げ茶の砂利（線路の敷地・線路わき）。錆びた赤茶のむらと、線路の向きの筋（並んだ線路と枕木の跡）
+        vec3 luBallast(vec2 w, float along, float across, float big) {
+          float grain = luHash(floor(w * 6.0));
+          float rust = smoothstep(0.35, 0.8, luNoise(vec2(along / 14.0, across / 3.0)));
+          float streak = luNoise(vec2(along / 30.0, across * 0.7));
+          return mix(lu_ballast, lu_ballast2, rust * 0.7) * (0.78 + grain * 0.32) * (0.85 + streak * 0.25);
         }`,
       )
       .replace(
@@ -453,11 +464,8 @@ export function addLanduse(
             float edge = luLine(across - 5.0, 16.0, 0.15) + luLine(across - 11.0, 16.0, 0.15);
             col = mix(col, lu_marking, clamp(stall + edge, 0.0, 1.0) * 0.9);
           } else if (kind < 1.5) {
-            // 線路の敷地：焦げ茶の砂利。錆びた赤茶のむらと、線路の向きの筋（並んだ線路と枕木の跡）
-            float grain = luHash(floor(w * 6.0));
-            float rust = smoothstep(0.35, 0.8, luNoise(vec2(along / 14.0, across / 3.0)));
-            float streak = luNoise(vec2(along / 30.0, across * 0.7));
-            col = mix(lu_ballast, lu_ballast2, rust * 0.7) * (0.78 + grain * 0.32) * (0.85 + streak * 0.25);
+            // 線路の敷地：焦げ茶の砂利
+            col = luBallast(w, along, across, big);
             photoMix = 0.08;
           } else if (kind < 2.5) {
             // 墓地：白っぽい石張り（不揃いな丸い石の目地）。墓石は立体で並べる（buildGraves）
@@ -509,6 +517,12 @@ export function addLanduse(
             col *= 1.0 - 0.18 * clamp(luLine(w.x, 7.5, 0.12) + luLine(w.y, 7.5, 0.12), 0.0, 1.0);
             photoMix = 0.05;
           }
+          // 地面の高さを走る線路のわき（地図に線路の敷地が無い所も）：焦げ茶の砂利。種類の無い地面・工事現場・工場・草地・畑・広場だけ
+          float railM = texture2D(luNearMap, vMapUv).g * luRailRange;
+          float railSide = (1.0 - smoothstep(luRailSide.x, luRailSide.y, railM)) * ((kind < -0.5 || (kind > 4.5 && kind < 9.5)) ? 1.0 : 0.0);
+          // 筋の向き：線路わきは線路の向きが分からないので、砂利の粒とむらだけ（向きは揃えない）
+          col = mix(col, luBallast(w, w.x, w.y * 0.2, big), railSide);
+          photoMix = mix(photoMix, 0.08, railSide);
           diffuseColor.rgb = mix(col, photo, photoMix);
         }`,
       );

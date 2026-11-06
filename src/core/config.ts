@@ -158,9 +158,10 @@ export const TERRAIN = {
    * 建物の敷地の地図（scripts/build-building-pads.mjs）。坂では建物の底が敷地の一番低い地面の高さなので、
    * 敷地とその周り（頂点の間隔ぶん）の地面を底 + clearance m より上に出さない。敷地の中で地面が底より低ければ、底まで上げる。
    * 底が地面より maxDig m 以上低い所（地下のある建物など）は下げず、maxFill m 以上高い所（高架の上の建物など）は上げない。
-   * 地面の種類の無い所は、建物から nearRange m までを住宅地の敷地として塗り分ける（LANDUSE.natural）
+   * 地面の種類の無い所は、建物から nearRange m までを住宅地の敷地として塗り分ける（LANDUSE.natural）。
+   * 地面の高さを走る線路の中心線から railRange m までは、線路わきの砂利として塗る（LANDUSE.railSide）
    */
-  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12, maxFill: 4, nearRange: 48 },
+  pads: { path: `${REGION.dataDir}pads/15/{x}/{y}.png`, clearance: 0.15, maxDig: 12, maxFill: 4, nearRange: 48, railRange: 16 },
   /** チャンクの継ぎ目の隙間を隠すため、縁から下に垂らす壁の深さ (m) */
   skirtDepth: 8,
   /** 標高（ジオイド基準）を楕円体高に直すためのジオイド高 (m)。開始地点付近の値（地域の中の差は1m前後） */
@@ -584,6 +585,8 @@ export const LANDUSE = {
    * 種類の無い地面の塗り分け。建物から lotNear m までは住宅地の敷地、lotFar m より先は自然の地面（間はなめらかに）。
    * 傾きが bankSlope（1 - 法線の上向き成分）を超える斜面は、建物の近くでも草の法面にする。自然の地面は写真を naturalPhotoMix 混ぜる
    */
+  /** 線路わきの砂利：線路の中心線から inner m までは焦げ茶の砂利、outer m で周りの地面に戻る */
+  railSide: { inner: 7, outer: 11 },
   natural: { lotNear: 30, lotFar: 60, bankSlope: [0.06, 0.14], naturalPhotoMix: 0.12 },
   colors: {
     /**

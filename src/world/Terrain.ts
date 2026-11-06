@@ -764,6 +764,73 @@ async function loadPads(x: number, y: number): Promise<Float32Array | null> {
 }
 
 /**
+ * 地面の高さを走る線路（高架・トンネルの外）の中心線までの距離 (m) を、チャンクのピクセルごとに。TERRAIN.pads.railRange で打ち切り。
+ * 線路わきの地面を道床と同じ焦げ茶の砂利にするのに使う。チャンクの縁の線路も拾うよう、周りのチャンクの線路も見る
+ */
+async function railDistance(x: number, y: number, z: number, pxMeters: number): Promise<Float32Array> {
+  const range = TERRAIN.pads.railRange;
+  const out = new Float32Array(TILE_PX * TILE_PX).fill(range);
+  const n = 2 ** z;
+  const toPx = (latE6: number, lonE6: number): [number, number] => {
+    const lat = (latE6 / 1e6) * THREE.MathUtils.DEG2RAD;
+    return [
+      (((lonE6 / 1e6 + 180) / 360) * n - x) * TILE_PX,
+      (((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) * n - y) * TILE_PX,
+    ];
+  };
+  const reach = range / pxMeters;
+  const tiles = await Promise.all(
+    grid(3).map(async ([i, j]) => {
+      try {
+        const url = `${import.meta.env.BASE_URL}${RAILWAYS.tilePath.replace('{x}', `${x + i - 1}`).replace('{y}', `${y + j - 1}`)}`;
+        const res = await fetch(url);
+        if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
+        return (await res.json()) as { t: Array<[number, number[], number[]]> };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  for (const tile of tiles) {
+    for (const [, coords, heights] of tile?.t ?? []) {
+      let lat = 0;
+      let lon = 0;
+      let prev: [number, number] | null = null;
+      for (let k = 0; k < coords.length / 2; k++) {
+        lat += coords[k * 2];
+        lon += coords[k * 2 + 1];
+        const p = toPx(lat, lon);
+        // 高架（地面から 2.5m 以上）の区間は、下の地面を塗らない
+        const ground = Math.abs(heights[k] ?? 0) < 25 && Math.abs(heights[k - 1] ?? 0) < 25;
+        if (prev && ground) {
+          const [ax, ay] = prev;
+          const [bx, by] = p;
+          const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - reach));
+          const x1 = Math.min(TILE_PX - 1, Math.ceil(Math.max(ax, bx) + reach));
+          const y0 = Math.max(0, Math.floor(Math.min(ay, by) - reach));
+          const y1 = Math.min(TILE_PX - 1, Math.ceil(Math.max(ay, by) + reach));
+          const dx = bx - ax;
+          const dy = by - ay;
+          const len2 = dx * dx + dy * dy || 1;
+          for (let py = y0; py <= y1; py++) {
+            for (let px = x0; px <= x1; px++) {
+              const cx = px + 0.5;
+              const cy = py + 0.5;
+              const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / len2));
+              const m = Math.hypot(cx - ax - dx * t, cy - ay - dy * t) * pxMeters;
+              const i = py * TILE_PX + px;
+              if (m < out[i]) out[i] = m;
+            }
+          }
+        }
+        prev = p;
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * 一番近い建物までの距離の画像（R = 距離 / TERRAIN.pads.nearRange、1 で打ち切り）。地面の種類の塗り分け（家の周りは敷地、
  * 離れた所は草地・土）に使う。チャンクの縁で途切れないよう、周りのチャンクの建物も数える
  */
@@ -816,15 +883,19 @@ async function fetchBuildingNear(x: number, y: number, z: number): Promise<THREE
       d[k] = v;
     }
   }
-  // 北が上の写真と同じ uv にするので、行を上下逆に入れる
-  const data = new Uint8Array(TILE_PX * TILE_PX);
+  const rail = await railDistance(x, y, z, pxMeters);
+  // 北が上の写真と同じ uv にするので、行を上下逆に入れる（R = 建物まで、G = 線路まで）
+  const railRange = TERRAIN.pads.railRange;
+  const data = new Uint8Array(TILE_PX * TILE_PX * 2);
   for (let py = 0; py < TILE_PX; py++) {
     for (let px = 0; px < TILE_PX; px++) {
       const m = d[(py + margin) * size + px + margin] * pxMeters;
-      data[(TILE_PX - 1 - py) * TILE_PX + px] = Math.round(Math.min(1, m / range) * 255);
+      const k = ((TILE_PX - 1 - py) * TILE_PX + px) * 2;
+      data[k] = Math.round(Math.min(1, m / range) * 255);
+      data[k + 1] = Math.round(Math.min(1, rail[py * TILE_PX + px] / railRange) * 255);
     }
   }
-  const texture = new THREE.DataTexture(data, TILE_PX, TILE_PX, THREE.RedFormat);
+  const texture = new THREE.DataTexture(data, TILE_PX, TILE_PX, THREE.RGFormat);
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearFilter;
   texture.needsUpdate = true;
