@@ -144,7 +144,6 @@ import {
   createHankyuGrandMaterial,
   createHarukasGlassMaterial,
   createHarukasStoreMaterial,
-  createHarukasTrussMaterial,
   createHankyuSignMaterial,
   createHankyuStationMaterial,
   createHankyuTerminalMaterial,
@@ -255,7 +254,6 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     grandBand: createHankyuGrandMaterial(),
     harukasGlass: createHarukasGlassMaterial(),
     harukasStore: createHarukasStoreMaterial(),
-    harukasTruss: createHarukasTrussMaterial(),
     tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
   };
   const group = new THREE.Group();

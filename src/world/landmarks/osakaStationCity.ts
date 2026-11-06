@@ -28,7 +28,7 @@ import { beam } from './fukuokaTower';
  * - 阪急グランドビル：ツインタワーズ・ノースの北東に立つ、南北に長く両端の角を落とした細い 127m の塔。明るい灰色の横の帯と、
  *   横長の暗い窓が交互に並ぶ。屋上は段になって、上に塔屋
  * - あべのハルカス：近鉄百貨店の 60m の幅の広い下の段、170m までの事務所の段（西に張り出す箱）、300m までのホテル・展望台の段を、
- *   北の面をそろえて南へ段々に引っ込めて重ねる。淡い青緑のガラスに細かい格子、段の境目に白い V 字のトラスの帯
+ *   北・東・西の面をそろえて南へ段々に引っ込めて重ねる。淡い青緑のガラスに細かい格子と、設備の階の暗い横の帯
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
@@ -65,8 +65,7 @@ export type StationCityKey =
   | 'twsPodium'
   | 'grandBand'
   | 'harukasGlass'
-  | 'harukasStore'
-  | 'harukasTruss';
+  | 'harukasStore';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
 type P2 = [number, number];
@@ -813,18 +812,15 @@ export function buildAbenoHarukas(cx: number): StationCityParts {
   push(out, 'green', cap(cx, rect(-36, 30, -40, -30), 60.6));
   // ---- 中の段：事務所（170m）。北の面をそろえ、南は引っ込める。下に西へ張り出す箱 ----
   const mid = rect(-46, 37, -26, 35);
-  prism(out, cx, mid, 60, 166, () => 'harukasGlass');
-  prism(out, cx, mid, 166, 172, () => 'harukasTruss');
+  prism(out, cx, mid, 60, 170, () => 'harukasGlass');
   prism(out, cx, rect(-64, -46, -6, 28), 62, 84, () => 'harukasGlass');
-  prism(out, cx, rect(-64, -46, -6, 28), 80, 84, () => 'harukasTruss', null);
-  prism(out, cx, offset(mid, 0.2), 60.5, 65, () => 'harukasTruss', null);
-  // ---- 上の段：ホテル・展望台（300m）。さらに南を引っ込める。途中と上に V 字の帯 ----
-  const top = rect(-30, 30, -6, 35);
-  prism(out, cx, top, 172, 296, () => 'harukasGlass');
-  prism(out, cx, offset(top, 0.2), 226, 232, () => 'harukasTruss', null);
-  prism(out, cx, offset(top, 0.2), 284, 290, () => 'harukasTruss', null);
+  // ---- 上の段：ホテル・展望台（300m）。東西は中の段と同じ幅で、南だけさらに引っ込める ----
+  const top = rect(-46, 37, -6, 35);
+  prism(out, cx, top, 170, 296, () => 'harukasGlass');
+  // 設備の階の暗い横の帯
+  for (const y of [112, 166, 230]) band(out, cx, y < 170 ? mid : top, y, y + 4, 0.15, 'inoGlass');
   band(out, cx, top, 296, 300, 0.1, 'harukasGlass');
-  block(out, cx, 0, 15, 30, 20, 296, 299);
+  block(out, cx, -4, 15, 40, 20, 296, 299);
   return finish(out);
 }
 
@@ -1267,29 +1263,4 @@ export function createHarukasStoreMaterial(): THREE.MeshStandardMaterial {
     0.25,
     0.35,
   );
-}
-
-/** 段の境目の白い V 字のトラス（暗い奥に白い斜めの材。1枚 = 横 3.2m × 1 階） */
-export function createHarukasTrussMaterial(): THREE.MeshStandardMaterial {
-  const m = facadeMaterial(
-    (g, W, H) => {
-      g.fillStyle = '#2c3438';
-      g.fillRect(0, 0, W, H);
-      g.strokeStyle = '#eef0ef';
-      g.lineWidth = 6;
-      g.beginPath();
-      g.moveTo(0, 0);
-      g.lineTo(W / 2, H);
-      g.lineTo(W, 0);
-      g.stroke();
-      g.fillStyle = '#eef0ef';
-      g.fillRect(0, 0, W, 6);
-      g.fillRect(0, H - 6, W, 6);
-    },
-    0.5,
-    0.2,
-  );
-  // 1 つの V = 横 6.4m × 高さ 6m（帯の高さ）
-  m.map!.repeat.set(0.5, FLOOR / 6);
-  return m;
 }
