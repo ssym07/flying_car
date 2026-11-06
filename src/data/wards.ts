@@ -190,4 +190,9 @@ export const WARDS: Ward[] = [
   { code: '40219', name: '大野城市', kind: 'lod1', url: '' },
   { code: '40217', name: '筑紫野市', kind: 'lod1', url: '' },
   { code: '40221', name: '太宰府市', kind: 'lod1', url: '' },
+  // 新宮町・古賀市・福津市・糸島市：PLATEAU が無いので国土地理院の建物の形から作る（海側の範囲だけ。scripts/lib/region.mjs）
+  { code: '40345', name: '新宮町', kind: 'lod1', url: '' },
+  { code: '40223', name: '古賀市', kind: 'lod1', url: '' },
+  { code: '40224', name: '福津市', kind: 'lod1', url: '' },
+  { code: '40230', name: '糸島市', kind: 'lod1', url: '' },
 ];
