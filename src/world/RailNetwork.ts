@@ -51,6 +51,8 @@ export class RailNetwork implements ChunkListener {
   private readonly portalMaterial = createPortalConcreteMaterial();
   /** トンネルの内壁（頂点色で、入口から奥へ暗くする。光の届かない所なのでライティングしない） */
   private readonly liningMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  /** 線路わきの金網の柵 */
+  private readonly fenceMaterial = createFenceMaterial();
 
   constructor(private readonly terrain: Terrain) {
     terrain.addListener(this);
@@ -102,6 +104,7 @@ export class RailNetwork implements ChunkListener {
     // トンネルの入口へ下りる掘割（両側に擁壁を立てる）
     const approachCuts: THREE.Vector3[][] = [];
     const approaches: Approach[] = [];
+    const fenceTracks: Array<{ pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[]; inStation: boolean[] }> = [];
     // 駅の地面の高さ（駅の中の線路はこれを基準にして、ホームと高さをそろえる）
     const stationBase = (data.s ?? []).map(([lat, lon, cut]) =>
       stationGround(this.terrain, lat / 1e6, lon / 1e6, cut === 1, RAILWAYS.smoothRadius, RAILWAYS.cutFloorRadius),
@@ -120,6 +123,8 @@ export class RailNetwork implements ChunkListener {
         gauge === 0 ? monorail : null,
       );
       if (!built) continue;
+      // 柵は地上の線路（掘割・モノレールを除く）の外側に立てる
+      if (cut !== 1 && gauge > 0) fenceTracks.push(built);
       const floor = (p: THREE.Vector3) => p.clone().setY(p.y - RAILWAYS.lift - RAILWAYS.cutDepthBelow);
       if (cut === 1) cuts.push(built.pts.map(floor));
       else {
@@ -169,6 +174,7 @@ export class RailNetwork implements ChunkListener {
     if (approachCuts.length > 0) {
       this.terrain.addCarve(`rail-portal:${key}`, approachCuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
     }
+    const fence = this.buildFences(fenceTracks, noPier);
     const group = new THREE.Group();
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
       if (g) group.add(new THREE.Mesh(g, m));
@@ -180,7 +186,84 @@ export class RailNetwork implements ChunkListener {
     const { concrete, lining } = portals.build();
     add(concrete, this.portalMaterial);
     add(lining, this.liningMaterial);
+    add(fence, this.fenceMaterial);
     return group;
+  }
+
+  /**
+   * 地上の線路の両側の金網の柵。中心線から RAILWAYS.fence.offset m の所に、地面から height m。
+   * 並んで走る線路の間（ほかの線路の中心線が近い所）・駅の中・踏切・高架・トンネルへ下りる坂には立てない
+   */
+  private buildFences(
+    tracks: Array<{ pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[]; inStation: boolean[] }>,
+    noPier: ReadonlyArray<readonly [number, number, number]>,
+  ): THREE.BufferGeometry | null {
+    const F = RAILWAYS.fence;
+    // 線路の中心線の点を 5m 四方の升目に分けて、近くの線路を速く探す
+    const CELL = 5;
+    const cells = new Map<string, Array<{ track: number; p: THREE.Vector3 }>>();
+    const cellKey = (x: number, z: number) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
+    tracks.forEach((t, track) => {
+      for (const p of t.pts) {
+        const k = cellKey(p.x, p.z);
+        let list = cells.get(k);
+        if (!list) cells.set(k, (list = []));
+        list.push({ track, p });
+      }
+    });
+    const nearOther = (q: THREE.Vector3, self: number) => {
+      const cx = Math.floor(q.x / CELL);
+      const cz = Math.floor(q.z / CELL);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          for (const { track, p } of cells.get(`${cx + dx},${cz + dz}`) ?? []) {
+            if (track !== self && Math.hypot(p.x - q.x, p.z - q.z) < F.offset + F.gap) return true;
+          }
+        }
+      }
+      return false;
+    };
+    const crossings = noPier.map(([lat, lon, r]) => ({ p: this.terrain.toLocal(lat, lon, 0), r: r + F.crossingClear }));
+    const nearCrossing = (q: THREE.Vector3) => crossings.some(({ p, r }) => Math.hypot(p.x - q.x, p.z - q.z) < r);
+    const groundAt = (q: THREE.Vector3, fallback: number) => {
+      const ll = this.terrain.toLatLon(q);
+      const h = ll ? this.terrain.surfaceHeightAt(ll.lat, ll.lon) : null;
+      return h === null || !ll ? fallback : this.terrain.toLocal(ll.lat, ll.lon, h).y;
+    };
+
+    const pos: number[] = [];
+    const uv: number[] = [];
+    tracks.forEach((t, track) => {
+      for (const sign of [-1, 1]) {
+        let prev: { q: THREE.Vector3; y: number; u: number } | null = null;
+        for (let i = 0; i < t.pts.length; i++) {
+          const q = t.pts[i].clone().addScaledVector(t.sides[i], sign * F.offset);
+          const ok =
+            t.lift[i] > -0.3 && t.lift[i] < RAILWAYS.elevatedFrom && !t.inStation[i] && !nearOther(q, track) && !nearCrossing(q);
+          if (!ok) {
+            prev = null;
+            continue;
+          }
+          const y = groundAt(q, t.pts[i].y - RAILWAYS.lift - t.lift[i]);
+          const u: number = prev ? prev.u + Math.hypot(q.x - prev.q.x, q.z - prev.q.z) / F.postSpacing : 0;
+          if (prev) {
+            const a = prev;
+            pos.push(
+              a.q.x, a.y, a.q.z, q.x, y, q.z, q.x, y + F.height, q.z,
+              a.q.x, a.y, a.q.z, q.x, y + F.height, q.z, a.q.x, a.y + F.height, a.q.z,
+            );
+            uv.push(a.u, 0, u, 0, u, 1, a.u, 0, u, 1, a.u, 1);
+          }
+          prev = { q, y, u };
+        }
+      }
+    });
+    if (pos.length === 0) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    return g;
   }
 
   /**
@@ -197,7 +280,7 @@ export class RailNetwork implements ChunkListener {
     track: MeshBuilder,
     viaduct: MeshBuilder,
     monorail: MeshBuilder | null,
-  ): { pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[] } | null {
+  ): { pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[]; inStation: boolean[] } | null {
     // 細かく区切った点と、中心線に沿った距離 s、地面からの高さ
     const samples: Array<[number, number]> = [];
     const s: number[] = [];
@@ -264,6 +347,7 @@ export class RailNetwork implements ChunkListener {
       return THREE.MathUtils.lerp(overWater, base + lift[i], stationWeight[i]) + RAILWAYS.lift;
     });
     const pts = samples.map(([lat, lon], i) => this.terrain.toLocal(lat, lon, heights[i]));
+    const inStation = stationWeight.map((w) => w > 0);
     const elevated = lift.map((l) => l > RAILWAYS.elevatedFrom);
     // 各点の左右の向き
     const up = new THREE.Vector3(0, 1, 0);
@@ -282,7 +366,7 @@ export class RailNetwork implements ChunkListener {
         .setY(pts[i].y + dy);
     if (monorail) {
       this.buildMonorailBeam(monorail, samples, s, lift, ground, pts, sides, at, noPier);
-      return { pts, lift, sides };
+      return { pts, lift, sides, inStation };
     }
 
     // 道床（u：幅方向 0..1、v：枕木の繰り返し）
@@ -294,7 +378,7 @@ export class RailNetwork implements ChunkListener {
       if (prev) track.quad(prev[0], prev[1], a, b);
       prev = [a, b];
     }
-    if (!elevated.some(Boolean)) return { pts, lift, sides };
+    if (!elevated.some(Boolean)) return { pts, lift, sides, inStation };
 
     // 高架：側壁・桁の側面・底面（高架の所だけ）
     const edge = half + RAILWAYS.viaductShoulder;
@@ -367,7 +451,7 @@ export class RailNetwork implements ChunkListener {
         viaduct.quad(a, b, c, d);
       }
     }
-    return { pts, lift, sides };
+    return { pts, lift, sides, inStation };
   }
 
   /**
@@ -452,6 +536,38 @@ export class RailNetwork implements ChunkListener {
   }
 }
 
+/** 金網の柵の画像（横 = 支柱1本ぶんの間隔、縦 = 柵の高さ）：灰色の支柱・上下の横棒と、ひし形の金網。網の隙間は透明 */
+function createFenceMaterial(): THREE.MeshStandardMaterial {
+  const w = 64;
+  const h = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d')!;
+  g.clearRect(0, 0, w, h);
+  // ひし形の金網
+  g.strokeStyle = 'rgba(150,156,152,0.85)';
+  g.lineWidth = 1.2;
+  for (let k = -h; k < w + h; k += 8) {
+    g.beginPath();
+    g.moveTo(k, 0);
+    g.lineTo(k + h, h);
+    g.moveTo(k, h);
+    g.lineTo(k + h, 0);
+    g.stroke();
+  }
+  // 支柱と、上下の横棒
+  g.fillStyle = '#8d928f';
+  g.fillRect(0, 0, 4, h);
+  g.fillRect(0, 0, w, 3);
+  g.fillRect(0, h - 3, w, 3);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return new THREE.MeshStandardMaterial({ map: texture, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.3 });
+}
+
 /**
  * 道床の画像（幅 = 道床の幅、長さ 2.4m）：茶色い砂利、コンクリートの枕木、2本のレール。
  * gauge はレールの間隔 (m)
@@ -465,14 +581,14 @@ function createTrackMaterial(gauge: number): THREE.MeshStandardMaterial {
   const g = canvas.getContext('2d')!;
   const pxPerM = w / RAILWAYS.ballastWidth;
 
-  // 砂利：茶色の濃淡の粒。両端は少し暗くして溝のように
-  g.fillStyle = '#6b5544';
+  // 砂利：灰色がかった薄茶色の濃淡の粒。両端は少し暗くして溝のように
+  g.fillStyle = '#7f7164';
   g.fillRect(0, 0, w, h);
   let seed = 7;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 2200; i++) {
-    const v = 70 + rand() * 70;
-    g.fillStyle = `rgb(${v + 25},${v + 8},${v - 8})`;
+    const v = 85 + rand() * 70;
+    g.fillStyle = `rgb(${v + 14},${v + 5},${v - 4})`;
     g.fillRect(rand() * w, rand() * h, 1 + rand() * 2, 1 + rand() * 2);
   }
   const edge = g.createLinearGradient(0, 0, w, 0);

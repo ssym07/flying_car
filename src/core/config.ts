@@ -462,6 +462,11 @@ export const RAILWAYS = {
   tilePath: `${REGION.dataDir}rail-tracks/15/{x}/{y}.json`,
   /** 道床（砂利を敷いた部分）の幅 (m) */
   ballastWidth: 3.4,
+  /**
+   * 地上の線路の両側の金網の柵：中心線から offset m、高さ height m、支柱の間隔 postSpacing m。
+   * ほかの線路の中心線が offset + gap m より近い所（並んだ線路の間）と、踏切の周り（交わる道の半径 + crossingClear m）には立てない
+   */
+  fence: { offset: 3.0, height: 1.5, postSpacing: 2.0, gap: 0.6, crossingClear: 3 },
   /** 地面から浮かせる高さ (m) */
   lift: 0.3,
   /** 高架の上面をなだらかにするため、地面を均す範囲（±m） */
@@ -586,7 +591,7 @@ export const LANDUSE = {
    * 傾きが bankSlope（1 - 法線の上向き成分）を超える斜面は、建物の近くでも草の法面にする。自然の地面は写真を naturalPhotoMix 混ぜる
    */
   /** 線路わきの砂利：線路の中心線から inner m までは焦げ茶の砂利、outer m で周りの地面に戻る */
-  railSide: { inner: 7, outer: 11 },
+  railSide: { inner: 3.5, outer: 5.5 },
   natural: { lotNear: 30, lotFar: 60, bankSlope: [0.06, 0.14], naturalPhotoMix: 0.12 },
   colors: {
     /**
@@ -600,9 +605,9 @@ export const LANDUSE = {
     /** 駐車場のアスファルトと白線 */
     parking: 0x4b4d52,
     marking: 0xe8e8e2,
-    /** 線路の敷地の砂利：焦げ茶と錆びた赤茶 */
-    ballast: 0x5a4c41,
-    ballast2: 0x76594a,
+    /** 線路の敷地の砂利：灰色がかった薄茶と、少し錆びた茶 */
+    ballast: 0x887c70,
+    ballast2: 0x8f7967,
     /** 墓地の石畳と墓石 */
     stone: 0xb9b5ad,
     grave: 0x6f6e6c,
