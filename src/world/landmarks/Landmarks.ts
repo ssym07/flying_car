@@ -130,6 +130,7 @@ import {
 import {
   type StationCityKey,
   type StationCityParts,
+  buildAbenoHarukas,
   buildHankyuGrandBuilding,
   buildHankyuUmeda,
   buildInnogate,
@@ -141,6 +142,9 @@ import {
   buildTwinTowersSouth,
   buildYodobashiUmeda,
   createHankyuGrandMaterial,
+  createHarukasGlassMaterial,
+  createHarukasStoreMaterial,
+  createHarukasTrussMaterial,
   createHankyuSignMaterial,
   createHankyuStationMaterial,
   createHankyuTerminalMaterial,
@@ -249,6 +253,9 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     twsTower: createTwinSouthTowerMaterial(),
     twsPodium: createTwinSouthPodiumMaterial(),
     grandBand: createHankyuGrandMaterial(),
+    harukasGlass: createHarukasGlassMaterial(),
+    harukasStore: createHarukasStoreMaterial(),
+    harukasTruss: createHarukasTrussMaterial(),
     tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
   };
   const group = new THREE.Group();
@@ -747,6 +754,13 @@ const LANDMARKS: Landmark[] = [
     ...around(34.703075, 135.499078, 0),
     front: -1,
     build: (length) => stationCityGroup(buildHankyuGrandBuilding(length / 2)),
+  },
+  {
+    // あべのハルカス（PLATEAU の 328m の一つの箱を消して置く）。建物の座標は x = 東から南へ 17.8°、z = 南南西
+    gmlId: 'bldg_17b833fb-2d29-4be0-89ca-235e3e248482',
+    ...around(34.64603, 135.51358, -17.8),
+    front: -1,
+    build: (length) => stationCityGroup(buildAbenoHarukas(length / 2)),
   },
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
