@@ -130,6 +130,7 @@ import {
 import {
   type StationCityKey,
   type StationCityParts,
+  buildHankyuGrandBuilding,
   buildHankyuUmeda,
   buildInnogate,
   buildJpTowerOsaka,
@@ -139,6 +140,7 @@ import {
   buildTwinTowersNorth,
   buildTwinTowersSouth,
   buildYodobashiUmeda,
+  createHankyuGrandMaterial,
   createHankyuSignMaterial,
   createHankyuStationMaterial,
   createHankyuTerminalMaterial,
@@ -246,6 +248,7 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
     twnArch: createTwinNorthArchMaterial(),
     twsTower: createTwinSouthTowerMaterial(),
     twsPodium: createTwinSouthPodiumMaterial(),
+    grandBand: createHankyuGrandMaterial(),
     tree: flat(0x3f6b37, { roughness: 0.9, flatShading: true }),
   };
   const group = new THREE.Group();
@@ -737,6 +740,13 @@ const LANDMARKS: Landmark[] = [
     ...around(34.701007, 135.498427, OSAKA_STATION_DEG),
     front: -1,
     build: (length) => stationCityGroup(buildTwinTowersSouth(length / 2)),
+  },
+  {
+    // 阪急グランドビル（PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_8fc8508b-5e0d-44c6-bb0d-1a2ebffe78d8',
+    ...around(34.703075, 135.499078, 0),
+    front: -1,
+    build: (length) => stationCityGroup(buildHankyuGrandBuilding(length / 2)),
   },
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南

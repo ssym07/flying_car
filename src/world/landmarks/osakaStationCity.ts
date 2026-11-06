@@ -25,6 +25,8 @@ import { beam } from './fukuokaTower';
  *   丸い芝生のある庭園と円筒の塔屋）の南東に、白い格子に縦の線の、角を落とした八角形の 187m の塔（屋上にヘリポート）
  * - 大阪梅田ツインタワーズ・サウス：阪神梅田本店の幅の広い 56m の低層部（濃い灰色に不揃いな縦の模様、北東の角が大きく丸い L 字形。
  *   屋上に庭園と設備の箱）の北西の上に、濃い青灰色のガラスの格子の 189m の塔（縦に3つに分かれ、真ん中が少し引っ込む）
+ * - 阪急グランドビル：ツインタワーズ・ノースの北東に立つ、南北に長く両端の角を落とした細い 127m の塔。明るい灰色の横の帯と、
+ *   横長の暗い窓が交互に並ぶ。屋上は段になって、上に塔屋
  * - JPタワー大阪：白い縦のルーバーの KITTE大阪の低層部（38m、西に屋上の庭、南の道沿いに 22m の棟）の上に、
  *   青いガラスに白い縦の線の 188m の四角い塔。南東に 128m までの箱が少し張り出す
  */
@@ -58,7 +60,8 @@ export type StationCityKey =
   | 'twnBrown'
   | 'twnArch'
   | 'twsTower'
-  | 'twsPodium';
+  | 'twsPodium'
+  | 'grandBand';
 export type StationCityParts = Partial<Record<StationCityKey, THREE.BufferGeometry>>;
 
 type P2 = [number, number];
@@ -746,6 +749,39 @@ export function buildTwinTowersSouth(cx: number): StationCityParts {
   return finish(out);
 }
 
+// ---------------------------------------------------------------- 阪急グランドビル
+// 座標：中心は OpenStreetMap の形の中心、u = 東、v = 北
+
+export function buildHankyuGrandBuilding(cx: number): StationCityParts {
+  const out: Lists = {};
+  // 平面：南北 70m・東西 36m。両端の角を 8m 落とす
+  const plan: P2[] = [
+    [-10, -38],
+    [10, -38],
+    [18, -30],
+    [18, 23],
+    [10, 31],
+    [-10, 31],
+    [-18, 23],
+    [-18, -30],
+  ];
+  prism(out, cx, plan, 0, 115, () => 'grandBand');
+  band(out, cx, plan, 115, 117, 0.3);
+  // 屋上の段と設備、上の塔屋
+  const step = offset(plan, -3);
+  prism(out, cx, step, 117, 120, () => 'ngbLow');
+  block(out, cx, -6, -18, 12, 14, 120, 123);
+  block(out, cx, 8, -24, 8, 8, 120, 122.5);
+  const top: P2[] = [
+    [-11, 2],
+    [11, 2],
+    [11, 26],
+    [-11, 26],
+  ];
+  prism(out, cx, top, 120, 127, () => 'ngbLow', 'white');
+  return finish(out);
+}
+
 // ---------------------------------------------------------------- 材質
 
 /** ノースゲートの高層棟：灰色の壁に、細かい四角の窓（1枚 = 横 3.2m × 1 階に窓 2 つ） */
@@ -1130,5 +1166,23 @@ export function createTwinSouthPodiumMaterial(): THREE.MeshStandardMaterial {
     },
     0.55,
     0.2,
+  );
+}
+
+/** 阪急グランドビル：明るい灰色の横の帯と、横長の暗い窓が交互に並ぶ */
+export function createHankyuGrandMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#c4c6c6';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#3d4348';
+      g.fillRect(0, H * 0.3, W, H * 0.42);
+      g.fillStyle = 'rgba(160,180,195,0.3)';
+      g.fillRect(0, H * 0.3, W, H * 0.12);
+      g.fillStyle = 'rgba(40,45,50,0.35)';
+      g.fillRect(W - 2, H * 0.3, 2, H * 0.42);
+    },
+    0.6,
+    0.15,
   );
 }
