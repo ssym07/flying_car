@@ -8,7 +8,7 @@
  */
 const ROOT = new URL('../../', import.meta.url);
 
-export const REGION_ID = ['osaka', 'fukuoka'].includes(process.env.REGION) ? process.env.REGION : 'tokyo';
+export const REGION_ID = ['osaka', 'fukuoka', 'nagoya'].includes(process.env.REGION) ? process.env.REGION : 'tokyo';
 
 /**
  * データを取る範囲：[南, 西, 北, 東] の長方形のならび。
@@ -68,6 +68,8 @@ const REGION_AREAS = {
     // 9つ目は5つ目の東の福津市の東福間のあたり
     [33.75, 130.5, 33.79, 130.53],
   ],
+  // 名古屋：名古屋市16区（西の庄内川・南の名古屋港から、東の名東区・天白区・緑区まで。まわりの清須・北名古屋・豊明・日進・長久手・尾張旭の端も入る）
+  nagoya: [[35.04, 136.79, 35.27, 137.06]],
 };
 export const AREAS = REGION_AREAS[REGION_ID];
 
@@ -106,6 +108,17 @@ const REGION_SETTINGS = {
     keepSides: true,
     // 佐賀県（鳥栖市・基山町）も入る
     prefectures: ['40', '41'],
+  },
+  nagoya: {
+    center: [35.1709, 136.8815],
+    lat0: 35.16,
+    geoid: 38.07,
+    hubs: ['名古屋', '名鉄名古屋', '近鉄名古屋', '栄', '伏見', '久屋大通', '金山', '大曽根', '千種', '今池', '鶴舞', '熱田', '神宮前', '八事', '本山', '星ヶ丘', '藤が丘', '新瑞橋', '名古屋港', '黒川', '上小田井', '高畑', '野並', '徳重', 'ナゴヤドーム前矢田'],
+    // 名城線（環状）
+    ringLine: /名城線/,
+    cutLoops: true,
+    keepSides: true,
+    prefectures: ['23'],
   },
 };
 export const SETTINGS = REGION_SETTINGS[REGION_ID];

@@ -201,4 +201,21 @@ export const WARDS: Ward[] = [
   // 小郡市・基山町（佐賀県）：PLATEAU が無いので国土地理院の建物の形から作る
   { code: '40216', name: '小郡市', kind: 'lod1', url: '' },
   { code: '41341', name: '基山町', kind: 'lod1', url: '' },
+  // 名古屋市（名古屋のワールド。2022）
+  { code: '23101', name: '名古屋市千種区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e3/c5a409-dfb4-415c-a0a1-3c2c565fb3b8/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23101_chikusa-ku_lod1/tileset.json' },
+  { code: '23102', name: '名古屋市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/02/d91205-c321-4541-b93d-47d699041068/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23102_higashi-ku_lod1/tileset.json' },
+  { code: '23103', name: '名古屋市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/5d/9e8a10-159a-4aab-b7fb-9b50e4739f53/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23103_kita-ku_lod1/tileset.json' },
+  { code: '23104', name: '名古屋市西区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/83/8dff0f-7706-4a88-8de5-2418f41889aa/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23104_nishi-ku_lod1/tileset.json' },
+  { code: '23105', name: '名古屋市中村区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/20/220623-b369-4fd9-9525-0cf09de0c447/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23105_nakamura-ku_lod1/tileset.json' },
+  { code: '23106', name: '名古屋市中区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/ea/bf8edc-e0d9-466f-a9f7-822b3ef34851/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23106_naka-ku_lod1/tileset.json' },
+  { code: '23107', name: '名古屋市昭和区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/ad/df2ca9-381e-41fa-b79b-dfcc964638a7/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23107_showa-ku_lod1/tileset.json' },
+  { code: '23108', name: '名古屋市瑞穂区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/ed/2043ca-8471-4d5d-ae9f-cedcb46a75aa/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23108_mizuho-ku_lod1/tileset.json' },
+  { code: '23109', name: '名古屋市熱田区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/48/98bbde-44d2-483f-9191-6653e5744ad3/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23109_atsuta-ku_lod1/tileset.json' },
+  { code: '23110', name: '名古屋市中川区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a9/1dc07d-d6b2-470a-8431-6a73334ce00a/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23110_nakagawa-ku_lod1/tileset.json' },
+  { code: '23111', name: '名古屋市港区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/79/d67234-5b9d-4515-a16b-55edfe7d3bd3/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23111_minato-ku_lod1/tileset.json' },
+  { code: '23112', name: '名古屋市南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/52/c3206f-5462-4b84-ad50-a34ccf9303f4/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23112_minami-ku_lod1/tileset.json' },
+  { code: '23113', name: '名古屋市守山区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/42/4f909f-374b-4fae-8dde-1023720e7ea5/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23113_moriyama-ku_lod1/tileset.json' },
+  { code: '23114', name: '名古屋市緑区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/4b/c438fd-635e-4b65-ae6f-df30d2cf5bdf/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23114_midori-ku_lod1/tileset.json' },
+  { code: '23115', name: '名古屋市名東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e8/fb6aed-a8cb-4a04-8729-c73d12705f94/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23115_meito-ku_lod1/tileset.json' },
+  { code: '23116', name: '名古屋市天白区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/aa/899325-e5ab-4d5b-9c34-4e9c420e5035/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23116_tempaku-ku_lod1/tileset.json' },
 ];

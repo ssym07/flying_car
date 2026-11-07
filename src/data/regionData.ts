@@ -21,6 +21,7 @@ const loaders = {
   tokyo: () => Promise.all([import('./stations.json'), import('./roadLabels.json')]),
   osaka: () => Promise.all([import('./osaka/stations.json'), import('./osaka/roadLabels.json')]),
   fukuoka: () => Promise.all([import('./fukuoka/stations.json'), import('./fukuoka/roadLabels.json')]),
+  nagoya: () => Promise.all([import('./nagoya/stations.json'), import('./nagoya/roadLabels.json')]),
 };
 const [stationsModule, roadLabelsModule] = await loaders[REGION.id]();
 export const STATIONS: StationEntry[] = stationsModule.default;

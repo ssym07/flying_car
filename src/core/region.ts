@@ -1,13 +1,13 @@
 /**
- * 遊ぶ地域（ワールド）。URL の ?region=osaka・?region=fukuoka で選ぶ（無ければ東京）。
+ * 遊ぶ地域（ワールド）。URL の ?region=osaka・?region=fukuoka・?region=nagoya で選ぶ（無ければ東京）。
  * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
  *
  * 地域で作るデータ（道路・線路・地面の種類などのタイル、路線図・空路・駅の形）は、地域ごとに dataDir の下に置く
- * （東京は public の直下、大阪は public/osaka、福岡は public/fukuoka）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
+ * （東京は public の直下、大阪は public/osaka、福岡は public/fukuoka、名古屋は public/nagoya）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
  * 地域で分けておかないと、片方を作り直した時にもう片方が消える。建物（public/plateau）は区ごとなので共通
  */
 export interface Region {
-  id: 'tokyo' | 'osaka' | 'fukuoka';
+  id: 'tokyo' | 'osaka' | 'fukuoka' | 'nagoya';
   name: string;
   /** 飛行開始地点。ここがローカル原点になる */
   origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
@@ -52,6 +52,16 @@ export const REGIONS: Record<Region['id'], Region> = {
     prefectures: ['40', '41'],
     searchExample: '天神',
   },
+  nagoya: {
+    id: 'nagoya',
+    name: '名古屋',
+    // 名古屋駅（桜通口）
+    origin: { latDeg: 35.1709, lonDeg: 136.8815, ellipsoidHeight: 40 },
+    geoidHeight: 38.07,
+    dataDir: 'nagoya/',
+    prefectures: ['23'],
+    searchExample: '栄',
+  },
 };
 
 function pick(): Region {
@@ -59,7 +69,7 @@ function pick(): Region {
   const inWorker = typeof document === 'undefined' && typeof self !== 'undefined' && 'name' in self;
   const search = inWorker ? (self as unknown as { name: string }).name : typeof location === 'undefined' ? null : location.search;
   const id = search === null ? null : new URLSearchParams(search).get('region');
-  return id === 'osaka' || id === 'fukuoka' ? REGIONS[id] : REGIONS.tokyo;
+  return id === 'osaka' || id === 'fukuoka' || id === 'nagoya' ? REGIONS[id] : REGIONS.tokyo;
 }
 
 export const REGION: Region = pick();
