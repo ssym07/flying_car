@@ -168,6 +168,43 @@ import {
   createYodobashiTowerMaterial,
 } from './osakaStationCity';
 import {
+  type MinatoKey,
+  type MinatoParts,
+  buildConnectSquare,
+  buildGrandCentralTower,
+  buildInterContinental,
+  buildKdxTower,
+  buildLandmarkTower,
+  buildMediaTower,
+  buildQueensSquare,
+  buildSymphoStage,
+  buildYokohamaMitsui,
+  createConnectDarkMaterial,
+  createConnectLowMaterial,
+  createConnectWhiteMaterial,
+  createGrandCentralGlassMaterial,
+  createGrandCentralStripeMaterial,
+  createGrandCentralTerraceMaterial,
+  createKdxBlueMaterial,
+  createKdxPodiumMaterial,
+  createKdxWhiteMaterial,
+  createLandmarkBayMaterial,
+  createLandmarkGlassMaterial,
+  createLandmarkPavilionMaterial,
+  createLandmarkPlazaMaterial,
+  createLandmarkStoneMaterial,
+  createMediaBlockMaterial,
+  createMediaDrumMaterial,
+  createMitsuiMaterial,
+  createPacificoHallMaterial,
+  createPacificoLowMaterial,
+  createQueensTowerMaterial,
+  createSailMaterial,
+  createSymphoFinMaterial,
+  createSymphoGlassMaterial,
+  createSymphoGridMaterial,
+} from './minatomirai';
+import {
   type PayPayDomeParts,
   buildPayPayDome,
   createPayPayDomeGlassMaterial,
@@ -259,6 +296,55 @@ function stationCityGroup(parts: StationCityParts): THREE.Group {
   const group = new THREE.Group();
   for (const [key, g] of Object.entries(parts) as Array<[StationCityKey, THREE.BufferGeometry]>) {
     group.add(new THREE.Mesh(g, stationCityShared[key]));
+  }
+  return group;
+}
+
+/** みなとみらいの街区の向き（東から北へ, 度） */
+const MINATOMIRAI_DEG = 33;
+
+/** みなとみらいの高層ビルの材質（建物どうしで共通） */
+function minatoGroup(parts: MinatoParts): THREE.Group {
+  const flat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) =>
+    new THREE.MeshStandardMaterial({ color, roughness: 0.6, side: THREE.DoubleSide, ...extra });
+  minatoShared ??= {
+    white: flat(0xeceeed),
+    roofTop: flat(0x8f9294, { roughness: 0.85 }),
+    green: flat(0x5d7f45, { roughness: 0.95 }),
+    dark: flat(0x23272c, { roughness: 0.5 }),
+    heli: createHeliportMaterial(),
+    steel: flat(0xe9ecee, { roughness: 0.4, metalness: 0.4 }),
+    skyGlass: flat(0x86bfe6, { roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.8 }),
+    red: flat(0xd23a2e),
+    lmStone: createLandmarkStoneMaterial(),
+    lmBay: createLandmarkBayMaterial(),
+    lmGlass: createLandmarkGlassMaterial(),
+    lmPlaza: createLandmarkPlazaMaterial(),
+    lmPavilion: createLandmarkPavilionMaterial(),
+    qsTower: createQueensTowerMaterial(),
+    ichSail: createSailMaterial(),
+    ichLow: createPacificoLowMaterial(),
+    ichHall: createPacificoHallMaterial(),
+    mediaBlock: createMediaBlockMaterial(),
+    mediaDrum: createMediaDrumMaterial(),
+    symWest: createSymphoGlassMaterial(),
+    symGrid: createSymphoGridMaterial(),
+    symFin: createSymphoFinMaterial(),
+    gctGlass: createGrandCentralGlassMaterial(),
+    gctStripe: createGrandCentralStripeMaterial(),
+    gctCrown: flat(0xd9d3c4, { roughness: 0.75 }),
+    gctTerrace: createGrandCentralTerraceMaterial(),
+    conDark: createConnectDarkMaterial(),
+    conWhite: createConnectWhiteMaterial(),
+    conLow: createConnectLowMaterial(),
+    kdxWhite: createKdxWhiteMaterial(),
+    kdxBlue: createKdxBlueMaterial(),
+    kdxPodium: createKdxPodiumMaterial(),
+    mitsuiGlass: createMitsuiMaterial(),
+  };
+  const group = new THREE.Group();
+  for (const [key, g] of Object.entries(parts) as Array<[MinatoKey, THREE.BufferGeometry]>) {
+    group.add(new THREE.Mesh(g, minatoShared[key]));
   }
   return group;
 }
@@ -761,6 +847,71 @@ const LANDMARKS: Landmark[] = [
     build: (length) => stationCityGroup(buildAbenoHarukas(length / 2)),
   },
   {
+    // 横浜ランドマークタワーとランドマークプラザ（PLATEAU の塔の 297m の箱を消して置く。プラザの箱は別に消す）。
+    // 建物の座標は x = 東から北へ 33°、z = 南南東
+    gmlId: 'bldg_69a627f6-25ba-4713-9051-02756aad1fcc',
+    ...around(35.454595, 139.631425, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildLandmarkTower(length / 2)),
+  },
+  {
+    // クイーンズスクエア横浜の A・B・C 棟（PLATEAU の3つの塔の箱を消して置く。低層部の箱はそのまま）
+    gmlId: 'bldg_2e230b0f-118e-4070-96ae-3024182bf6bb',
+    ...around(35.456442, 139.633864, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildQueensSquare(length / 2)),
+  },
+  {
+    // ヨコハマ グランド インターコンチネンタル ホテルとパシフィコ横浜の低層部・会議センター
+    // （PLATEAU には帆の形の塔が無く、低層部と会議センターをまとめた 38m の箱だけなので、それを消して置く）
+    gmlId: 'bldg_c093e09a-37ea-4a19-ba14-cf690d6b622e',
+    ...around(35.457637, 139.637376, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildInterContinental(length / 2)),
+  },
+  {
+    // 横浜メディアタワー（PLATEAU の、鉄塔の高さ 253m の一つの箱を消して置く）
+    gmlId: 'bldg_49b6540d-cd8a-4baf-9920-5edcc6003765',
+    ...around(35.459804, 139.629824, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildMediaTower(length / 2)),
+  },
+  {
+    // 横浜シンフォステージ（PLATEAU には無いので、そのまま置く）。建物の座標は x = 東、z = 南
+    gmlId: '',
+    ...around(35.46131, 139.62791, 0),
+    front: -1,
+    build: (length) => minatoGroup(buildSymphoStage(length / 2)),
+  },
+  {
+    // みなとみらいグランドセントラルタワーとテラス（PLATEAU の、塔とテラスをまとめた箱を消して置く）
+    gmlId: 'bldg_a979234c-f537-46a7-ae78-d5b3d43976b6',
+    ...around(35.458639, 139.629203, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildGrandCentralTower(length / 2)),
+  },
+  {
+    // 横浜コネクトスクエア（PLATEAU には無いので、そのまま置く）
+    gmlId: '',
+    ...around(35.457049, 139.629104, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildConnectSquare(length / 2)),
+  },
+  {
+    // KDX横浜みなとみらいタワー（PLATEAU の、塔と低層部をまとめた箱を消して置く）
+    gmlId: 'bldg_698b37a4-29cf-4f3a-af1f-0ec39167e6d8',
+    ...around(35.456106, 139.629771, MINATOMIRAI_DEG),
+    front: -1,
+    build: (length) => minatoGroup(buildKdxTower(length / 2)),
+  },
+  {
+    // 横浜三井ビルディング（PLATEAU の箱を消して置く）。建物の座標は x = 東、z = 南
+    gmlId: 'bldg_02d6b5d3-47b1-4251-9343-8a4ec56ecafd',
+    ...around(35.463158, 139.624992, 0),
+    front: -1,
+    build: (length) => minatoGroup(buildYokohamaMitsui(length / 2)),
+  },
+  {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_ec9150b2-0a27-4b64-a8bf-66cb714d46f0',
     ...around(33.5953, 130.3621, 0),
@@ -1167,6 +1318,7 @@ let sompoShared: Record<keyof SompoParts, THREE.Material> | null = null;
 let cocoonShared: Record<keyof CocoonParts, THREE.Material> | null = null;
 let fukuokaTowerShared: Record<keyof FukuokaTowerParts, THREE.Material> | null = null;
 let stationCityShared: Record<StationCityKey, THREE.Material> | null = null;
+let minatoShared: Record<MinatoKey, THREE.Material> | null = null;
 let paypayDomeShared: Record<keyof PayPayDomeParts, THREE.Material> | null = null;
 let portTowerShared: Record<keyof PortTowerParts, THREE.Material> | null = null;
 let docomoShared: Record<keyof DocomoParts, THREE.Material> | null = null;
