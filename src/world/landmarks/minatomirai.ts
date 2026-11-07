@@ -15,8 +15,9 @@ import { beam } from './fukuokaTower';
  *   南南東の足元に黒いピラミッドの屋根の小塔が4つ、北北西にランドマークプラザ
  * - クイーンズスクエア横浜：A・B・C の3つの塔（172m・138m・109m）が海へ向かって低くなる。白い横の帯と横長の窓、
  *   下の 30m は少し張り出す。屋上の縁は長い面の真ん中がへこんだ曲線
- * - ヨコハマ グランド インターコンチネンタル ホテル：帆の形の 140m の薄い板。南の端が一番高く、北へ弧を描いて 66m まで下がる。
- *   板の両側の足元に、曲線の白い段々のテラス。まわりにパシフィコ横浜の低層部と会議センター
+ * - ヨコハマ グランド インターコンチネンタル ホテル：南の 140m の角から、北へまっすぐの翼と北西へ斜めの翼が V 字に張り出す帆の形。
+ *   どちらの翼も角から離れるほど弧を描いて 66m まで下がり、上の弧に白い縁。翼の間は低く奥まった横のルーバーの芯。
+ *   東の足元に曲線の白い段々のテラス、まわりにパシフィコ横浜の低層部と会議センター
  * - 横浜メディアタワー：灰色の格子の四角い棟（110m）の上に、白い格子の鉄塔（253m まで、青いガラスの段が2つ）。
  *   後ろに東の端の丸い白い棟（122m）
  * - 横浜シンフォステージ：ウエストタワーは紺のガラスに細い白い横の線、東の面は白い縦のフィン。北の奥の部分が 161m、
@@ -46,6 +47,7 @@ export type MinatoKey =
   | 'ichSail'
   | 'ichLow'
   | 'ichHall'
+  | 'ichCore'
   | 'mediaBlock'
   | 'mediaDrum'
   | 'symWest'
@@ -591,10 +593,9 @@ export function buildQueensSquare(cx: number): MinatoParts {
 // ---------------------------------------------------------------- ヨコハマ グランド インターコンチネンタル ホテル
 // 座標：中心は OpenStreetMap のホテルの形の中心、u = 東から北へ 33°（海の向き）、v = 北北西
 
-/** 帆の板の高さ：南の端（v = -45）の 140m から、北の端（v = 35.5）の 66m へ弧を描いて下がる */
-const sailHeight = (v: number) => (v <= -40 ? 140 : 66 + 74 * Math.sqrt(Math.max(0, 1 - ((v + 40) / 75.5) ** 2)));
-const SAIL_V0 = -45;
-const SAIL_V1 = 35.5;
+/** 帆の翼の高さ：南の角からの距離 s (m) で、140m から弧を描いて翼の端（len）の 66m まで下がる */
+const sailHeight = (s: number, len: number) =>
+  s <= 5 ? 140 : 66 + 74 * Math.sqrt(Math.max(0, 1 - ((s - 5) / (len - 5)) ** 2));
 
 /** パシフィコ横浜の、ホテルを囲む低層部（OpenStreetMap の形） */
 const PACIFICO_LOW: P2[] = [
@@ -652,58 +653,62 @@ const PACIFICO_HALL: P2[] = [
   [-94.5, 15.5],
 ];
 
+/**
+ * 帆の翼：南の角 p0 から向き d へ長さ len、内側 n へ幅 w の板。高さは南の角からの距離で弧を描いて下がり、上の弧に白い縁。
+ * 外の面は客室の窓、V 字の内側の面は inner の材質
+ */
+function sailWing(out: Lists, cx: number, p0: P2, d: P2, n: P2, len: number, w: number, inner: MinatoKey) {
+  const at = (s: number, t: number): P2 => [p0[0] + d[0] * s + n[0] * t, p0[1] + d[1] * s + n[1] * t];
+  const along = (u: number, v: number) => (u - p0[0]) * d[0] + (v - p0[1]) * d[1];
+  const plan = [at(0, 0), at(len, 0), at(len, w), at(0, w)];
+  const area = plan.reduce((a, p, i) => a + p[0] * plan[(i + 1) % 4][1] - plan[(i + 1) % 4][0] * p[1], 0);
+  if (area < 0) plan.reverse();
+  walls(out, cx, densify(plan, 2.5), 0, (u, v) => sailHeight(along(u, v), len), (nu, nv) =>
+    nu * n[0] + nv * n[1] > 0.5 ? inner : 'ichSail',
+  );
+  // 上の弧の白い縁（板より少し外へ出す）と、両側の縁の厚み
+  const pos: number[] = [];
+  const V = (s: number, t: number, y: number) => {
+    const [u, v] = at(s, t);
+    return [cx + u, y, -v];
+  };
+  const N = 32;
+  for (let i = 0; i < N; i++) {
+    const s0 = (len * i) / N;
+    const s1 = (len * (i + 1)) / N;
+    const y0 = sailHeight(s0, len) + 0.6;
+    const y1 = sailHeight(s1, len) + 0.6;
+    pos.push(...V(s0, -0.6, y0), ...V(s0, w + 0.6, y0), ...V(s1, w + 0.6, y1), ...V(s0, -0.6, y0), ...V(s1, w + 0.6, y1), ...V(s1, -0.6, y1));
+    for (const t of [-0.6, w + 0.6]) {
+      pos.push(...V(s0, t, y0 - 3), ...V(s1, t, y1 - 3), ...V(s1, t, y1), ...V(s0, t, y0 - 3), ...V(s1, t, y1), ...V(s0, t, y0));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  push(out, 'white', g);
+}
+
 export function buildInterContinental(cx: number): MinatoParts {
   const out: Lists = {};
-  // ---- 帆の板（u 5〜21）：両面は客室の窓の格子、上の弧は白い縁 ----
-  const slab = rect(5, 21, SAIL_V0, SAIL_V1);
-  walls(out, cx, densify(slab, 2.5), 0, (_u, v) => sailHeight(v), () => 'ichSail');
-  {
-    const pos: number[] = [];
-    const N = 32;
-    for (let i = 0; i < N; i++) {
-      const v0 = SAIL_V0 + ((SAIL_V1 - SAIL_V0) * i) / N;
-      const v1 = SAIL_V0 + ((SAIL_V1 - SAIL_V0) * (i + 1)) / N;
-      const y0 = sailHeight(v0) + 0.6;
-      const y1 = sailHeight(v1) + 0.6;
-      // 縁は板より少し外へ出す
-      pos.push(cx + 4.4, y0, -v0, cx + 21.6, y0, -v0, cx + 21.6, y1, -v1, cx + 4.4, y0, -v0, cx + 21.6, y1, -v1, cx + 4.4, y1, -v1);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.computeVertexNormals();
-    push(out, 'white', g);
-  }
-  // 縁の厚み（両側の白い帯）
-  for (const u of [4.4, 21.6]) {
-    const pos: number[] = [];
-    const N = 32;
-    for (let i = 0; i < N; i++) {
-      const v0 = SAIL_V0 + ((SAIL_V1 - SAIL_V0) * i) / N;
-      const v1 = SAIL_V0 + ((SAIL_V1 - SAIL_V0) * (i + 1)) / N;
-      const a = sailHeight(v0) + 0.6;
-      const b = sailHeight(v1) + 0.6;
-      pos.push(cx + u, a - 3, -v0, cx + u, b - 3, -v1, cx + u, b, -v1, cx + u, a - 3, -v0, cx + u, b, -v1, cx + u, a, -v0);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.computeVertexNormals();
-    push(out, 'white', g);
-  }
-  // 南の端の白い縦のひれ（一番高い所）
-  prism(out, cx, rect(4, 22, SAIL_V0 - 1.5, SAIL_V0), 0, 143, () => 'white', 'white');
-
-  // ---- 板の両側の足元：曲線の白い段々のテラス ----
-  const terraces: Array<[number, number, number, number, number[]]> = [
-    // 中心 u, v、扇の角度（度）、各段の半径
-    [5, -5, 90, 270, [30, 24, 18, 12]],
-    [21, -5, -90, 90, [20, 15, 10]],
+  // ---- 帆：南の一番高い角から、北へまっすぐの翼と、北西へ斜めの翼が V 字に張り出す ----
+  sailWing(out, cx, [21, -46], [0, 1], [-1, 0], 81, 11, 'ichSail');
+  sailWing(out, cx, [16, -46.5], [-0.717, 0.697], [0.697, 0.717], 78, 12, 'ichCore');
+  // 2つの翼の間の芯：翼より低く奥まった、横のルーバーの面（北の開いた面だけ作る）
+  const core: P2[] = [
+    [10, -23.9],
+    [10, 10],
+    [-15, 0.4],
   ];
-  for (const [u, v, a0, a1, radii] of terraces) {
-    radii.forEach((r, k) => {
-      const y0 = 16 + k * 5;
-      prism(out, cx, sector(u, v, r, a0, a1), y0, y0 + 5, () => 'ichLow', 'white');
-      band(out, cx, sector(u, v, r, a0, a1), y0 + 4.2, y0 + 5.2, 0.3);
-    });
+  prism(out, cx, core, 0, 112, (_nu, nv) => (nv > 0.5 ? 'ichCore' : null));
+  band(out, cx, core, 111, 113, 0.2);
+  prism(out, cx, offset(core, -4), 113, 120, (_nu, nv) => (nv > 0.5 ? 'ichCore' : null));
+
+  // ---- 東の足元：曲線の白い段々のテラス ----
+  for (const [k, r] of [20, 15, 10].entries()) {
+    const y0 = 16 + k * 5;
+    prism(out, cx, sector(21, -5, r, -90, 90), y0, y0 + 5, () => 'ichLow', 'white');
+    band(out, cx, sector(21, -5, r, -90, 90), y0 + 4.2, y0 + 5.2, 0.3);
   }
 
   // ---- パシフィコ横浜の低層部（16m）・会議センター（34m）・北の棟（20m） ----
@@ -1193,6 +1198,20 @@ export function createPacificoLowMaterial(): THREE.MeshStandardMaterial {
     },
     0.4,
     0.15,
+  );
+}
+
+/** インターコンチネンタルの翼の内側と芯：白い横のルーバーと、奥の暗い隙間 */
+export function createSailCoreMaterial(): THREE.MeshStandardMaterial {
+  return facadeMaterial(
+    (g, W, H) => {
+      g.fillStyle = '#3f4a54';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#e9ebea';
+      for (let y = 0; y < H; y += 16) g.fillRect(0, y, W, 9);
+    },
+    0.5,
+    0.1,
   );
 }
 
