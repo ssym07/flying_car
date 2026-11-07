@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ROADS } from '../core/config';
+import { roadWidths } from './roadSpec';
 
 /**
  * 道路の見た目のテンプレート（写真を参考に、日本の道路の路面標示を手続き的に描く）。
@@ -56,9 +57,7 @@ export function roadLayout(cls: RoadClass, taggedLanes: number, oneway: boolean)
   if (cached) return cached;
 
   const spec = ROADS.classes[cls];
-  const lanes =
-    cls === RoadClass.Local ? 0 : THREE.MathUtils.clamp(taggedLanes || (oneway ? spec.lanes / 2 : spec.lanes), 1, 6);
-  const width = cls === RoadClass.Local ? spec.width : lanes * spec.laneWidth + spec.shoulder * 2;
+  const { lanes, width } = roadWidths(cls, taggedLanes, oneway);
   const columnKey = `${cls}/${lanes}/${oneway ? 1 : 0}`;
   let column = columns.get(columnKey);
   if (column === undefined) {

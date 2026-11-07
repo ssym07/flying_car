@@ -1,5 +1,6 @@
 import { ROADS } from '../core/config';
-import { type RoadClass, roadLayout } from './roadTemplates';
+import type { RoadClass } from './roadTemplates';
+import { roadWidths } from './roadSpec';
 
 /** 道路データ1タイルの道（RoadNetwork.ts の RoadTile と同じ並び。6番目は橋なら 0 以外） */
 type RoadWay = [RoadClass, number, 0 | 1, number[], number[], unknown?];
@@ -34,7 +35,7 @@ export async function roadMask(
   g.lineCap = 'round';
   g.lineJoin = 'round';
   for (const [cls, lanes, oneway, coords] of ways) {
-    const layout = roadLayout(cls, lanes, oneway === 1);
+    const layout = roadWidths(cls, lanes, oneway === 1);
     g.lineWidth = (layout.width + layout.sidewalk * 2 + margin * 2) / metersPerPx;
     g.beginPath();
     let lat = 0;

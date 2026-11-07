@@ -55,7 +55,10 @@ export const REGIONS: Record<Region['id'], Region> = {
 };
 
 function pick(): Region {
-  const id = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('region');
+  // Web Worker の中では location が Worker のファイルを指すので、ページの ?region=… を Worker の名前で受け取る（world/water.ts）
+  const inWorker = typeof document === 'undefined' && typeof self !== 'undefined' && 'name' in self;
+  const search = inWorker ? (self as unknown as { name: string }).name : typeof location === 'undefined' ? null : location.search;
+  const id = search === null ? null : new URLSearchParams(search).get('region');
   return id === 'osaka' || id === 'fukuoka' ? REGIONS[id] : REGIONS.tokyo;
 }
 
