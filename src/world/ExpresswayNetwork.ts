@@ -18,6 +18,8 @@ interface ExpresswayTile {
 
 /** 路面の画像1枚が表す長さ (m) */
 const TEXTURE_LENGTH_M = 12;
+/** 当たり判定のレイに当たらないメッシュの raycast */
+const noRaycast = () => {};
 
 /**
  * 高速道路（首都高・湾岸線・外環道など）。写真を参考に、白い高架・壁高欄・路面標示・街灯で作る。
@@ -134,17 +136,32 @@ export class ExpresswayNetwork implements ChunkListener {
       g.computeBoundsTree();
       group.add(new THREE.Mesh(g, this.deckMaterial(lanes)));
     }
-    const add = (b: MeshBuilder, m: THREE.Material) => {
+    // solid でない飾り（手すり・ゼブラ・街灯・路線名）は当たり判定のレイから外す
+    // （三角形が多く、BVH の無いメッシュはレイ1本ごとに全部の三角形を調べるので、飛行中のカクつきになっていた）
+    const add = (b: MeshBuilder, m: THREE.Material, solid: boolean) => {
       const g = b.build();
-      if (g) group.add(new THREE.Mesh(g, m));
+      if (!g) return;
+      const mesh = new THREE.Mesh(g, m);
+      if (solid) g.computeBoundsTree();
+      else mesh.raycast = noRaycast;
+      group.add(mesh);
     };
-    add(parts.wall, this.concrete);
-    add(parts.bottom, this.underside);
-    add(parts.railing, this.rail);
-    add(parts.zebra, this.zebraMaterial);
+    add(parts.wall, this.concrete, true);
+    add(parts.bottom, this.underside, true);
+    add(parts.railing, this.rail, false);
+    add(parts.zebra, this.zebraMaterial, false);
     if (piers.length > 0) group.add(...this.buildPiers(piers));
-    if (lamps.length > 0) group.add(...this.buildLamps(lamps));
-    for (const n of names) group.add(this.buildName(n));
+    if (lamps.length > 0) {
+      for (const lamp of this.buildLamps(lamps)) {
+        lamp.raycast = noRaycast;
+        group.add(lamp);
+      }
+    }
+    for (const n of names) {
+      const name = this.buildName(n);
+      name.raycast = noRaycast;
+      group.add(name);
+    }
     return group;
   }
 

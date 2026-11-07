@@ -140,7 +140,10 @@ export class StationRoofs implements ChunkListener {
       group.add(new THREE.Mesh(r, this.roofMaterial));
     }
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
-      if (g) group.add(new THREE.Mesh(g, m));
+      if (!g) return;
+      // 当たり判定のレイキャストを速くする（BVH の無いメッシュはレイ1本ごとに全部の三角形を調べる）
+      g.computeBoundsTree();
+      group.add(new THREE.Mesh(g, m));
     };
     add(fascia.build(false), this.fasciaMaterial);
     add(parts.floor.build(false), this.platformMaterial);

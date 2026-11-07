@@ -27,6 +27,10 @@ export class Collision {
   private readonly dir = new THREE.Vector3();
   private readonly normal = new THREE.Vector3();
   private readonly hits: THREE.Intersection[] = [];
+  /** このフレームで自機の真上・真下を通るメッシュ（下方向レイ用）と、そのうち自機の高さにかかるもの（壁のレイ用） */
+  private readonly column: THREE.Object3D[] = [];
+  private readonly near: THREE.Object3D[] = [];
+  private readonly sphere = new THREE.Sphere();
 
   /**
    * @param targets 当たり判定の対象（タイル・地形の group など）
@@ -50,6 +54,9 @@ export class Collision {
     const dx = position.x - prev.position.x;
     const dz = position.z - prev.position.z;
     const dist = Math.hypot(dx, dz);
+    // レイはフレームに 10 本ほど飛ばすので、先に自機のまわりのメッシュだけを選んでおく
+    // （全部のメッシュを毎回たどると、BVH があってもメッシュごとの行列の計算で重い）
+    this.gather(position, dist + this.radius + 1, Math.abs(position.y - prev.position.y) + this.halfHeight + 1);
     if (dist > 1e-6) {
       this.dir.set(dx / dist, 0, dz / dist);
       this.origin.set(prev.position.x, prev.position.y, prev.position.z);
@@ -89,7 +96,7 @@ export class Collision {
     this.origin.set(position.x, top, position.z);
     this.raycaster.set(this.origin, DOWN);
     this.raycaster.far = GROUND_PROBE;
-    const groundHit = this.cast();
+    const groundHit = this.cast(this.column);
     const groundHeight = Math.max(this.groundY, groundHit ? groundHit.point.y : -Infinity);
 
     let grounded = false;
@@ -109,7 +116,7 @@ export class Collision {
   private castHorizontal(far: number): THREE.Intersection | null {
     this.raycaster.set(this.origin, this.dir);
     this.raycaster.far = far;
-    const hit = this.cast();
+    const hit = this.cast(this.near);
     if (!hit) return null;
     const n = this.normal;
     if (hit.face) n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
@@ -121,10 +128,45 @@ export class Collision {
     return hit;
   }
 
-  private cast(): THREE.Intersection | null {
+  /** objects を指定した時は、その中だけを調べる（gather で選んだもの。子はたどらない） */
+  private cast(objects: THREE.Object3D[] | null = null): THREE.Intersection | null {
     this.hits.length = 0;
-    this.raycaster.intersectObjects(this.targets, true, this.hits);
+    if (objects) this.raycaster.intersectObjects(objects, false, this.hits);
+    else this.raycaster.intersectObjects(this.targets, true, this.hits);
     return this.hits[0] ?? null;
+  }
+
+  /**
+   * 自機の位置 p から水平に reach m 以内を通るメッシュを column に、そのうち高さ p.y ± rise m にかかるものを near に入れる。
+   * 3D Tiles のグループは、見えているタイルだけを自分で調べる raycast を持つので、そのまま入れる
+   */
+  private gather(p: { x: number; y: number; z: number }, reach: number, rise: number): void {
+    this.column.length = 0;
+    this.near.length = 0;
+    const s = this.sphere;
+    for (const root of this.targets) {
+      if ((root as { tilesRenderer?: unknown }).tilesRenderer !== undefined) {
+        this.column.push(root);
+        this.near.push(root);
+        continue;
+      }
+      root.traverseVisible((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const inst = o as THREE.InstancedMesh;
+        if (inst.isInstancedMesh) {
+          if (!inst.boundingSphere) inst.computeBoundingSphere();
+          s.copy(inst.boundingSphere!);
+        } else {
+          if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+          s.copy(mesh.geometry.boundingSphere!);
+        }
+        s.applyMatrix4(mesh.matrixWorld);
+        if (Math.hypot(s.center.x - p.x, s.center.z - p.z) > s.radius + reach) return;
+        this.column.push(mesh);
+        if (Math.abs(s.center.y - p.y) <= s.radius + rise) this.near.push(mesh);
+      });
+    }
   }
 
   /** (x, z) の真下の地面（屋上を含む）の高さ。上空 fromY から探す */

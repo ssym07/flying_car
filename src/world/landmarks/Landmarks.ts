@@ -1464,7 +1464,11 @@ export class Landmarks implements ChunkListener {
     for (const [lm, { chunk, object }] of this.built) {
       if (chunk !== `${x}/${y}`) continue;
       this.group.remove(object);
-      object.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      object.traverse((o) => {
+        const g = (o as THREE.Mesh).geometry;
+        g?.disposeBoundsTree();
+        g?.dispose();
+      });
       this.built.delete(lm);
     }
   }
@@ -1486,6 +1490,8 @@ export class Landmarks implements ChunkListener {
     const zAxis = new THREE.Vector3().crossVectors(x, up);
     const origin = flip ? b : a;
     const object = lm.build(length);
+    // 当たり判定のレイキャストを速くする（BVH の無いメッシュはレイ1本ごとに全部の三角形を調べる）
+    object.traverse((o) => (o as THREE.Mesh).geometry?.computeBoundsTree());
     object.matrixAutoUpdate = false;
     object.matrix.makeBasis(x, up, zAxis).setPosition(origin.x, origin.y, origin.z);
     object.matrixWorldNeedsUpdate = true;
