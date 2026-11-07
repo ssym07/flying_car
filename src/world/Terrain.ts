@@ -62,14 +62,25 @@ export class Terrain {
 
   /**
    * 線に沿って地形を削る（掘割）。points はローカル座標で、y は削った底の高さ。
-   * 線から width/2 までは底の高さ、その外は slope の傾き（高さ/水平距離）で元の地面へ戻る
+   * 線から width/2 までは底の高さ、その外は slope の傾き（高さ/水平距離）で元の地面へ戻る。
+   * widths を渡すと線ごとの幅（width の代わり）。fill を渡すと、線から fill.reach m までの低い地面を
+   * 底の高さ（その外は fill.slope の傾きで下がる）まで盛る（道路・線路の路盤）。slopeReach は斜面で削る範囲（幅の外, m）
    */
-  addCarve(key: string, lines: THREE.Vector3[][], width: number, slope: number): void {
-    const box = new THREE.Box3();
-    for (const line of lines) for (const p of line) box.expandByPoint(p);
-    const carve: Carve = { lines, half: width / 2, slope, box };
+  addCarve(
+    key: string,
+    lines: THREE.Vector3[][],
+    width: number,
+    slope: number,
+    {
+      widths,
+      fill,
+      slopeReach = CARVE_SLOPE_REACH,
+    }: { widths?: number[]; fill?: { reach: number; slope: number }; slopeReach?: number } = {},
+  ): void {
+    const carve = createCarve(lines, (k) => (widths?.[k] ?? width) / 2, slope, fill ?? null, slopeReach);
+    if (!carve) return;
     this.carves.set(key, carve);
-    for (const chunk of this.chunks.values()) if (chunk.mesh) applyCarves(chunk.mesh, [carve]);
+    for (const chunk of this.chunks.values()) if (chunk.mesh) applyCarves(chunk.mesh, [...this.carves.values()], true, carve);
   }
 
   removeCarve(key: string): void {
@@ -424,52 +435,134 @@ export class Terrain {
 }
 
 interface Carve {
-  lines: THREE.Vector3[][];
-  half: number;
+  /** 線分：[ax, ay, az, bx, by, bz, 半分の幅] */
+  segments: Float64Array;
   slope: number;
+  fill: { reach: number; slope: number } | null;
+  /** 線分の格子（CARVE_CELL m 四方（cellKey）→ 線分の番号）。頂点の近くの線分だけを調べる */
+  grid: Map<number, number[]>;
+  /** 一番広い半分の幅 + 斜面の届く距離 */
+  reach: number;
   /** 線の範囲（ローカル座標） */
   box: THREE.Box3;
 }
 
-/** 地形メッシュの頂点を、削る線の底の高さ（と、その外の斜面）より上に出ないよう下げる */
-function applyCarves(mesh: THREE.Mesh, carves: Carve[], refit = true): void {
+const CARVE_CELL = 32;
+/** 格子のマスの番号（文字列のキーを作らないよう、数にする） */
+const cellKey = (gx: number, gz: number) => (gx + 0x8000) * 0x10000 + (gz + 0x8000);
+/** 削る斜面・盛る斜面が届く距離 (m) の既定値 */
+const CARVE_SLOPE_REACH = 40;
+
+function createCarve(
+  lines: THREE.Vector3[][],
+  halfOf: (line: number) => number,
+  slope: number,
+  fill: Carve['fill'],
+  slopeReach: number,
+): Carve | null {
+  const list: number[] = [];
+  const box = new THREE.Box3();
+  let maxHalf = 0;
+  lines.forEach((line, k) => {
+    const half = halfOf(k);
+    maxHalf = Math.max(maxHalf, half);
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1];
+      const b = line[i];
+      list.push(a.x, a.y, a.z, b.x, b.y, b.z, half);
+      box.expandByPoint(a).expandByPoint(b);
+    }
+  });
+  if (list.length === 0) return null;
+  const segments = Float64Array.from(list);
+  const reach = maxHalf + Math.max(slopeReach, fill?.reach ?? 0);
+  const grid = new Map<number, number[]>();
+  for (let n = 0; n < segments.length / 7; n++) {
+    const o = n * 7;
+    const x0 = Math.floor((Math.min(segments[o], segments[o + 3]) - reach) / CARVE_CELL);
+    const x1 = Math.floor((Math.max(segments[o], segments[o + 3]) + reach) / CARVE_CELL);
+    const z0 = Math.floor((Math.min(segments[o + 2], segments[o + 5]) - reach) / CARVE_CELL);
+    const z1 = Math.floor((Math.max(segments[o + 2], segments[o + 5]) + reach) / CARVE_CELL);
+    for (let gx = x0; gx <= x1; gx++) {
+      for (let gz = z0; gz <= z1; gz++) {
+        const k = cellKey(gx, gz);
+        const cell = grid.get(k);
+        if (cell) cell.push(n);
+        else grid.set(k, [n]);
+      }
+    }
+  }
+  return { segments, slope, fill, grid, reach, box };
+}
+
+/** (x, z) での1つの線の、削る上限と盛る下限（out[0] は小さく、out[1] は大きくする） */
+function carveLimits(carve: Carve, key: number, x: number, z: number, out: [number, number]): void {
+  const { box, reach } = carve;
+  if (x < box.min.x - reach || x > box.max.x + reach || z < box.min.z - reach || z > box.max.z + reach) return;
+  const cell = carve.grid.get(key);
+  if (!cell) return;
+  const { segments: seg, fill, slope } = carve;
+  for (const n of cell) {
+    const o = n * 7;
+    const ax = seg[o];
+    const az = seg[o + 2];
+    const dx = seg[o + 3] - ax;
+    const dz = seg[o + 5] - az;
+    const len2 = dx * dx + dz * dz || 1;
+    const t = THREE.MathUtils.clamp(((x - ax) * dx + (z - az) * dz) / len2, 0, 1);
+    const d = Math.hypot(x - (ax + dx * t), z - (az + dz * t));
+    if (d > reach) continue;
+    const half = seg[o + 6];
+    const floor = seg[o + 1] + (seg[o + 4] - seg[o + 1]) * t;
+    out[0] = Math.min(out[0], floor + Math.max(0, d - half) * slope);
+    if (fill && d <= half + fill.reach) out[1] = Math.max(out[1], floor - Math.max(0, d - half) * fill.slope);
+  }
+}
+
+/**
+ * 地形メッシュの頂点を、削る線の底の高さ（と、その外の斜面）より上に出ないよう下げ、盛る線の近くの低い地面は上げる。
+ * focus を渡すと、その線で動く頂点だけを、全部の線から高さを決め直す（後から足した線。
+ * 削る線のすぐ脇に盛る線があっても、掘割を埋めないように）
+ */
+function applyCarves(mesh: THREE.Mesh, carves: Carve[], refit = true, focus: Carve | null = null): void {
   const geometry = mesh.geometry as THREE.BufferGeometry;
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox!;
+  const near = (c: Carve) =>
+    c.box.max.x + c.reach >= bounds.min.x &&
+    c.box.min.x - c.reach <= bounds.max.x &&
+    c.box.max.z + c.reach >= bounds.min.z &&
+    c.box.min.z - c.reach <= bounds.max.z;
+  if (focus && !near(focus)) return;
+  const touching = carves.filter(near);
+  if (touching.length === 0) return;
   const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+  const xyz = position.array as Float32Array;
   let changed = false;
-  for (const carve of carves) {
-    const reach = carve.half + 40;
-    if (
-      carve.box.max.x + reach < bounds.min.x ||
-      carve.box.min.x - reach > bounds.max.x ||
-      carve.box.max.z + reach < bounds.min.z ||
-      carve.box.min.z - reach > bounds.max.z
-    ) {
-      continue;
+  const limits: [number, number] = [Infinity, -Infinity];
+  for (let i = 0; i < position.count; i++) {
+    const x = xyz[i * 3];
+    const y = xyz[i * 3 + 1];
+    const z = xyz[i * 3 + 2];
+    const key = cellKey(Math.floor(x / CARVE_CELL), Math.floor(z / CARVE_CELL));
+    if (focus) {
+      // 後から足した線で動かない頂点は、ほかの線も調べない
+      limits[0] = Infinity;
+      limits[1] = -Infinity;
+      carveLimits(focus, key, x, z, limits);
+      if (!(y > limits[0] || y < limits[1])) continue;
     }
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i);
-      const z = position.getZ(i);
-      let limit = Infinity;
-      for (const line of carve.lines) {
-        for (let k = 1; k < line.length; k++) {
-          const a = line[k - 1];
-          const b = line[k];
-          const dx = b.x - a.x;
-          const dz = b.z - a.z;
-          const len2 = dx * dx + dz * dz || 1;
-          const t = THREE.MathUtils.clamp(((x - a.x) * dx + (z - a.z) * dz) / len2, 0, 1);
-          const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
-          if (d > reach) continue;
-          const floor = a.y + (b.y - a.y) * t;
-          limit = Math.min(limit, floor + Math.max(0, d - carve.half) * carve.slope);
-        }
-      }
-      if (position.getY(i) > limit) {
-        position.setY(i, limit);
-        changed = true;
-      }
+    // 削る上限（これより上の地面は下げる）と、盛る下限（これより下の地面は上げる）
+    limits[0] = Infinity;
+    limits[1] = -Infinity;
+    for (const carve of touching) carveLimits(carve, key, x, z, limits);
+    const [limit, raise] = limits;
+    if (y > limit) {
+      position.setY(i, limit);
+      changed = true;
+    } else if (y < raise && y < limit) {
+      position.setY(i, Math.min(raise, limit));
+      changed = true;
     }
   }
   if (!changed) return;

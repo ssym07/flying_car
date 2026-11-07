@@ -338,6 +338,19 @@ export const ROADS = {
   ],
   /** 地形に沿わせるため、中心線をこの間隔 (m) で細かく区切る */
   densifyStep: 5,
+  /** 道を置く地面を均す範囲（±m）。地形の細かい凸凹を拾わず、まっすぐな道にする */
+  smoothRadius: 24,
+  /**
+   * 道のまわりの地形：道の幅（車道・歩道）の外に足す余裕 (m)。この幅は地形を道の高さにそろえ、その外は
+   * gradeSlope の傾き（高さ/水平）で元の地面へ戻る。低い地面は幅の外 gradeFillReach m まで盛る
+   */
+  gradeMargin: 1.5,
+  gradeSlope: 0.6,
+  gradeFillReach: 2,
+  /** 道の幅の外の斜面で地形を削る範囲 (m)。道の高さとのずれは均す範囲でおさまるので、遠くまでは見ない */
+  gradeReach: 12,
+  /** 橋のまわりの、橋桁より上に出ている地形を削る斜面の傾き（高さ/水平） */
+  bridgeCutSlope: 1.6,
   /**
    * 交差点の面の半径の余白 (m)。交差点の面の半径＝集まる道で一番広い「車道の半分＋歩道」＋これ。
    * 面の中は歩道が角を回り込み、車道は線なしの一続きになる
@@ -476,6 +489,13 @@ export const RAILWAYS = {
   cutWidth: 10,
   cutSlope: 1.6,
   cutDepthBelow: 0.15,
+  /**
+   * 地面の高さを走る線路のまわりの地形：道床のすぐ下にそろえる幅 (m)、その外の斜面の傾き（高さ/水平）、
+   * 低い地面を盛る範囲（幅の外, m）。地形の頂点は約 8m おきなので、道床より少し広く取る
+   */
+  gradeWidth: 6,
+  gradeSlope: 0.6,
+  gradeFillReach: 3,
   /** 川の上を渡る線路の、水面からの高さ (m) */
   waterClearance: 2.5,
   /** 地面からこの高さ (m) を超えた所に高架の桁・側壁を付ける */
@@ -684,6 +704,13 @@ export const EXPRESSWAYS = {
   cutFloorRadius: 20,
   cutWidth: 14,
   cutSlope: 1.6,
+  /**
+   * 地面の高さの区間のまわりの地形：路面の幅の外に足す余裕 (m)、その外の斜面の傾き（高さ/水平）、
+   * 低い地面を盛る範囲（幅の外, m）
+   */
+  gradeMargin: 2,
+  gradeSlope: 0.6,
+  gradeFillReach: 3,
   /** 壁高欄：高さ・厚さ (m)、上の手すりの壁からの高さ (m) */
   barrierHeight: 1.0,
   barrierThickness: 0.45,

@@ -35,8 +35,37 @@ export function cutFloor(
   });
 }
 
-/** (lat, lon) のまわり ±radius m の格子点（固定の格子に揃える）の地形の平均 */
-export function smoothGround(terrain: Terrain, lat: number, lon: number, radius: number): number | null {
+/**
+ * 線に沿った高さの、取れなかった所（null：まだ読んでいないチャンク）を、線の上で一番近い取れた値で埋める。
+ * どこも取れなければ null
+ */
+export function fillGaps(values: Array<number | null>): number[] | null {
+  const n = values.length;
+  // 前から見た一番近い取れた点と、後ろから見た一番近い取れた点（番号）
+  const before = new Int32Array(n).fill(-1);
+  const after = new Int32Array(n).fill(-1);
+  for (let i = 0, k = -1; i < n; i++) before[i] = k = values[i] !== null ? i : k;
+  for (let i = n - 1, k = -1; i >= 0; i--) after[i] = k = values[i] !== null ? i : k;
+  if (before[n - 1] < 0) return null;
+  return values.map((v, i) => {
+    if (v !== null) return v;
+    const a = before[i];
+    const b = after[i];
+    return values[a < 0 || (b >= 0 && b - i < i - a) ? b : a]!;
+  });
+}
+
+/**
+ * (lat, lon) のまわり ±radius m の格子点（固定の格子に揃える）の地形の平均。
+ * cache を渡すと、格子点ごとの平均を使い回す（同じ半径の呼び出しだけで共有する）
+ */
+export function smoothGround(
+  terrain: Terrain,
+  lat: number,
+  lon: number,
+  radius: number,
+  cache: Map<string, number | null> | null = null,
+): number | null {
   const step = radius / 2;
   const dLat = step / 111320;
   const dLon = step / (111320 * Math.cos((lat * Math.PI) / 180));
@@ -46,6 +75,13 @@ export function smoothGround(terrain: Terrain, lat: number, lon: number, radius:
   const y0 = Math.floor(gy);
   const x0 = Math.floor(gx);
   const at = (iy: number, ix: number) => {
+    if (!cache) return average(iy, ix);
+    const k = `${iy},${ix}`;
+    let v = cache.get(k);
+    if (v === undefined) cache.set(k, (v = average(iy, ix)));
+    return v;
+  };
+  const average = (iy: number, ix: number) => {
     let sum = 0;
     let n = 0;
     for (let a = -2; a <= 2; a++) {

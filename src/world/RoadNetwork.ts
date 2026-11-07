@@ -10,6 +10,7 @@ import {
   TEMPLATE_LENGTH_M,
   type RoadLayout,
 } from './roadTemplates';
+import { fillGaps, smoothGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
 
 /** 道路データ1タイル（scripts/fetch-road-network.mjs の出力） */
@@ -64,6 +65,17 @@ export class MeshBuilder {
 export class RoadNetwork implements ChunkListener {
   readonly group = new THREE.Group();
   private readonly tiles = new Map<string, THREE.Group | 'loading'>();
+  /** 作った時に隣のチャンクが読まれておらず、道の高さを近くの値で代用したタイル（隣が読まれたら作り直す）→ そのデータ */
+  private readonly incomplete = new Map<string, RoadTile>();
+  /** 均した地面（smoothGround）の格子点の平均。タイルを作る間だけ使い回す */
+  private smoothCache = new Map<string, number | null>();
+  /** 今作っているタイルで、高さの取れない所があったか */
+  private missing = false;
+  /** 今作っているタイルの、地形を道の高さにそろえる線と幅 */
+  private gradeLines: THREE.Vector3[][] = [];
+  private gradeWidths: number[] = [];
+  private bridgeLines: THREE.Vector3[][] = [];
+  private bridgeWidths: number[] = [];
   private readonly roadMaterial = createRoadMaterial();
   private readonly sidewalkMaterial = createSidewalkMaterial();
   private readonly crosswalkMaterial = createCrosswalkMaterial();
@@ -93,6 +105,20 @@ export class RoadNetwork implements ChunkListener {
 
   onChunkAdded(x: number, y: number): void {
     const key = `${x}/${y}`;
+    // 隣のタイルが、このチャンクの高さが無いまま作られていたら作り直す
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const k = `${x + dx}/${y + dy}`;
+        const data = this.incomplete.get(k);
+        const old = this.tiles.get(k);
+        if (!data || !old || old === 'loading') continue;
+        this.incomplete.delete(k);
+        this.disposeTile(old);
+        const group = this.buildTile(data, k);
+        this.tiles.set(k, group);
+        this.group.add(group);
+      }
+    }
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
     const url = `${import.meta.env.BASE_URL}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
@@ -104,7 +130,7 @@ export class RoadNetwork implements ChunkListener {
       .then((data) => {
         // 読んでいる間にチャンクが捨てられていたら何もしない
         if (this.tiles.get(key) !== 'loading') return;
-        const group = data ? this.buildTile(data) : new THREE.Group();
+        const group = data ? this.buildTile(data, key) : new THREE.Group();
         this.tiles.set(key, group);
         this.group.add(group);
       })
@@ -118,14 +144,27 @@ export class RoadNetwork implements ChunkListener {
     const key = `${x}/${y}`;
     const tile = this.tiles.get(key);
     this.tiles.delete(key);
+    this.incomplete.delete(key);
+    this.terrain.removeCarve(`road:${key}`);
+    this.terrain.removeCarve(`road-bridge:${key}`);
     if (!tile || tile === 'loading') return;
+    this.disposeTile(tile);
+  }
+
+  private disposeTile(tile: THREE.Group): void {
     this.group.remove(tile);
     tile.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
   }
 
-  private buildTile(data: RoadTile): THREE.Group {
+  private buildTile(data: RoadTile, key: string): THREE.Group {
+    this.smoothCache = new Map();
+    this.missing = false;
+    this.gradeLines = [];
+    this.gradeWidths = [];
+    this.bridgeLines = [];
+    this.bridgeWidths = [];
     const road = new MeshBuilder();
     const sidewalk = new MeshBuilder();
     const crosswalk = new MeshBuilder();
@@ -159,6 +198,18 @@ export class RoadNetwork implements ChunkListener {
     for (const [lat, lon, bearing, cls] of data.c) {
       this.buildCrosswalk(lat / 1e6, lon / 1e6, bearing, roadLayout(cls, 0, false), crosswalk);
     }
+    if (this.missing) this.incomplete.set(key, data);
+    // 道の幅（と歩道・少しの余裕）の地形を道の高さにそろえる（高い所は削り、低い所は盛る）。その外はなだらかに戻す
+    if (this.gradeLines.length > 0) {
+      this.terrain.addCarve(`road:${key}`, this.gradeLines, 0, ROADS.gradeSlope, {
+        widths: this.gradeWidths,
+        fill: { reach: ROADS.gradeFillReach, slope: ROADS.gradeSlope },
+        slopeReach: ROADS.gradeReach,
+      });
+    }
+    if (this.bridgeLines.length > 0) {
+      this.terrain.addCarve(`road-bridge:${key}`, this.bridgeLines, 0, ROADS.bridgeCutSlope, { widths: this.bridgeWidths });
+    }
     const group = new THREE.Group();
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
       if (g) group.add(new THREE.Mesh(g, m));
@@ -171,6 +222,16 @@ export class RoadNetwork implements ChunkListener {
     add(bridge.railing.build(), this.railingMaterial);
     add(bridge.steel.build(), this.steelMaterial);
     return group;
+  }
+
+  /**
+   * 道を置く地面の高さ：場所だけで決まる均した地面（道どうし・交差点・横断歩道で同じ値になる）。
+   * まだ読んでいないチャンクにかかって取れなければ null（タイルを後で作り直す印を付ける）
+   */
+  private groundAt(lat: number, lon: number): number | null {
+    const h = smoothGround(this.terrain, lat, lon, ROADS.smoothRadius, this.smoothCache);
+    if (h === null) this.missing = true;
+    return h;
   }
 
   /** 1本の道（中心線）から車道と歩道のリボンを作る。橋なら地形に沿わせず、橋桁・欄干・橋脚も作る */
@@ -207,15 +268,25 @@ export class RoadNetwork implements ChunkListener {
       for (const j of junctions) if (j.index === i) junctionS.push({ s: s[s.length - 1], radius: j.radius });
     }
 
-    // 高さ：ふつうの道は地形に沿わせ、橋は両岸の高さを結んだ橋桁にする
+    // 高さ：ふつうの道は均した地面（地形の細かい凸凹を拾わない。交差点・隣のタイルの道とも同じ高さになる）、
+    // 橋は両岸の高さを結んだ橋桁にする
     const deck = bridge ? this.bridgeProfile(bridge, samples, s) : null;
-    let lastHeight = 0;
-    const pts = samples.map(([lat, lon], i) => {
-      if (deck) return this.terrain.toLocal(lat, lon, deck(s[i]));
-      lastHeight = this.terrain.surfaceHeightAt(lat, lon) ?? lastHeight;
-      return this.terrain.toLocal(lat, lon, lastHeight);
-    });
+    let ground: number[] | null = null;
+    if (!deck) {
+      const raw = samples.map(([lat, lon]) => this.groundAt(lat, lon));
+      ground = fillGaps(raw);
+      if (!ground) return;
+    }
+    const pts = samples.map(([lat, lon], i) => this.terrain.toLocal(lat, lon, deck ? deck(s[i]) : ground![i]));
     if (pts.length < 2) return;
+    if (!deck) {
+      this.gradeLines.push(simplifyLine(pts, 0.5, 0.25));
+      this.gradeWidths.push(layout.width + layout.sidewalk * 2 + ROADS.gradeMargin * 2);
+    } else {
+      // 橋：橋桁より上に出ている地形（土手・丘）は削る
+      this.bridgeLines.push(simplifyLine(pts, 0.5, 0.25).map((p) => p.clone().setY(p.y - BRIDGES.girderDepth)));
+      this.bridgeWidths.push(layout.width + layout.sidewalk * 2 + ROADS.gradeMargin * 2);
+    }
 
     const half = layout.width / 2;
     /** 交差点の面の外側までの距離（交差点の中なら負） */
@@ -349,8 +420,9 @@ export class RoadNetwork implements ChunkListener {
     const last = samples[samples.length - 1];
     const fallbackA = this.terrain.heightAt(first[0], first[1]) ?? WATER.surfaceHeight;
     const fallbackB = this.terrain.heightAt(last[0], last[1]) ?? fallbackA;
-    const hA = this.terrain.heightAt(aLat / 1e6, aLon / 1e6) ?? fallbackA;
-    const hB = this.terrain.heightAt(bLat / 1e6, bLon / 1e6) ?? fallbackB;
+    // 両端は、つながる道と同じ均した地面の高さ（段差を作らない）
+    const hA = this.groundAt(aLat / 1e6, aLon / 1e6) ?? this.terrain.heightAt(aLat / 1e6, aLon / 1e6) ?? fallbackA;
+    const hB = this.groundAt(bLat / 1e6, bLon / 1e6) ?? this.terrain.heightAt(bLat / 1e6, bLon / 1e6) ?? fallbackB;
     const length = Math.max(total, s[s.length - 1] + offset, 1);
     const rise = Math.min(BRIDGES.maxCamber, length * BRIDGES.camberRatio);
     const clearance = length > BRIDGES.longBridge ? BRIDGES.waterClearance : BRIDGES.waterClearance * 0.4;
@@ -451,7 +523,7 @@ export class RoadNetwork implements ChunkListener {
    * 上から見ると、歩道が交差点の角を回り込んでつながり、車道は交差点の中で一続きになる
    */
   private buildIntersection(j: Intersection, road: MeshBuilder, sidewalk: MeshBuilder): void {
-    const ground = this.terrain.surfaceHeightAt(j.lat, j.lon);
+    const ground = this.groundAt(j.lat, j.lon);
     if (ground === null) return;
     const center = this.terrain.toLocal(j.lat, j.lon, ground);
     const up = new THREE.Vector3(0, 1, 0);
@@ -481,7 +553,7 @@ export class RoadNetwork implements ChunkListener {
 
   /** 横断歩道：道の向きに沿った縞を、道幅いっぱいに置く */
   private buildCrosswalk(lat: number, lon: number, bearing: number, layout: RoadLayout, out: MeshBuilder): void {
-    const height = this.terrain.heightAt(lat, lon);
+    const height = this.groundAt(lat, lon);
     if (height === null) return;
     const center = this.terrain.toLocal(lat, lon, height);
     // 交差点の面より上に（交差点の面は、集まる道で一番高い道の歩道の高さ＋α）
@@ -626,4 +698,37 @@ export function approxMeters(lat1: number, lon1: number, lat2: number, lon2: num
   const k = Math.PI / 180;
   const x = (lon2 - lon1) * k * Math.cos(((lat1 + lat2) / 2) * k);
   return Math.hypot(x, (lat2 - lat1) * k) * 6371000;
+}
+
+/**
+ * 線の点を、なくしても線が水平に tolXZ m・高さで tolY m 以上ずれない所だけ間引く（Douglas-Peucker）。
+ * 地形を道に合わせる計算で、調べる線分を減らす
+ */
+function simplifyLine(pts: THREE.Vector3[], tolXZ: number, tolY: number): THREE.Vector3[] {
+  if (pts.length <= 2) return pts;
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack: Array<[number, number]> = [[0, pts.length - 1]];
+  while (stack.length > 0) {
+    const [i0, i1] = stack.pop()!;
+    const a = pts[i0];
+    const b = pts[i1];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len2 = dx * dx + dz * dz || 1;
+    let worst = -1;
+    let worstScore = 1;
+    for (let i = i0 + 1; i < i1; i++) {
+      const p = pts[i];
+      const t = THREE.MathUtils.clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / len2, 0, 1);
+      const side = Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t)) / tolXZ;
+      const up = Math.abs(p.y - (a.y + (b.y - a.y) * t)) / tolY;
+      const score = Math.max(side, up);
+      if (score > worstScore) (worstScore = score), (worst = i);
+    }
+    if (worst < 0) continue;
+    keep[worst] = 1;
+    stack.push([i0, worst], [worst, i1]);
+  }
+  return pts.filter((_, i) => keep[i]);
 }

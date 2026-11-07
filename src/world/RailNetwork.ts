@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RAILWAYS, WATER } from '../core/config';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
-import { cutFloor, smoothGround, stationGround } from './groundProfile';
+import { cutFloor, fillGaps, smoothGround, stationGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
 import { type Approach, type PortalRecord, TunnelPortalBuilder } from './tunnelPortals';
 
@@ -32,6 +32,8 @@ const TEXTURE_LENGTH_M = 2.4;
 export class RailNetwork implements ChunkListener {
   readonly group = new THREE.Group();
   private readonly tiles = new Map<string, THREE.Group | 'loading'>();
+  /** 均した地面（smoothGround）の格子点の平均。タイルを作る間だけ使い回す（読込前のチャンクの値を残さないよう、毎回作り直す） */
+  private smoothCache = new Map<string, number | null>();
   private readonly trackMaterials: Record<'narrow' | 'standard', THREE.MeshStandardMaterial> = {
     narrow: createTrackMaterial(1.067),
     standard: createTrackMaterial(1.435),
@@ -86,6 +88,7 @@ export class RailNetwork implements ChunkListener {
     this.tiles.delete(key);
     this.terrain.removeCarve(`rail:${key}`);
     this.terrain.removeCarve(`rail-portal:${key}`);
+    this.terrain.removeCarve(`rail-grade:${key}`);
     this.terrain.removeTrench(`rail:${key}`);
     if (!tile || tile === 'loading') return;
     this.group.remove(tile);
@@ -95,12 +98,15 @@ export class RailNetwork implements ChunkListener {
   }
 
   private build(data: RailTile, key: string): THREE.Group {
+    this.smoothCache = new Map();
     const narrow = new MeshBuilder();
     const standard = new MeshBuilder();
     const viaduct = new MeshBuilder();
     const monorail = new MeshBuilder();
     const noPier = data.x.map(([lat, lon, r]) => [lat / 1e6, lon / 1e6, r] as const);
     const cuts: THREE.Vector3[][] = [];
+    // 地面の高さを走る線路（まわりの地形を道床の高さにそろえる）
+    const grades: THREE.Vector3[][] = [];
     // トンネルの入口へ下りる掘割（両側に擁壁を立てる）
     const approachCuts: THREE.Vector3[][] = [];
     const approaches: Approach[] = [];
@@ -156,6 +162,34 @@ export class RailNetwork implements ChunkListener {
           }
         });
         flush();
+        // 地面の高さの区間（高架・トンネルへ下りる坂とその手前を除く）は、まわりの地形を道床の高さにそろえる
+        const portalNear = built.lift.map(() => false);
+        built.lift.forEach((l, i) => {
+          if (l >= -0.3) return;
+          for (let j = 0; j < built.pts.length; j++) {
+            if (built.pts[j].distanceTo(built.pts[i]) < RAILWAYS.portal.carveStop * 2) portalNear[j] = true;
+          }
+        });
+        let grade: THREE.Vector3[] = [];
+        built.lift.forEach((l, i) => {
+          if (Math.abs(l) < 0.3 && !portalNear[i] && gauge > 0) grade.push(floor(built.pts[i]));
+          else {
+            if (grade.length > 1) grades.push(grade);
+            grade = [];
+          }
+        });
+        if (grade.length > 1) grades.push(grade);
+        // 高架（橋へ上がる坂を含む）は、桁より上に出ている地形（土手・丘）を掘割と同じように削る
+        let high: THREE.Vector3[] = [];
+        built.lift.forEach((l, i) => {
+          if (l >= 0.3 && !portalNear[i]) {
+            high.push(built.pts[i].clone().setY(built.pts[i].y - RAILWAYS.lift - RAILWAYS.viaductDepth));
+          } else {
+            if (high.length > 1) cuts.push(high);
+            high = [];
+          }
+        });
+        if (high.length > 1) cuts.push(high);
       }
     }
     // トンネルの入口と、入口へ下りる掘割の擁壁
@@ -170,6 +204,12 @@ export class RailNetwork implements ChunkListener {
       );
     // 掘割の線路のまわりの地形を削る
     if (cuts.length > 0) this.terrain.addCarve(`rail:${key}`, cuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
+    // 地面の高さの線路：道床の幅は地形を道床のすぐ下にそろえ（高い所は削り、低い所は盛る）、その外はなだらかに戻す
+    if (grades.length > 0) {
+      this.terrain.addCarve(`rail-grade:${key}`, grades, RAILWAYS.gradeWidth, RAILWAYS.gradeSlope, {
+        fill: { reach: RAILWAYS.gradeFillReach, slope: RAILWAYS.gradeSlope },
+      });
+    }
     // 入口へ下りる掘割も同じく削る（地形の頂点の間隔が広いので、擁壁の幅では削りきれない。壁の外は斜面になる）
     if (approachCuts.length > 0) {
       this.terrain.addCarve(`rail-portal:${key}`, approachCuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
@@ -324,20 +364,20 @@ export class RailNetwork implements ChunkListener {
     }
     if (samples.length < 2) return null;
 
-    // 地上の線路は、描いている地形の面に合わせる（標高データそのものだと面に埋もれる）
     // 掘割は、細かい標高（5m メッシュ）の前後 cutFloorRadius m の一番低い所＝掘割の底に置く（あとで地形を削る）
     const raw = cut
       ? cutFloor(this.terrain, samples, s, RAILWAYS.cutFloorRadius)
       : samples.map(([lat, lon]) => this.terrain.surfaceHeightAt(lat, lon));
-    let last = raw.find((g) => g !== null) ?? 0;
-    const ground = raw.map((g) => (last = g ?? last));
-    // 均した地面：場所だけで決まる平均（周りの格子点の地形の平均）にして、隣を並んで走る線路と同じ高さにする
-    const smooth = samples.map(
-      ([lat, lon], i) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius) ?? ground[i],
-    );
+    // 高さの取れない所（まだ読んでいない隣のチャンク）は、線の上の近い所の高さ
+    const ground = fillGaps(raw) ?? raw.map(() => 0);
+    // 均した地面：場所だけで決まる平均（周りの格子点の地形の平均）にして、隣を並んで走る線路と同じ高さにする。
+    // 地上の線路もこの高さに置き、地形の細かい凸凹を拾わないようにする（まわりの地形は Terrain.addCarve で線路に合わせる）
+    const smooth =
+      fillGaps(samples.map(([lat, lon]) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius, this.smoothCache))) ??
+      ground;
     const heights = ground.map((g, i) => {
-      // 高架ほど均した地面に寄せる（地上の線路は地形に沿わせる）
-      let base = THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1));
+      // 掘割は掘割の底、それ以外は均した地面（掘割でも高架ほど均した地面に寄せる）
+      let base = cut ? THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1)) : smooth[i];
       // 駅の近くは駅の地面に寄せる
       if (stationWeight[i] > 0) base = THREE.MathUtils.lerp(base, stationBase[i]!, stationWeight[i]);
       // 川の上（地面が水面）では水面から少し上に（駅の中はホームと高さをそろえるので上げない。

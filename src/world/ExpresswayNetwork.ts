@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EXPRESSWAYS, WATER } from '../core/config';
-import { cutFloor, smoothGround } from './groundProfile';
+import { cutFloor, fillGaps, smoothGround } from './groundProfile';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
 import type { ChunkListener, Terrain } from './Terrain';
 
@@ -35,6 +35,13 @@ export class ExpresswayNetwork implements ChunkListener {
   readonly group = new THREE.Group();
   private readonly tiles = new Map<string, THREE.Group | 'loading'>();
   private readonly deckMaterials = new Map<number, THREE.MeshStandardMaterial>();
+  /** 均した地面（smoothGround）の格子点の平均。タイルを作る間だけ使い回す */
+  private smoothCache = new Map<string, number | null>();
+  /** 今作っているタイルの、地形を路面の高さにそろえる線と幅 */
+  private gradeLines: THREE.Vector3[][] = [];
+  private gradeWidths: number[] = [];
+  /** 今作っている道の、地面より低い（掘割の印の無い掘割の）区間 */
+  private lowLines: THREE.Vector3[][] = [];
   private readonly concrete = new THREE.MeshStandardMaterial({
     color: EXPRESSWAYS.concreteColor,
     roughness: 0.8,
@@ -82,6 +89,7 @@ export class ExpresswayNetwork implements ChunkListener {
     const tile = this.tiles.get(key);
     this.tiles.delete(key);
     this.terrain.removeCarve(`expressway:${key}`);
+    this.terrain.removeCarve(`expressway-grade:${key}`);
     if (!tile || tile === 'loading') return;
     this.group.remove(tile);
     tile.traverse((obj) => {
@@ -96,6 +104,9 @@ export class ExpresswayNetwork implements ChunkListener {
   }
 
   private build(data: ExpresswayTile, key: string): THREE.Group {
+    this.smoothCache = new Map();
+    this.gradeLines = [];
+    this.gradeWidths = [];
     const decks = new Map<number, MeshBuilder>();
     const parts = {
       wall: new MeshBuilder(),
@@ -125,8 +136,17 @@ export class ExpresswayNetwork implements ChunkListener {
         names,
       );
       if (cut === 1 && line) cuts.push(line.map((p) => p.clone().setY(p.y - EXPRESSWAYS.lift - 0.2)));
+      cuts.push(...this.lowLines);
+      this.lowLines = [];
     }
     if (cuts.length > 0) this.terrain.addCarve(`expressway:${key}`, cuts, EXPRESSWAYS.cutWidth, EXPRESSWAYS.cutSlope);
+    // 地面の高さの区間：路面の幅の地形を路面の高さにそろえ（高い所は削り、低い所は盛る）、その外はなだらかに戻す
+    if (this.gradeLines.length > 0) {
+      this.terrain.addCarve(`expressway-grade:${key}`, this.gradeLines, 0, EXPRESSWAYS.gradeSlope, {
+        widths: this.gradeWidths,
+        fill: { reach: EXPRESSWAYS.gradeFillReach, slope: EXPRESSWAYS.gradeSlope },
+      });
+    }
 
     const group = new THREE.Group();
     for (const [lanes, builder] of decks) {
@@ -227,15 +247,46 @@ export class ExpresswayNetwork implements ChunkListener {
     const raw = way.cut
       ? cutFloor(this.terrain, samples, s, E.cutFloorRadius)
       : samples.map(([lat, lon]) => this.terrain.surfaceHeightAt(lat, lon));
-    let last = raw.find((g) => g !== null) ?? 0;
-    const ground = raw.map((g) => (last = g ?? last));
-    const smooth = samples.map(([lat, lon], i) => smoothGround(this.terrain, lat, lon, E.smoothRadius) ?? ground[i]);
+    // 高さの取れない所（まだ読んでいない隣のチャンク）は、線の上の近い所の高さ
+    const ground = fillGaps(raw) ?? raw.map(() => 0);
+    const smooth =
+      fillGaps(samples.map(([lat, lon]) => smoothGround(this.terrain, lat, lon, E.smoothRadius, this.smoothCache))) ?? ground;
     const heights = ground.map((g, i) => {
-      // 高架ほど均した地面に寄せる（地上は地形に沿わせる）
-      const base = THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1));
+      // 掘割は掘割の底（高架ほど均した地面に寄せる）、それ以外は均した地面（地形の細かい凸凹を拾わない）
+      const base = way.cut ? THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1)) : smooth[i];
       return Math.max(base + lift[i], WATER.surfaceHeight + 1) + E.lift;
     });
     const pts = samples.map(([lat, lon], i) => this.terrain.toLocal(lat, lon, heights[i]));
+    // 掘割の印の無い区間：地面の高さの所はまわりの地形を路面の高さにそろえる。地面より低い所（掘割の印の無い掘割）と
+    // 高架は、路面（高架は桁）より上に出ている地形を掘割と同じように削る（削らないと、土手や丘に埋もれる）
+    if (!way.cut) {
+      const halfWidth = (way.lanes * E.laneWidth) / 2 + E.shoulder;
+      const kindOf = (l: number) => (l >= 0.5 ? 'high' : l <= -0.5 ? 'low' : 'grade');
+      let run: THREE.Vector3[] = [];
+      let runKind = '';
+      const flush = () => {
+        if (run.length > 1) {
+          if (runKind === 'grade') {
+            this.gradeLines.push(run);
+            this.gradeWidths.push(halfWidth * 2 + E.gradeMargin * 2);
+          } else this.lowLines.push(run);
+        }
+        run = [];
+      };
+      pts.forEach((p, i) => {
+        const kind = kindOf(lift[i]);
+        const floor = p.clone().setY(p.y - E.lift - (kind === 'high' ? E.girderDepth : 0.2));
+        if (run.length > 0 && kind !== runKind) {
+          // 境目の点は両方の区間に入れて、つなげる
+          const last = run[run.length - 1];
+          flush();
+          run.push(last);
+        }
+        runKind = kind;
+        run.push(floor);
+      });
+      flush();
+    }
     const elevated = lift.map((l) => l > E.elevatedFrom);
 
     const up = new THREE.Vector3(0, 1, 0);
