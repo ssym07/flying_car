@@ -51,6 +51,10 @@ export class Terrain {
   private readonly retryAt = new Map<string, number>();
   /** 地形を削る線（掘割の線路など）。キーごとに登録し、今あるチャンクとこれから作るチャンクに当てる */
   private readonly carves = new Map<string, Carve>();
+  /** まだ地形に当てていない線（addCarve の後、毎フレーム少しずつ当てる）。next は次に調べる頂点の番号 */
+  private readonly carveJobs: Array<{ chunk: Chunk; focus: Carve; next: number }> = [];
+  /** 線を当てて頂点が動いた、法線を作り直していないチャンク */
+  private readonly carveDirty = new Set<Chunk>();
   /** 地形を描かない掘割（addTrench）。キーごとに登録する */
   private readonly trenches = new Map<string, { lines: THREE.Vector3[][]; box: THREE.Box3 }>();
   /** 写真が取れなかったチャンク用（[本体, 縁の壁]） */
@@ -78,13 +82,56 @@ export class Terrain {
     }: { widths?: number[]; fill?: { reach: number; slope: number }; slopeReach?: number } = {},
   ): void {
     const carve = createCarve(lines, (k) => (widths?.[k] ?? width) / 2, slope, fill ?? null, slopeReach);
+    this.dropCarveJobs(key);
     if (!carve) return;
     this.carves.set(key, carve);
-    for (const chunk of this.chunks.values()) if (chunk.mesh) applyCarves(chunk.mesh, [...this.carves.values()], true, carve);
+    // 今あるチャンクには、すぐには当てずに順番待ちにして、毎フレーム少しずつ当てる（飛行中にカクつかないように）
+    for (const chunk of this.chunks.values()) {
+      if (chunk.mesh && carveTouches(carve, chunk.mesh)) this.carveJobs.push({ chunk, focus: carve, next: 0 });
+    }
+  }
+
+  /**
+   * 順番待ちの削る・盛る線を、budgetMs ミリ秒まで地形に当てる。チャンクの線を全部当て終えたら、法線と当たり判定を作り直す
+   */
+  private runCarveJobs(budgetMs: number): void {
+    const until = performance.now() + budgetMs;
+    while (this.carveJobs.length > 0 && performance.now() < until) {
+      const job = this.carveJobs[0];
+      const mesh = job.chunk.mesh;
+      if (!mesh) {
+        this.carveJobs.shift();
+        continue;
+      }
+      const end = Math.min(job.next + CARVE_SLICE, mesh.geometry.getAttribute('position').count);
+      if (applyCarves(mesh, [...this.carves.values()], job.focus, job.next, end)) this.carveDirty.add(job.chunk);
+      job.next = end;
+      if (end < mesh.geometry.getAttribute('position').count) continue;
+      this.carveJobs.shift();
+      // このチャンクの順番待ちが無くなったら、法線と当たり判定を作り直す
+      if (this.carveDirty.has(job.chunk) && !this.carveJobs.some((j) => j.chunk === job.chunk)) {
+        this.carveDirty.delete(job.chunk);
+        finishCarves(mesh, true);
+      }
+    }
+    // 順番待ちを捨てて残った、頂点を動かしたままのチャンク
+    for (const chunk of this.carveDirty) {
+      if (this.carveJobs.some((j) => j.chunk === chunk)) continue;
+      this.carveDirty.delete(chunk);
+      if (chunk.mesh) finishCarves(chunk.mesh, true);
+    }
   }
 
   removeCarve(key: string): void {
+    this.dropCarveJobs(key);
     this.carves.delete(key);
+  }
+
+  /** キーの線の、まだ当てていない順番待ちを捨てる */
+  private dropCarveJobs(key: string): void {
+    const carve = this.carves.get(key);
+    if (!carve) return;
+    for (let i = this.carveJobs.length - 1; i >= 0; i--) if (this.carveJobs[i].focus === carve) this.carveJobs.splice(i, 1);
   }
 
   /**
@@ -254,6 +301,11 @@ export class Terrain {
     return this.wanted.filter((c) => Math.hypot(c.center.x - cam.x, c.center.z - cam.z) < radius);
   }
 
+  /** チャンク (x, y) の標高が読み込み済みか */
+  isChunkReady(x: number, y: number): boolean {
+    return this.chunks.get(`${x}/${y}`)?.heights != null;
+  }
+
   /** ローカル座標 → 緯度経度（度） */
   toLatLon(position: THREE.Vector3): { lat: number; lon: number } | null {
     if (!this.ecefToLocal) return null;
@@ -288,6 +340,7 @@ export class Terrain {
       }
     }
     this.wanted = wanted;
+    this.runCarveJobs(TERRAIN.carveBudgetMs);
 
     // 近い順に読み始める
     const now = performance.now();
@@ -364,7 +417,7 @@ export class Terrain {
         geometry,
         createMaterials(map, water, parks?.texture ?? null, landuse?.texture ?? null, near),
       );
-      applyCarves(chunk.mesh, [...this.carves.values()], false);
+      if (applyCarves(chunk.mesh, [...this.carves.values()])) finishCarves(chunk.mesh, false);
       geometry.computeBoundingBox();
       this.updateTrenchMask(chunk);
       geometry.computeBoundsTree();
@@ -448,6 +501,8 @@ interface Carve {
 }
 
 const CARVE_CELL = 32;
+/** 順番待ちの線を当てる時、一度に調べる頂点の数（時間を見ながら、これを単位に進める） */
+const CARVE_SLICE = 2048;
 /** 格子のマスの番号（文字列のキーを作らないよう、数にする） */
 const cellKey = (gx: number, gz: number) => (gx + 0x8000) * 0x10000 + (gz + 0x8000);
 /** 削る斜面・盛る斜面が届く距離 (m) の既定値 */
@@ -524,23 +579,23 @@ function carveLimits(carve: Carve, key: number, x: number, z: number, out: [numb
  * focus を渡すと、その線で動く頂点だけを、全部の線から高さを決め直す（後から足した線。
  * 削る線のすぐ脇に盛る線があっても、掘割を埋めないように）
  */
-function applyCarves(mesh: THREE.Mesh, carves: Carve[], refit = true, focus: Carve | null = null): void {
+function applyCarves(
+  mesh: THREE.Mesh,
+  carves: Carve[],
+  focus: Carve | null = null,
+  start = 0,
+  end = Infinity,
+): boolean {
   const geometry = mesh.geometry as THREE.BufferGeometry;
-  geometry.computeBoundingBox();
-  const bounds = geometry.boundingBox!;
-  const near = (c: Carve) =>
-    c.box.max.x + c.reach >= bounds.min.x &&
-    c.box.min.x - c.reach <= bounds.max.x &&
-    c.box.max.z + c.reach >= bounds.min.z &&
-    c.box.min.z - c.reach <= bounds.max.z;
-  if (focus && !near(focus)) return;
-  const touching = carves.filter(near);
-  if (touching.length === 0) return;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  if (focus && !carveTouches(focus, mesh)) return false;
+  const touching = carves.filter((c) => carveTouches(c, mesh));
+  if (touching.length === 0) return false;
   const position = geometry.getAttribute('position') as THREE.BufferAttribute;
   const xyz = position.array as Float32Array;
   let changed = false;
   const limits: [number, number] = [Infinity, -Infinity];
-  for (let i = 0; i < position.count; i++) {
+  for (let i = start; i < Math.min(end, position.count); i++) {
     const x = xyz[i * 3];
     const y = xyz[i * 3 + 1];
     const z = xyz[i * 3 + 2];
@@ -565,12 +620,30 @@ function applyCarves(mesh: THREE.Mesh, carves: Carve[], refit = true, focus: Car
       changed = true;
     }
   }
-  if (!changed) return;
-  position.needsUpdate = true;
+  if (changed) position.needsUpdate = true;
+  return changed;
+}
+
+/** 線を当てて頂点を動かしたメッシュの、法線・範囲（と refit なら当たり判定の木）を作り直す */
+function finishCarves(mesh: THREE.Mesh, refit: boolean): void {
+  const geometry = mesh.geometry as THREE.BufferGeometry;
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   if (refit) geometry.boundsTree?.refit();
+}
+
+/** 線がメッシュの範囲（と斜面の届く距離）にかかるか */
+function carveTouches(c: Carve, mesh: THREE.Mesh): boolean {
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const b = geometry.boundingBox!;
+  return (
+    c.box.max.x + c.reach >= b.min.x &&
+    c.box.min.x - c.reach <= b.max.x &&
+    c.box.max.z + c.reach >= b.min.z &&
+    c.box.min.z - c.reach <= b.max.z
+  );
 }
 
 function key(chunk: { x: number; y: number }): string {

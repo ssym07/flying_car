@@ -65,12 +65,10 @@ export class MeshBuilder {
 export class RoadNetwork implements ChunkListener {
   readonly group = new THREE.Group();
   private readonly tiles = new Map<string, THREE.Group | 'loading'>();
-  /** 作った時に隣のチャンクが読まれておらず、道の高さを近くの値で代用したタイル（隣が読まれたら作り直す）→ そのデータ */
-  private readonly incomplete = new Map<string, RoadTile>();
+  /** 読んだが、まわりのチャンクの地形がそろうのを待っているタイル → そのデータ */
+  private readonly waiting = new Map<string, RoadTile>();
   /** 均した地面（smoothGround）の格子点の平均。タイルを作る間だけ使い回す */
   private smoothCache = new Map<string, number | null>();
-  /** 今作っているタイルで、高さの取れない所があったか */
-  private missing = false;
   /** 今作っているタイルの、地形を道の高さにそろえる線と幅 */
   private gradeLines: THREE.Vector3[][] = [];
   private gradeWidths: number[] = [];
@@ -105,20 +103,8 @@ export class RoadNetwork implements ChunkListener {
 
   onChunkAdded(x: number, y: number): void {
     const key = `${x}/${y}`;
-    // 隣のタイルが、このチャンクの高さが無いまま作られていたら作り直す
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const k = `${x + dx}/${y + dy}`;
-        const data = this.incomplete.get(k);
-        const old = this.tiles.get(k);
-        if (!data || !old || old === 'loading') continue;
-        this.incomplete.delete(k);
-        this.disposeTile(old);
-        const group = this.buildTile(data, k);
-        this.tiles.set(k, group);
-        this.group.add(group);
-      }
-    }
+    // まわりの地形がそろうのを待っていたタイルを作る
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this.buildWhenReady(x + dx, y + dy);
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
     const url = `${import.meta.env.BASE_URL}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
@@ -130,9 +116,14 @@ export class RoadNetwork implements ChunkListener {
       .then((data) => {
         // 読んでいる間にチャンクが捨てられていたら何もしない
         if (this.tiles.get(key) !== 'loading') return;
-        const group = data ? this.buildTile(data, key) : new THREE.Group();
-        this.tiles.set(key, group);
-        this.group.add(group);
+        if (!data) {
+          const empty = new THREE.Group();
+          this.tiles.set(key, empty);
+          this.group.add(empty);
+          return;
+        }
+        this.waiting.set(key, data);
+        this.buildWhenReady(x, y);
       })
       .catch((e) => {
         console.warn('[Roads] 読込に失敗しました', key, e);
@@ -144,11 +135,26 @@ export class RoadNetwork implements ChunkListener {
     const key = `${x}/${y}`;
     const tile = this.tiles.get(key);
     this.tiles.delete(key);
-    this.incomplete.delete(key);
+    this.waiting.delete(key);
     this.terrain.removeCarve(`road:${key}`);
     this.terrain.removeCarve(`road-bridge:${key}`);
     if (!tile || tile === 'loading') return;
     this.disposeTile(tile);
+  }
+
+  /**
+   * 待っているタイル (x, y) を、まわり 8 チャンクの地形がそろっていれば作る。道の端は隣のチャンクにはみ出すので、
+   * そろう前に作ると高さを近くの値で代用することになり、つなぎ目に段差ができる（作り直すと二度手間でカクつく）
+   */
+  private buildWhenReady(x: number, y: number): void {
+    const key = `${x}/${y}`;
+    const data = this.waiting.get(key);
+    if (!data) return;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!this.terrain.isChunkReady(x + dx, y + dy)) return;
+    this.waiting.delete(key);
+    const group = this.buildTile(data, key);
+    this.tiles.set(key, group);
+    this.group.add(group);
   }
 
   private disposeTile(tile: THREE.Group): void {
@@ -160,7 +166,6 @@ export class RoadNetwork implements ChunkListener {
 
   private buildTile(data: RoadTile, key: string): THREE.Group {
     this.smoothCache = new Map();
-    this.missing = false;
     this.gradeLines = [];
     this.gradeWidths = [];
     this.bridgeLines = [];
@@ -198,7 +203,6 @@ export class RoadNetwork implements ChunkListener {
     for (const [lat, lon, bearing, cls] of data.c) {
       this.buildCrosswalk(lat / 1e6, lon / 1e6, bearing, roadLayout(cls, 0, false), crosswalk);
     }
-    if (this.missing) this.incomplete.set(key, data);
     // 道の幅（と歩道・少しの余裕）の地形を道の高さにそろえる（高い所は削り、低い所は盛る）。その外はなだらかに戻す
     if (this.gradeLines.length > 0) {
       this.terrain.addCarve(`road:${key}`, this.gradeLines, 0, ROADS.gradeSlope, {
@@ -226,12 +230,10 @@ export class RoadNetwork implements ChunkListener {
 
   /**
    * 道を置く地面の高さ：場所だけで決まる均した地面（道どうし・交差点・横断歩道で同じ値になる）。
-   * まだ読んでいないチャンクにかかって取れなければ null（タイルを後で作り直す印を付ける）
+   * まだ読んでいないチャンクにかかって取れなければ null
    */
   private groundAt(lat: number, lon: number): number | null {
-    const h = smoothGround(this.terrain, lat, lon, ROADS.smoothRadius, this.smoothCache);
-    if (h === null) this.missing = true;
-    return h;
+    return smoothGround(this.terrain, lat, lon, ROADS.smoothRadius, this.smoothCache);
   }
 
   /** 1本の道（中心線）から車道と歩道のリボンを作る。橋なら地形に沿わせず、橋桁・欄干・橋脚も作る */
