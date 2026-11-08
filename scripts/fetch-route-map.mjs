@@ -179,6 +179,36 @@ for (const line of [...byLine.values()].filter((l) => !SERVICE.test(l.name)).sor
   const name = line.name.replace(/\s*(各駅停車|普通|各停)$/, '').trim();
   kept.push({ ...line, name: name || line.operator });
 }
+// 各駅に止まる路線のリレーションが途中で終わっていて、その先の駅が快速などのリレーションにしか無い所
+// （JR神戸線の普通は加古川まで、加古川〜姫路の宝殿・曽根・ひめじ別所・御着は快速のリレーションだけ）は、
+// まだどの路線にも載っていない駅にかかる区間だけを、種別を外した名前の路線として足す
+// （駅を飛ばす区間は、両端の駅がもう載っているので足さない）。今は大阪だけ（SETTINGS.serviceFill）
+if (SETTINGS.serviceFill) {
+  const onMap = new Set(kept.flatMap((l) => l.stops));
+  for (const line of [...byLine.values()].filter((l) => SERVICE.test(l.name)).sort((a, b) => b.stops.length - a.stops.length)) {
+    const name = line.name.split(/\s+/)[0];
+    if (SERVICE.test(name)) continue;
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        kept.push({ ...line, name, stops: run });
+        for (const i of run) onMap.add(i);
+      }
+      run = [];
+    };
+    for (let k = 1; k < line.stops.length; k++) {
+      const [a, b] = [line.stops[k - 1], line.stops[k]];
+      if (drawn.has(edgeKey(a, b)) || (onMap.has(a) && onMap.has(b))) {
+        flush();
+        continue;
+      }
+      if (run.length === 0) run.push(a);
+      run.push(b);
+      drawn.add(edgeKey(a, b));
+    }
+    flush();
+  }
+}
 
 // 使う駅だけに番号を振り直す。範囲の外の駅は除く（路線はそこで切る）
 const used = new Map();

@@ -158,6 +158,12 @@ export const WARDS: Ward[] = [
   { code: '28100', name: '神戸市', kind: 'lod1', url: '' },
   { code: '28204', name: '西宮市', kind: 'lod1', url: '' },
   { code: '28206', name: '芦屋市', kind: 'lod1', url: '' },
+  // 播磨：加古川市・姫路市は PLATEAU（姫路市は市街地の範囲だけ取る：scripts/build-local-buildings.mjs --clip）、明石市・稲美町・高砂市は PLATEAU が無いので国土地理院の建物の形から作る
+  { code: '28210', name: '加古川市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/76/4f646c-7c27-49c3-af45-398fa703e550/28210_kakogawa-shi_city_2020_citygml_6_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '28201', name: '姫路市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/7e/feb981-bc38-4e5e-b6de-162d40d6bfe8/28201_himeji-shi_city_2023_citygml_2_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '28203', name: '明石市', kind: 'lod1', url: '' },
+  { code: '28381', name: '稲美町', kind: 'lod1', url: '' },
+  { code: '28216', name: '高砂市', kind: 'lod1', url: '' },
   // 京都市：PLATEAU（市街地の範囲だけ取る。scripts/build-local-buildings.mjs --clip）
   { code: '26101', name: '京都市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e7/2aaaf0-1ab3-40e8-af5b-db3310fb4f15/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26101_kita-ku_lod1/tileset.json' },
   { code: '26102', name: '京都市上京区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/7f/4d517a-10cc-4489-b1b2-5c754caa0561/26100_kyoto-shi_city_2025_citygml_1_op_bldg_3dtiles_26102_kamigyo-ku_lod1/tileset.json' },
