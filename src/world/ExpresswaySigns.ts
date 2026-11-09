@@ -147,6 +147,25 @@ export class ExpresswaySigns {
     return { y, left, right: rightEdge, top };
   }
 
+  /**
+   * 柱から柱まで（横 from〜to m）の真下の、一番高い路面（上を向いた面）の高さ。
+   * 真ん中の路面より S.overheadIgnore m 以上高い面（上を通る別の高速）は数えない
+   */
+  private highestUnder(s: Sign, right: THREE.Vector3, deck: Deck, from: number, to: number): number {
+    let top = deck.top;
+    for (let d = from; d <= to; d += S.scanStep) {
+      this.origin.set(s.x + right.x * d, deck.y + S.overheadIgnore, s.z + right.z * d);
+      this.raycaster.set(this.origin, this.down);
+      this.raycaster.far = S.overheadIgnore + 3;
+      for (const hit of this.raycaster.intersectObject(this.deck, true)) {
+        if (!hit.face || hit.face.normal.y < 0.7) continue;
+        top = Math.max(top, hit.point.y);
+        break;
+      }
+    }
+    return top;
+  }
+
   private create(s: Sign): void {
     // 運転席から見た右（ローカル座標 +x=西, +z=北。進む向き θ の右は θ+90°）
     const h = s.heading * THREE.MathUtils.DEG2RAD;
@@ -163,7 +182,10 @@ export class ExpresswaySigns {
     const middle = (deck.right - deck.left) / 2;
     const leftPost = Math.min(-deck.left - S.postMargin, middle - boardsWidth / 2 - S.postSize);
     const rightPost = Math.max(deck.right + S.postMargin, middle + boardsWidth / 2 + S.postSize);
-    const bottom = deck.top - deck.y + S.clearance;
+    // 板の下は、柱から柱までの真下で一番高い路面から S.clearance m 上
+    // （真ん中の路面と同じ高さの範囲の外に、並んで上る連絡路など高い路面が来ることがある）
+    const highest = this.highestUnder(s, right, deck, leftPost, rightPost);
+    const bottom = highest - deck.y + S.clearance;
     const boardTop = bottom + S.boardHeight;
     const top = boardTop + 0.4;
 

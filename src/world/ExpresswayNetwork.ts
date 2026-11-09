@@ -454,9 +454,10 @@ export class ExpresswayNetwork implements ChunkListener {
         TEXTURE_LENGTH_M,
       );
       const r = (i: number) => dir * (wallInAt(i, dir) + E.barrierThickness / 2);
-      // 壁高欄・手すりは、全部の道の路面がそろってから描く。壁の真ん中が別の道の路面の上に来る所は描かない
+      // 壁高欄・手すりは、全部の道の路面がそろってから描く。外側の壁の真ん中が別の道の路面の上に来る所は描かない
       this.deferred.push(() => {
-        const free = pts.map((_, i) => !this.onOtherDeck(at(i, r(i), 0), id));
+        // 外側の壁高欄だけ（上下線の間の分離帯の壁は、反対車線の路面の縁ぎりぎりに来るので調べない）
+        const free = pts.map((_, i) => sideOf[i][dir].kind !== 'wall' || !this.onOtherDeck(at(i, r(i), 0), id));
         const wallHere = (i: number) => walled(i) && free[i];
         const railHere = (i: number) => outer(i) && free[i];
         strip(parts.wall, (i) => at(i, wi(i), 0), (i) => at(i, wi(i), h), wallHere);
