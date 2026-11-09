@@ -16,10 +16,10 @@
 //   路面の半幅（0.1m）, [[向き（-1 左・0 まっすぐ・1 右）, 出口(0/1), 路線番号, 路線名, 路線名の英語,
 //   [[地名, 地名の英語], ...（2つまで）]], ...]], ...] }
 //
-// 看板を立てる路線は段階的に増やす（ENABLED。上流の道の名前で選ぶ）
+// 看板を立てる路線は ENABLED（上流の道の名前）で選べる
 // データ: © OpenStreetMap contributors (ODbL)
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { REGION_ID, regionPath, SETTINGS } from './lib/region.mjs';
+import { regionPath, SETTINGS } from './lib/region.mjs';
 
 const CACHE_DIR = new URL('../data/cache/expressways/', import.meta.url);
 const RAW = regionPath('data/osm/expressways.json');
@@ -28,13 +28,8 @@ const OUT = regionPath('public/expressway-signs.json');
 const STATIONS = regionPath('src/data/stations.json');
 const STATION_EN = regionPath('data/osm/station-en.json');
 
-/** 看板を立てる路線（上流の道の名前）。首都高から始めて、外環・湾岸・東名・ほかの地域と順に増やす */
-const ENABLED = {
-  tokyo: [/^首都高速/],
-  osaka: [],
-  fukuoka: [],
-  nagoya: [],
-}[REGION_ID];
+/** 看板を立てる路線（上流の道の名前）。首都高から始めて、全部の高速・全部の地域へ広げた */
+const ENABLED = [/./];
 
 /** 看板を立てる、分岐の手前の距離 (m) */
 const BEFORE = 230;
@@ -234,8 +229,9 @@ function hubAhead(way, i, distance) {
  */
 function destinationOf(branch) {
   const ahead = walkForward(branch.w, branch.i, LOOKAHEAD);
-  // 連絡路のまま一般道へ出て終わる＝出口
-  const exit = ahead.ended && ahead.path.every(({ way: w }) => w.link);
+  // 連絡路のまま一般道へ出て終わる＝出口（サービスエリア・パーキングエリアへの道は出口にしない）
+  const toRestArea = /(SA|PA|ＳＡ|ＰＡ)$/.test(branch.w.tags['destination:ja'] ?? branch.w.tags.destination ?? '');
+  const exit = !toRestArea && ahead.ended && ahead.path.every(({ way: w }) => w.link);
 
   // 1. OSM の方面（この道か、すぐ先の道に付いていれば）
   let way = branch.w;
@@ -354,7 +350,8 @@ for (const w of ways) {
   if (inc.length === 0) continue;
   done.add(k);
   const up = inc.find((n) => !n.w.link) ?? inc[0];
-  if (!ENABLED.some((re) => re.test(roadName(up.w.tags)))) continue;
+  // 名前の無い道（連絡路）は、その上流の本線の名前で選ぶ
+  if (!ENABLED.some((re) => re.test(roadName(up.w.tags) || 'link'))) continue;
   const back = walkBack(up.w, up.i, BEFORE);
   if (!back || back.walked < MIN_BEFORE) continue;
   // 分岐の点での進む向きと、それぞれの道の向き（分岐から 80m 先へ）
