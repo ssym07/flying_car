@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => {
     build: {
       copyPublicDir: !remoteData,
     },
+    // ミニマップの MapLibre の worker（?worker&url）を ES モジュールのまま出す（MapLibre は .mjs の worker を module として起動する）
+    worker: { format: 'es' as const },
     plugins: remoteData
       ? [
           (() => {

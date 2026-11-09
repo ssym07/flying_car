@@ -356,16 +356,83 @@ body {
   display: none;
 }
 
-.minimap canvas {
+/* 地図（MapLibre）。白地の簡略図。MapLibre の CSS が position: relative にするので、大きさを直に決める */
+.minimap .minimap-map {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
 
-/* 淡色地図を反転して、街の配色（黒・紺）に合う暗い地図にする */
-.minimap-map {
-  filter: invert(1) hue-rotate(190deg) brightness(0.85) contrast(0.9) saturate(0.7);
+/* 自機の矢印（いつも上向き。地図が進行方向に回る）と視野の扇形 */
+.minimap-self {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.minimap-self::before {
+  content: '';
+  position: absolute;
+  left: -50px;
+  top: -60px;
+  width: 100px;
+  height: 60px;
+  background: radial-gradient(circle at 50% 100%, rgba(66, 133, 244, 0.35), rgba(66, 133, 244, 0) 70%);
+  clip-path: polygon(50% 100%, 22% 0, 78% 0);
+}
+
+.minimap-self::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: -10px;
+  width: 16px;
+  height: 18px;
+  background: #4285f4;
+  clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%);
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);
+}
+
+.minimap-self[hidden],
+.minimap-edge-dot[hidden] {
+  display: none;
+}
+
+.minimap-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.minimap-edge-dot {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+
+/* クリックで刺した仮のピン（黄色の待ち針）と地名の吹き出し。先が地点 */
+.minimap-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+}
+
+.minimap-pick i {
+  width: 14px;
+  height: 26px;
+  background:
+    radial-gradient(circle at 50% 7px, #ffb300 5px, #1b2430 5.5px, #1b2430 6.5px, transparent 7px),
+    linear-gradient(#5b6573, #5b6573) 50% 100% / 2px 14px no-repeat;
 }
 
 .minimap-north {
@@ -883,9 +950,24 @@ body {
 }
 
 /* ミニマップ：クリックで刺した仮のピンの地名と、保存したピンの名前（カーソルを合わせた時） */
-.minimap-place,
 .minimap-tip {
   position: absolute;
+}
+
+.minimap-place {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.minimap-place.below {
+  bottom: auto;
+  top: calc(100% + 4px);
+}
+
+.minimap-place,
+.minimap-tip {
   max-width: 220px;
   padding: 5px 9px;
   border-radius: 7px;
@@ -912,7 +994,6 @@ body {
   font-size: 10px;
 }
 
-.minimap-place[hidden],
 .minimap-tip[hidden] {
   display: none;
 }
