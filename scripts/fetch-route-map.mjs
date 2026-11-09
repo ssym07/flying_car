@@ -146,7 +146,7 @@ for (const rel of relations.values()) {
 
 // まとめる：快速・急行・直通運転などの種別は除き、各駅に止まる路線だけにする。
 // 駅の多い路線から順に、まだ描いていない駅の間（隣どうしの駅の組）を半分以上持つものだけを残す
-const SERVICE = /快速|区快|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|^ソニック|^きらめき|^かもめ|^みどり|^ハウステンボス|^有明$/;
+const SERVICE = /快速|区快|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|^ソニック|^きらめき|^かもめ|^みどり|^ハウステンボス|^有明$|^はまかぜ$/;
 // 載せる駅：データを取る範囲の中で、建物を作っている所（public/plateau のこの地域の区の、中身のある細かいタイルの範囲）にある駅だけ
 const builtBoxes = [];
 {
@@ -301,13 +301,16 @@ const rings = [];
   };
   // 並びを保つ駅の組：実際の距離が近い（1.5 km 以内）、隣どうしでない駅。[i, j, i への向き x, y]
   const sides = [];
+  // keepSides が [南, 西, 北, 東] の時は、その範囲の中の駅どうしだけ
+  const box = Array.isArray(SETTINGS.keepSides) ? SETTINGS.keepSides : null;
+  const inBox = (i) => !box || (outStations[i][1] >= box[0] && outStations[i][1] <= box[2] && outStations[i][2] >= box[1] && outStations[i][2] <= box[3]);
   if (SETTINGS.keepSides) {
     for (let i = 0; i < geo.length; i++) {
       for (let j = i + 1; j < geo.length; j++) {
         const dx = geo[i][0] - geo[j][0];
         const dy = geo[i][1] - geo[j][1];
         const d = Math.hypot(dx, dy);
-        if (d < 1.5 && !edges.has(`${i}-${j}`)) sides.push([i, j, dx / d, dy / d]);
+        if (d < 1.5 && !edges.has(`${i}-${j}`) && inBox(i) && inBox(j)) sides.push([i, j, dx / d, dy / d]);
       }
     }
   }

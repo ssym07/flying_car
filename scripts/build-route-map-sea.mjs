@@ -11,7 +11,7 @@
 // 出力の形式: { "b": [左, 上, 右, 下]（路線図を動かせる範囲）, "p": [[x, y, x, y, ...], ...] }
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { decodePng } from './lib/dem.mjs';
-import { BOUNDS, regionPath, SETTINGS } from './lib/region.mjs';
+import { AREAS, BOUNDS, regionPath, SETTINGS } from './lib/region.mjs';
 
 const ROUTE_MAP = regionPath('public/route-map.json');
 const OUT = regionPath('public/route-map-sea.json');
@@ -23,6 +23,10 @@ const MARGIN = 0.7;
 const CELL = 125;
 const RIVER = 250;
 const MIN_SEA = 8;
+/** 範囲からこれ（度）より離れた水のかたまりは描かない */
+const NEAR = 0.2;
+/** 水にする細い陸の線の幅の半分（升の数）。1 なら幅 250m 弱まで */
+const BRIDGE_CELLS = 1;
 const STRIP = 10;
 /** 駅から遠い所（模式図のずれがほとんど無い所）は、全部が海の四角を長くつなぐ */
 const STRIP_FAR = 80;
@@ -94,8 +98,8 @@ for (let r = 0; r < rows; r++) {
   }
 }
 // 開く：川・運河を落とす
-const R = Math.max(1, Math.round(RIVER / CELL));
-const pass = (src, horizontal, max) => {
+
+const pass = (src, horizontal, max, R = Math.max(1, Math.round(RIVER / CELL))) => {
   const out = new Uint8Array(src.length);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -115,6 +119,12 @@ const pass = (src, horizontal, max) => {
   }
   return out;
 };
+// 閉じる：水の上の細い陸の線（明石海峡大橋・大鳴門橋などの橋、防波堤）を水にする。
+// 橋が残ると淡路島が本州・四国と陸続きになる
+{
+  const closed = pass(pass(pass(pass(water, true, true, BRIDGE_CELLS), false, true, BRIDGE_CELLS), true, false, BRIDGE_CELLS), false, false, BRIDGE_CELLS);
+  water.set(closed);
+}
 const opened = pass(pass(pass(pass(water, true, false), false, false), true, true), false, true);
 // 開いた後も残り、元も水の升のうち、広いかたまりだけ
 const sea = new Uint8Array(cols * rows);
@@ -144,7 +154,14 @@ const sea = new Uint8Array(cols * rows);
         if (opened[q] && water[q] && !seen[q]) ((seen[q] = 1), stack.push(q));
       }
     }
-    if (members.length >= minCells) for (const p of members) sea[p] = 1;
+    // データを取る範囲から NEAR 度（約 20km）以内にかからない水（大阪から見た日本海・若狭湾など）は描かない。
+    // 模式図の端に、まわりとつながらない湖のような切れ端として出てしまう
+    const near = members.some((p) => {
+      const lat = N - (Math.floor(p / cols) + 0.5) * dLat;
+      const lon = W + ((p % cols) + 0.5) * dLon;
+      return AREAS.some(([s, w, n, e]) => lat >= s - NEAR && lat <= n + NEAR && lon >= w - NEAR && lon <= e + NEAR);
+    });
+    if (near && members.length >= minCells) for (const p of members) sea[p] = 1;
   }
 }
 // 海から水づたいに HARBOR m までの水（港・運河の入口・広い川の河口）も海にする（開くと消える、埠頭の間の水面など）
