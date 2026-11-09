@@ -130,6 +130,62 @@ export const WORLD = {
   distantLod: { near: 1500, maxScale: 6 },
 };
 
+/** 画面全体にかける後処理（src/world/PostFX.ts） */
+export const GRAPHICS = {
+  /** 後処理を使う時の画面外の絵のマルチサンプル数（後処理を使うとキャンバスのアンチエイリアスが効かないので、こちらで） */
+  msaa: 4,
+  /**
+   * SSAO：建物の足元・壁の隅・狭い通りに落ちる柔らかい影。URL の ?ao=1 で入れる・?ao=0 で切る・?ao=debug で AO だけを映す。
+   * 今は切っている：空から見る距離では違いが小さく、遠くの平らな地面で深度の精度が足りずに縞が出て、飛ぶと地面が波打って見える
+   * radius は近くの半径 (m)、radiusFar は遠く（fadeFar の近く）の半径。fadeNear〜fadeFar (m) で薄くして消す
+   */
+  ao: {
+    enabled: false,
+    /** AO を求める解像度（画面に対する割合） */
+    resolution: 0.5,
+    samples: 12,
+    radius: 10,
+    radiusFar: 45,
+    /** 平らな面が自分を遮らないよう、半径に対するこの割合だけ手前のものだけを遮りとする */
+    bias: 0.03,
+    /** 濃さの指数（大きいほど隅が濃くなる） */
+    power: 2.5,
+    /** 色に掛ける強さ（0 で無し、1 で AO のまま） */
+    intensity: 0.85,
+    fadeNear: 600,
+    fadeFar: 2400,
+  },
+  /**
+   * 太陽の影（src/world/Shadows.ts）。URL の ?shadows=0 で切れる（見比べ用）。
+   * 空の太陽は低い（夕焼け）ので、影は同じ方角から elevationDeg の高さで照らす光（強さ intensity）で落とす。
+   * 影の中と外の差が出るよう、空からの環境光を ambientScale 倍に下げる
+   */
+  shadows: {
+    enabled: true,
+    elevationDeg: 32,
+    intensity: 2.6,
+    ambientScale: 0.6,
+    /** 影の地図の画素数（縦横） */
+    mapSize: 2048,
+    /** 影を落とす範囲の半分の幅 (m)。高く飛ぶほど growWithAltitude × 高さだけ広げ、maxHalfSize まで */
+    halfSize: 700,
+    growWithAltitude: 1.2,
+    maxHalfSize: 1400,
+    /** 範囲の中心を、カメラの前へ halfSize のこの割合だけずらす */
+    ahead: 0.55,
+    /** 光を置く距離 (m)。範囲の外から影を落とす高いビルも入るように */
+    distance: 1500,
+    bias: -0.0004,
+    normalBias: 0.6,
+    /** 影の縁のぼかし（PCF の半径） */
+    blur: 1.5,
+    /** 影を落とす・受けるの印を、新しく足された物に付ける間隔（フレーム） */
+    tagEvery: 20,
+    /** 影の地図を描き直す間隔（フレーム）。2 なら1コマおき（影の描画の重さが半分） */
+    updateEvery: 2,
+  },
+};
+
 /** 国土地理院の標高タイル・航空写真から作る地形。カメラの周りだけ読み、離れたら捨てる */
 export const TERRAIN = {
   /** 標高タイル（5mメッシュ）。山などで無い所（タイルごと無い・穴がある）は 10m メッシュで補う */

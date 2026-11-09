@@ -12,6 +12,12 @@ import { AnimeSky } from './AnimeSky';
 export class Atmosphere {
   private readonly sky: Sky | AnimeSky;
   private time = 0;
+  /** 太陽の光（影は Shadows.ts の光が落とす） */
+  readonly sun: THREE.DirectionalLight;
+  /** 太陽の方位（北から時計回り、度） */
+  readonly sunAzimuthDeg: number;
+  /** 空からの環境光 */
+  readonly hemisphere: THREE.HemisphereLight;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     const anime = ATMOSPHERE.style === 'anime';
@@ -32,7 +38,10 @@ export class Atmosphere {
 
     const sun = new THREE.DirectionalLight(preset.sunColor, preset.sunIntensity);
     sun.position.copy(sunDir);
+    this.sun = sun;
+    this.sunAzimuthDeg = preset.sunAzimuthDeg;
     const hemisphere = new THREE.HemisphereLight(preset.skyLight, preset.groundLight, preset.ambientIntensity);
+    this.hemisphere = hemisphere;
     scene.add(sun, hemisphere);
 
     scene.background = null;

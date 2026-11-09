@@ -7,6 +7,8 @@ import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
 import { ExpresswayNetwork } from './ExpresswayNetwork';
 import { Labels } from './Labels';
+import { PostFX } from './PostFX';
+import { Shadows } from './Shadows';
 import { Landmarks } from './landmarks/Landmarks';
 import { RailNetwork } from './RailNetwork';
 import { RoadNetwork } from './RoadNetwork';
@@ -46,6 +48,8 @@ export class World {
   private readonly atmosphere: Atmosphere;
   private readonly labels: Labels;
   private readonly groundPoint = new THREE.Vector3();
+  private readonly postFX: PostFX;
+  private readonly shadows: Shadows;
 
   /**
    * @param localWards 手元に加工済みの建物データがある区のコード（scripts/build-local-buildings.mjs で作る）。
@@ -63,6 +67,14 @@ export class World {
     );
 
     this.atmosphere = new Atmosphere(this.scene, renderer);
+    this.postFX = new PostFX(renderer);
+    this.shadows = new Shadows(this.scene, renderer, this.atmosphere.sun, this.atmosphere.hemisphere, this.atmosphere.sunAzimuthDeg, () => [
+      ...this.buildings.map((b) => b.group),
+      this.landmarks.group,
+      this.stationRoofs.group,
+      this.expressways.group,
+      this.rails.group,
+    ]);
 
     this.ground = buildGround();
     this.scene.add(this.ground);
@@ -134,6 +146,7 @@ export class World {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.postFX.resize();
     for (const layer of this.layers) layer.setResolution(this.camera, this.renderer);
   }
 
@@ -164,7 +177,8 @@ export class World {
     this.atmosphere.update(this.camera, dt);
     this.skyTraffic.update(this.camera.position, dt);
     this.labels.update(this.camera, dt);
-    this.renderer.render(this.scene, this.camera);
+    this.shadows.update(this.camera, this.groundY);
+    this.postFX.render(this.scene, this.camera);
   }
 }
 
