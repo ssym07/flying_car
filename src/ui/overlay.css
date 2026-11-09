@@ -484,9 +484,9 @@ body {
 .instruments {
   --gauge: 112px;
   position: absolute;
-  left: 50%;
+  /* 右下に寄せる */
+  right: 16px;
   bottom: 16px;
-  transform: translateX(-50%);
   display: grid;
   grid-template-columns: repeat(4, var(--gauge));
   grid-template-rows: var(--gauge);
