@@ -226,4 +226,14 @@ export const WARDS: Ward[] = [
   { code: '23114', name: '名古屋市緑区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/4b/c438fd-635e-4b65-ae6f-df30d2cf5bdf/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23114_midori-ku_lod1/tileset.json' },
   { code: '23115', name: '名古屋市名東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e8/fb6aed-a8cb-4a04-8729-c73d12705f94/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23115_meito-ku_lod1/tileset.json' },
   { code: '23116', name: '名古屋市天白区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/aa/899325-e5ab-4d5b-9c34-4e9c420e5035/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23116_tempaku-ku_lod1/tileset.json' },
+  // 愛知のワールドの名古屋市のまわり：春日井市は PLATEAU、北名古屋市・豊山町・東海市・大府市・知多市・常滑市・東浦町は PLATEAU が無いので国土地理院の建物の形から作る
+  //（東浦町は大府市と知多半島の間。建物が無いと路線図の JR 武豊線が切れる）
+  { code: '23206', name: '春日井市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/90/408437-4e7c-4009-ae6e-aa040569bc17/23206_kasugai-shi_city_2023_citygml_2_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '23234', name: '北名古屋市', kind: 'lod1', url: '' },
+  { code: '23342', name: '豊山町', kind: 'lod1', url: '' },
+  { code: '23222', name: '東海市', kind: 'lod1', url: '' },
+  { code: '23223', name: '大府市', kind: 'lod1', url: '' },
+  { code: '23224', name: '知多市', kind: 'lod1', url: '' },
+  { code: '23216', name: '常滑市', kind: 'lod1', url: '' },
+  { code: '23447', name: '東浦町', kind: 'lod1', url: '' },
 ];
