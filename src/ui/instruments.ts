@@ -1,4 +1,3 @@
-import { MINIMAP } from '../core/config';
 
 /**
  * 飛行機のような計器（画面の下中央のミニマップの左右）。Canvas に毎フレーム描く。
@@ -36,7 +35,6 @@ export class Instruments {
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'instruments';
-    this.root.style.setProperty('--map', `${MINIMAP.size}px`);
     const make = (name: string) => {
       const canvas = document.createElement('canvas');
       canvas.className = `instrument instrument-${name}`;

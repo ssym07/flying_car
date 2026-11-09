@@ -242,8 +242,14 @@ export const LOCATION = {
 };
 
 export const MINIMAP = {
-  /** 画面上の大きさ (px) */
+  /** 画面上の大きさ (px)。これが最小で、右下の角をドラッグで路線図の大きさ（maxWidth × maxHeight）まで広げられる */
   size: 250,
+  maxWidth: 360,
+  maxHeight: 640,
+  /** 画面の上からの位置 (px)（overlay.css の .minimap の top と同じ） */
+  top: 92,
+  /** 画面の下に空けておく高さ (px)（左下の速度・高度の表示にかからないように） */
+  bottomMargin: 130,
   /** 表示の拡大率（地図タイルのズームレベルと同じ尺度）。15 で 1px ≒ 4m、250px で約1km 四方。小数も可 */
   zoom: 15,
   /** 拡大率を変えられる範囲（9 で約62km 四方、13 で約4km 四方、17.5 で約180m 四方） */

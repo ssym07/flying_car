@@ -41,6 +41,24 @@ export interface MinimapOptions {
   onSave: (lat: number, lon: number, name: string) => void;
 }
 
+/** ミニマップの大きさと、出しているか（見る人ごとの好み。ブラウザに覚えておく） */
+const SETTINGS_KEY = 'sky-drive.minimap';
+
+function loadSettings(): { width: number; height: number; visible: boolean } {
+  const fallback = { width: MINIMAP.size, height: MINIMAP.size, visible: true };
+  try {
+    const v = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null') as Partial<typeof fallback> | null;
+    if (!v) return fallback;
+    return {
+      width: Number.isFinite(v.width) ? v.width! : fallback.width,
+      height: Number.isFinite(v.height) ? v.height! : fallback.height,
+      visible: v.visible !== false,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 function toWorldPx(lat: number, lon: number): WorldPx {
   const t = lonLatToTile(lon, lat, 0);
   return { x: t.x * TILE_PX, y: t.y * TILE_PX };
@@ -58,7 +76,7 @@ interface View {
 }
 
 /**
- * 画面下中央のミニマップ。進行方向が上で、中心が現在地（地図を回す）。北の向きは縁の「N」で示す。
+ * 画面左上のミニマップ（「地図」のボタンで出す・しまう。右下の角をドラッグで大きさを変える）。進行方向が上で、中心が現在地（地図を回す）。北の向きは縁の「N」で示す。
  * 地図は国土地理院の淡色地図を CSS フィルタで暗くして、街の配色に合わせる。
  * 地図と、通り名・矢印は別のキャンバスに描く（フィルタが文字や矢印にかからないように）。
  * 右上の ＋/− ボタンか、ミニマップの上でのホイールで拡大率を変えられる。
@@ -79,6 +97,11 @@ export class Minimap {
     null;
   private pickId = 0;
   private hovered: MapPin | null = null;
+  /** 画面上の大きさ（CSS px）。MINIMAP.size から路線図の大きさ（MINIMAP.maxWidth × maxHeight）まで */
+  private width: number;
+  private height: number;
+  private readonly canvases: HTMLCanvasElement[];
+  private readonly toggleButton: HTMLButtonElement;
   /** ドラッグで探索している時の地図の中心（ズーム 0 での px 座標）。null なら現在地 */
   private panCenter: WorldPx | null = null;
   /** 最後に描いた時の現在地（ズーム 0 での px 座標） */
@@ -108,12 +131,14 @@ export class Minimap {
   ) {
     this.root = document.createElement('div');
     this.root.className = 'minimap';
-    const size = MINIMAP.size;
-    this.root.style.width = this.root.style.height = `${size}px`;
+    const saved = loadSettings();
+    this.width = saved.width;
+    this.height = saved.height;
     const map = this.createCanvas('minimap-map');
     const marker = this.createCanvas('minimap-marker');
     this.mapCtx = map.getContext('2d')!;
     this.markerCtx = marker.getContext('2d')!;
+    this.canvases = [map, marker];
     const north = document.createElement('div');
     north.className = 'minimap-north';
     north.textContent = 'N';
@@ -136,8 +161,23 @@ export class Minimap {
     this.tipEl = document.createElement('div');
     this.tipEl.className = 'minimap-tip';
     this.tipEl.hidden = true;
-    this.root.append(map, marker, north, controls, this.scaleLabel, this.placeEl, this.tipEl);
+    const grip = document.createElement('div');
+    grip.className = 'minimap-resize';
+    grip.title = 'ドラッグで大きさを変える';
+    this.root.append(map, marker, north, controls, this.scaleLabel, this.placeEl, this.tipEl, grip);
     this.bindPointer();
+    this.bindResize(grip);
+
+    // 表示・非表示のボタン（路線図と同じ）
+    this.toggleButton = document.createElement('button');
+    this.toggleButton.type = 'button';
+    this.toggleButton.className = 'minimap-toggle';
+    this.toggleButton.textContent = '地図';
+    this.toggleButton.title = 'ミニマップを出す・しまう';
+    this.toggleButton.addEventListener('click', () => this.setVisible(this.root.hidden));
+    parent.appendChild(this.toggleButton);
+    this.setSize(this.width, this.height);
+    this.setVisible(saved.visible);
     // ミニマップの上のホイールは拡大率に使う（カメラの距離は変えない）
     this.root.addEventListener(
       'wheel',
@@ -158,6 +198,7 @@ export class Minimap {
    * @param bearing 進行方向（北から時計回り、ラジアン）
    */
   update(lat: number, lon: number, bearing: number): void {
+    if (this.root.hidden) return;
     // 拡大率に近い（少し細かい）ズームのタイルを読み、縮めて描く
     const tileZoom = Math.min(MINIMAP.maxTileZoom, Math.ceil(this.zoom - 1e-6));
     // ドラッグで探索している間は、ずらした場所を中心にする（飛んでも動かない）
@@ -179,9 +220,12 @@ export class Minimap {
     this.drawMarker();
     this.updateScaleLabel(lat);
     // 「N」は縁の、北の向きに置く
-    const r = MINIMAP.size / 2 - 14;
-    this.north.style.left = `${MINIMAP.size / 2 - Math.sin(bearing) * r}px`;
-    this.north.style.top = `${MINIMAP.size / 2 - Math.cos(bearing) * r}px`;
+    // 縁（内側 14px の長方形）と、中心から北への向きの交わる所
+    const nx = -Math.sin(bearing);
+    const ny = -Math.cos(bearing);
+    const t = Math.min((this.width / 2 - 14) / Math.max(Math.abs(nx), 1e-6), (this.height / 2 - 14) / Math.max(Math.abs(ny), 1e-6));
+    this.north.style.left = `${this.width / 2 + nx * t}px`;
+    this.north.style.top = `${this.height / 2 + ny * t}px`;
   }
 
   /** 地図に出すピン（今の地域の保存した地点） */
@@ -197,16 +241,16 @@ export class Minimap {
     const uy = (y * world - cy) * scale;
     const cos = Math.cos(-this.bearing);
     const sin = Math.sin(-this.bearing);
-    const size = this.markerCtx.canvas.width;
-    return { x: ux * cos - uy * sin + size / 2, y: ux * sin + uy * cos + size / 2 };
+    const { width: w, height: h } = this.markerCtx.canvas;
+    return { x: ux * cos - uy * sin + w / 2, y: ux * sin + uy * cos + h / 2 };
   }
 
   /** キャンバスの px 座標 → 緯度経度（project の逆） */
   private unproject(sx: number, sy: number): { lat: number; lon: number } {
     const { tileZoom, cx, cy, scale } = this.view!;
-    const size = this.markerCtx.canvas.width;
-    const dx = sx - size / 2;
-    const dy = sy - size / 2;
+    const { width: w, height: h } = this.markerCtx.canvas;
+    const dx = sx - w / 2;
+    const dy = sy - h / 2;
     const cos = Math.cos(this.bearing);
     const sin = Math.sin(this.bearing);
     const world = 2 ** tileZoom;
@@ -220,21 +264,22 @@ export class Minimap {
   /** 保存したピン：赤い丸。地図の外のものは縁に寄せて小さく出す（どちらの方にあるか分かるように） */
   private drawPins(): void {
     const ctx = this.markerCtx;
-    const size = ctx.canvas.width;
+    const { width: w, height: h } = ctx.canvas;
     const r = this.pixelRatio;
-    const edge = size / 2 - 8 * r;
+    const ex = w / 2 - 8 * r;
+    const ey = h / 2 - 8 * r;
     for (const p of this.pins) {
       const q = this.project(p.x, p.y);
-      let sx = q.x - size / 2;
-      let sy = q.y - size / 2;
-      const outside = Math.max(Math.abs(sx), Math.abs(sy)) > edge;
+      let sx = q.x - w / 2;
+      let sy = q.y - h / 2;
+      const outside = Math.abs(sx) > ex || Math.abs(sy) > ey;
       if (outside) {
-        const k = edge / Math.max(Math.abs(sx), Math.abs(sy));
+        const k = Math.min(ex / Math.max(Math.abs(sx), 1e-6), ey / Math.max(Math.abs(sy), 1e-6));
         sx *= k;
         sy *= k;
       }
-      p.sx = sx + size / 2;
-      p.sy = sy + size / 2;
+      p.sx = sx + w / 2;
+      p.sy = sy + h / 2;
       p.inside = !outside;
       const hovered = p === this.hovered;
       ctx.beginPath();
@@ -259,8 +304,7 @@ export class Minimap {
     const q = this.project(pick.x, pick.y);
     pick.sx = q.x;
     pick.sy = q.y;
-    const size = ctx.canvas.width;
-    const visible = q.x >= 0 && q.y >= 0 && q.x <= size && q.y <= size;
+    const visible = q.x >= 0 && q.y >= 0 && q.x <= ctx.canvas.width && q.y <= ctx.canvas.height;
     this.placeEl.hidden = !visible;
     if (!visible) return;
     const len = 18 * r;
@@ -283,10 +327,9 @@ export class Minimap {
 
   /** 吹き出しを (x, above) の上に置く。ミニマップの上にはみ出す時は (x, below) の下に置く（CSS の px） */
   private placeBubble(el: HTMLElement, x: number, above: number, below: number): void {
-    const size = MINIMAP.size;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
-    const left = Math.min(Math.max(x - w / 2, 4), size - w - 4);
+    const left = Math.min(Math.max(x - w / 2, 4), this.width - w - 4);
     const top = above - h < 4 ? below : above - h;
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
@@ -317,6 +360,67 @@ export class Minimap {
   private onPick(x: number, y: number): boolean {
     const pick = this.pick;
     return !!pick && Math.hypot(pick.sx - x, pick.sy - 18 * this.pixelRatio - y) < 10 * this.pixelRatio;
+  }
+
+  /** 大きさを変える（CSS px。最小 MINIMAP.size、最大は路線図の大きさと画面に収まる高さ） */
+  private setSize(width: number, height: number): void {
+    const top = this.root.offsetTop || MINIMAP.top;
+    const maxHeight = Math.max(MINIMAP.size, Math.min(MINIMAP.maxHeight, window.innerHeight - top - MINIMAP.bottomMargin));
+    this.width = Math.round(Math.min(MINIMAP.maxWidth, Math.max(MINIMAP.size, width)));
+    this.height = Math.round(Math.min(maxHeight, Math.max(MINIMAP.size, height)));
+    this.root.style.width = `${this.width}px`;
+    this.root.style.height = `${this.height}px`;
+    for (const c of this.canvases) {
+      c.width = Math.round(this.width * this.pixelRatio);
+      c.height = Math.round(this.height * this.pixelRatio);
+    }
+  }
+
+  private setVisible(visible: boolean): void {
+    this.root.hidden = !visible;
+    this.toggleButton.classList.toggle('active', visible);
+    if (!visible) {
+      this.closeMenu();
+      this.tipEl.hidden = true;
+    }
+    this.saveSettings();
+  }
+
+  private saveSettings(): void {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ width: this.width, height: this.height, visible: !this.root.hidden }));
+    } catch {
+      // 覚えておけなくても使える
+    }
+  }
+
+  /** 右下の角をドラッグして大きさを変える（左上は動かさない） */
+  private bindResize(grip: HTMLElement): void {
+    let start: { id: number; x: number; y: number; w: number; h: number } | null = null;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      // 地図のドラッグ（探索）にしない
+      e.stopPropagation();
+      e.preventDefault();
+      start = { id: e.pointerId, x: e.clientX, y: e.clientY, w: this.width, h: this.height };
+      grip.setPointerCapture(e.pointerId);
+      this.root.classList.add('resizing');
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!start || start.id !== e.pointerId) return;
+      this.setSize(start.w + e.clientX - start.x, start.h + e.clientY - start.y);
+    });
+    const end = (e: PointerEvent) => {
+      if (!start || start.id !== e.pointerId) return;
+      start = null;
+      this.root.classList.remove('resizing');
+      this.saveSettings();
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('lostpointercapture', end);
+    // 押した後の click で仮のピンを刺さない
+    grip.addEventListener('click', (e) => e.stopPropagation());
   }
 
   private setPan(center: WorldPx | null): void {
@@ -511,7 +615,7 @@ export class Minimap {
   /** 左下の「幅 ○km」：ミニマップの横幅が表す距離 */
   private updateScaleLabel(lat: number): void {
     const metersPerPx = (40075016 * Math.cos((lat * Math.PI) / 180)) / (TILE_PX * 2 ** this.zoom);
-    const width = metersPerPx * MINIMAP.size;
+    const width = metersPerPx * this.width;
     const text = width >= 1000 ? `幅 ${(width / 1000).toFixed(1)}km` : `幅 ${Math.round(width / 10) * 10}m`;
     if (this.scaleLabel.textContent !== text) this.scaleLabel.textContent = text;
   }
@@ -519,6 +623,7 @@ export class Minimap {
   dispose(): void {
     this.closeMenu();
     this.root.remove();
+    this.toggleButton.remove();
     for (const tile of this.tiles.values()) if (tile instanceof ImageBitmap) tile.close();
     this.tiles.clear();
   }
@@ -526,23 +631,22 @@ export class Minimap {
   private createCanvas(className: string): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
     canvas.className = className;
-    canvas.width = canvas.height = Math.round(MINIMAP.size * this.pixelRatio);
     return canvas;
   }
 
   /** 地図：進行方向が上になるよう、中心のまわりに -bearing 回して描く */
   private drawMap({ tileZoom: z, cx, cy, scale }: View, bearing: number): void {
     const ctx = this.mapCtx;
-    const size = ctx.canvas.width;
+    const { width: w, height: h } = ctx.canvas;
     // 回すと四隅まで要るので、対角線の半分まで読む
-    const half = (size / 2 / scale) * Math.SQRT2;
+    const half = Math.hypot(w, h) / 2 / scale;
 
     ctx.fillStyle = '#e8e8e8';
-    ctx.fillRect(0, 0, size, size);
+    ctx.fillRect(0, 0, w, h);
     ctx.save();
-    ctx.translate(size / 2, size / 2);
+    ctx.translate(w / 2, h / 2);
     ctx.rotate(-bearing);
-    ctx.translate(-size / 2, -size / 2);
+    ctx.translate(-w / 2, -h / 2);
     const x0 = Math.floor((cx - half) / TILE_PX);
     const x1 = Math.floor((cx + half) / TILE_PX);
     const y0 = Math.floor((cy - half) / TILE_PX);
@@ -551,8 +655,8 @@ export class Minimap {
       for (let tx = x0; tx <= x1; tx++) {
         const image = this.getTile(tx, ty, z);
         if (!image) continue;
-        const dx = (tx * TILE_PX - cx) * scale + size / 2;
-        const dy = (ty * TILE_PX - cy) * scale + size / 2;
+        const dx = (tx * TILE_PX - cx) * scale + w / 2;
+        const dy = (ty * TILE_PX - cy) * scale + h / 2;
         ctx.drawImage(image, dx, dy, TILE_PX * scale, TILE_PX * scale);
       }
     }
@@ -562,7 +666,7 @@ export class Minimap {
   /** 範囲内の通り名を、道に沿った向きで、重ならないように描く */
   private drawLabels({ tileZoom, cx, cy, scale }: View, bearing: number): void {
     const ctx = this.markerCtx;
-    const size = ctx.canvas.width;
+    const { width: w, height: h } = ctx.canvas;
     const r = this.pixelRatio;
     const world = 2 ** tileZoom;
     const fontSize = MINIMAP.labelFontSize * r;
@@ -583,10 +687,10 @@ export class Minimap {
     for (const label of this.labels) {
       const ux = (label.x * world - cx) * scale;
       const uy = (label.y * world - cy) * scale;
-      const sx = ux * cos - uy * sin + size / 2;
-      const sy = ux * sin + uy * cos + size / 2;
-      if (sx < margin || sy < margin || sx > size - margin || sy > size - margin) continue;
-      visible.push({ label, sx, sy, d: Math.hypot(sx - size / 2, sy - size / 2) });
+      const sx = ux * cos - uy * sin + w / 2;
+      const sy = ux * sin + uy * cos + h / 2;
+      if (sx < margin || sy < margin || sx > w - margin || sy > h - margin) continue;
+      visible.push({ label, sx, sy, d: Math.hypot(sx - w / 2, sy - h / 2) });
     }
     visible.sort((a, b) => a.d - b.d);
 
@@ -594,7 +698,7 @@ export class Minimap {
     const perName = new Map<string, number>();
     // 自機の矢印のまわりは空けておく
     const keepOut = 16 * r;
-    placed.push([size / 2 - keepOut, size / 2 - keepOut, size / 2 + keepOut, size / 2 + keepOut]);
+    placed.push([w / 2 - keepOut, h / 2 - keepOut, w / 2 + keepOut, h / 2 + keepOut]);
     for (const { label, sx, sy } of visible) {
       if ((perName.get(label.name) ?? 0) >= MINIMAP.maxLabelsPerName) continue;
       // 文字が逆さにならないよう ±90° に収める
@@ -609,7 +713,7 @@ export class Minimap {
       const hw = (w * c + h * s) / 2;
       const hh = (w * s + h * c) / 2;
       const box: [number, number, number, number] = [sx - hw, sy - hh, sx + hw, sy + hh];
-      if (box[0] < 0 || box[1] < 0 || box[2] > size || box[3] > size) continue;
+      if (box[0] < 0 || box[1] < 0 || box[2] > w || box[3] > h) continue;
       if (placed.some((p) => box[0] < p[2] && box[2] > p[0] && box[1] < p[3] && box[3] > p[1])) continue;
       placed.push(box);
       perName.set(label.name, (perName.get(label.name) ?? 0) + 1);
@@ -634,11 +738,11 @@ export class Minimap {
   /** 自機の矢印と視野の扇形（いつも上向き） */
   private drawMarker(): void {
     const ctx = this.markerCtx;
-    const size = ctx.canvas.width;
+    const { width: w, height: h } = ctx.canvas;
     const r = this.pixelRatio;
     // 探索中は自機の場所に描く（地図の外なら描かない）
-    const at = this.panCenter && this.here ? this.project(this.here.x, this.here.y) : { x: size / 2, y: size / 2 };
-    if (at.x < -12 * r || at.y < -12 * r || at.x > size + 12 * r || at.y > size + 12 * r) return;
+    const at = this.panCenter && this.here ? this.project(this.here.x, this.here.y) : { x: w / 2, y: h / 2 };
+    if (at.x < -12 * r || at.y < -12 * r || at.x > w + 12 * r || at.y > h + 12 * r) return;
     ctx.save();
     ctx.translate(at.x, at.y);
 

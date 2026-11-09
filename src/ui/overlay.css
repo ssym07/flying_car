@@ -295,14 +295,57 @@ body {
   touch-action: none;
   user-select: none;
   position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+  /* 左上：出典の文字の下、「地図」のボタンの下（MINIMAP.top と同じ） */
+  left: 16px;
+  top: 92px;
   border-radius: 12px;
   overflow: hidden;
+  text-align: center;
   border: 1px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   background: #1b2230;
+}
+
+.minimap[hidden] {
+  display: none;
+}
+
+.minimap-toggle {
+  position: absolute;
+  top: 46px;
+  left: 16px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.minimap-toggle:hover,
+.minimap-toggle.active {
+  background: rgba(102, 204, 255, 0.35);
+}
+
+/* 右下の角：ドラッグで大きさを変える */
+.minimap-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0.55) 58%, transparent 58%, transparent 70%, rgba(255, 255, 255, 0.55) 70%, rgba(255, 255, 255, 0.55) 78%, transparent 78%);
+}
+
+.minimap.resizing,
+.minimap.resizing * {
+  cursor: nwse-resize !important;
 }
 
 .minimap.dragging {
@@ -443,15 +486,11 @@ body {
   position: absolute;
   left: 50%;
   bottom: 16px;
-  height: var(--map);
   transform: translateX(-50%);
   display: grid;
-  grid-template-columns: var(--gauge) var(--map) var(--gauge);
-  grid-template-rows: var(--gauge) var(--gauge);
-  grid-template-areas:
-    'speed . altitude'
-    'attitude . heading';
-  align-content: space-evenly;
+  grid-template-columns: repeat(4, var(--gauge));
+  grid-template-rows: var(--gauge);
+  grid-template-areas: 'speed attitude altitude heading';
   column-gap: 8px;
   pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
