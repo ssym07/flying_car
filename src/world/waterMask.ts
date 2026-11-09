@@ -1,5 +1,6 @@
 import { WATER } from '../core/config';
 import { roadMask } from './roadMask';
+import { waterAreaMask } from './waterAreas';
 
 /**
  * 地形チャンクの水域の画像を作る計算（three を使わない。Web Worker（water.worker.ts）の中で動かす）。
@@ -20,6 +21,8 @@ export async function computeWaterMask(
   const size = 256 * k;
   const canvas = new OffscreenCanvas(size, size);
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  // 国土地理院のベクトルタイルの水域の面（淡色地図で高架・幅の広い橋に隠れた川の下も水として入っている）
+  const areasPromise = waterAreaMask(x, y, z, size);
   const results = await Promise.all(
     Array.from({ length: k * k }, async (_, n) => {
       const i = n % k;
@@ -40,9 +43,10 @@ export async function computeWaterMask(
       }
     }),
   );
-  if (!results.some(Boolean)) return null;
+  const areas = await areasPromise;
+  if (!results.some(Boolean) && !areas) return null;
 
-  // 水色の画素（isWaterColor）
+  // 水色の画素（isWaterColor）と、水域の面
   const { data } = ctx.getImageData(0, 0, size, size);
   let mask: Uint8Array = new Uint8Array(size * size);
   let any = false;
@@ -50,7 +54,7 @@ export async function computeWaterMask(
     const r = data[p * 4];
     const g = data[p * 4 + 1];
     const b = data[p * 4 + 2];
-    if (isWaterColor(r, g, b)) {
+    if (isWaterColor(r, g, b) || areas?.[p]) {
       mask[p] = 1;
       any = true;
     }

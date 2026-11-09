@@ -429,6 +429,12 @@ export const ROADS = {
 export const WATER = {
   /** 水域を判定する地図（淡色地図は水域を #bed2ff の1色で塗っている） */
   mapUrl: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
+  /**
+   * 水域の面（国土地理院のベクトルタイルの waterarea）。淡色地図で高架・幅の広い橋に隠れた川の下も水にする。
+   * ベクトルタイルはズーム 16 まで
+   */
+  areaUrl: 'https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf',
+  areaZoom: 16,
   /** 地形チャンクより何段細かいズームで判定するか（1 で約2m/画素） */
   zoomOffset: 1,
   /** 文字ラベルなどの小さな穴を埋める大きさ（画素） */
@@ -458,7 +464,7 @@ export const WATER = {
   /** 水面のなめらかさ（小さいほど空がくっきり映る） */
   roughness: 0.06,
   /** 水の地の色の明るさ（shallowColor・deepColor に掛ける）。本物の水は暗く、見える色の大部分は空の映り込み */
-  albedo: 0.6,
+  albedo: 0.9,
   /** 空の映り込みの強さ（浅い角度ほど強く映るのは、材質の計算のまま） */
   reflection: 6,
   /** さざ波の強さ・一番大きい波の大きさ (m) */
