@@ -235,6 +235,8 @@ export const LOCATION = {
   geocodeEvery: 200,
   /** 住所を問い合わせる最短間隔 (秒) */
   geocodeMinIntervalSec: 2,
+  /** 返事をこの秒数まで待つ（逆ジオコーダは混むと十数秒かかる） */
+  geocodeTimeoutSec: 20,
 };
 
 export const MINIMAP = {
