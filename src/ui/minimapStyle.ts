@@ -24,6 +24,7 @@ export const COLORS = {
   roadEdge: '#d9d7d2',
   rail: '#9da3aa',
   text: '#5f6368',
+  cityText: '#3c4043',
   park: '#3f8f4a',
   station: '#3c4043',
 };
@@ -66,6 +67,8 @@ function roadWidth(extra: number): ExpressionSpecification {
     'interpolate',
     ['exponential', 1.6],
     ['zoom'],
+    8,
+    ['+', ['*', base, 0.3], extra * 0.4],
     12,
     ['+', ['*', base, 0.45], extra * 0.5],
     15,
@@ -106,7 +109,8 @@ function roadLayers(): StyleSpecification['layers'] {
     type: 'line',
     source: 'v',
     'source-layer': 'RdCL',
-    minzoom: 10,
+    // 一番引いた時（幅 約40km）も、高速・国道（ズーム 10 から都道府県道も）は出す
+    minzoom: 7,
     filter: roadVisible,
     layout: {
       'line-join': 'round',
@@ -121,10 +125,17 @@ function roadLayers(): StyleSpecification['layers'] {
   }));
 }
 
-/** 地名：町名（210）・公園（531 など）・施設（6xx）。駅（422）と路線名（421）は出さない */
+/**
+ * 地名：都市（1401 主要都市・1402 市・1403 町村）・区（110）・都府県（140）・町名（210）・公園（531 など）・
+ * 川や湾（322・345）・山（311〜316）・施設（6xx）。駅（422）と路線名（421）は出さない。
+ * 引いた時ほど大きな地名だけにする（都府県 → 都市 → 区・町村 → 町名）
+ */
 const ANNO_TOWN = [210, 220];
 const ANNO_PARK = [531, 532, 533, 534];
-const ANNO_PLACE = [110, 120, 130, 140, 311, 312, 314, 315, 316];
+const ANNO_WATER = [321, 322, 345];
+const ANNO_MOUNTAIN = [311, 312, 314, 315, 316];
+const code: ExpressionSpecification = ['get', 'vt_code'];
+const isIn = (codes: number[]): ExpressionSpecification => ['in', code, ['literal', codes]];
 
 export function minimapStyle(): StyleSpecification {
   return {
@@ -187,6 +198,15 @@ export function minimapStyle(): StyleSpecification {
         paint: { 'text-color': COLORS.park, 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 },
       },
       {
+        id: 'anno-water',
+        type: 'symbol',
+        source: 'v',
+        'source-layer': 'Anno',
+        filter: ['all', ['==', ['geometry-type'], 'Point'], isIn(ANNO_WATER)],
+        layout: { 'text-field': ['get', 'vt_text'], 'text-font': FONT, 'text-size': 11, 'text-max-width': 8 },
+        paint: { 'text-color': COLORS.waterText, 'text-halo-color': 'rgba(255,255,255,0.8)', 'text-halo-width': 1.2 },
+      },
+      {
         id: 'anno-place',
         type: 'symbol',
         source: 'v',
@@ -196,18 +216,38 @@ export function minimapStyle(): StyleSpecification {
           ['==', ['geometry-type'], 'Point'],
           [
             'any',
-            ['in', ['get', 'vt_code'], ['literal', ANNO_PLACE]],
-            ['all', ['in', ['get', 'vt_code'], ['literal', ANNO_TOWN]], ['>=', ['zoom'], 13.5]],
-            ['all', ['>=', ['get', 'vt_code'], 600], ['<', ['get', 'vt_code'], 700], ['>=', ['zoom'], 15.5]],
+            ['all', ['==', code, 140], ['<', ['zoom'], 11]],
+            ['in', code, ['literal', [1401, 1402]]],
+            ['all', ['in', code, ['literal', [1403, 110, 120, 130]]], ['>=', ['zoom'], 10]],
+            ['all', isIn(ANNO_MOUNTAIN), ['>=', ['zoom'], 11]],
+            ['all', isIn(ANNO_TOWN), ['>=', ['zoom'], 13.5]],
+            ['all', ['>=', code, 600], ['<', code, 700], ['>=', ['zoom'], 15.5]],
           ],
         ],
         layout: {
           'text-field': ['get', 'vt_text'],
           'text-font': FONT,
-          'text-size': ['case', ['in', ['get', 'vt_code'], ['literal', ANNO_TOWN]], 10.5, 11.5],
+          'text-size': [
+            'case',
+            ['==', code, 140],
+            14,
+            ['==', code, 1401],
+            14,
+            ['in', code, ['literal', [1402, 110]]],
+            12.5,
+            isIn(ANNO_TOWN),
+            10.5,
+            11.5,
+          ],
           'text-max-width': 8,
+          // 大きな地名を先に置く（重なったら小さい方を消す）
+          'symbol-sort-key': ['match', code, 140, 0, 1401, 1, 1402, 2, 110, 3, 1403, 4, 10],
         },
-        paint: { 'text-color': COLORS.text, 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 },
+        paint: {
+          'text-color': ['case', ['in', code, ['literal', [140, 1401, 1402, 110]]], COLORS.cityText, COLORS.text],
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
+        },
       },
     ],
   };

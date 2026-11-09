@@ -49,6 +49,8 @@ export const VEHICLE = {
   halfHeight: 0.6,
   /** 開始時の地上からの高さ (m) */
   startAltitude: 30,
+  /** 飛び始めの向き（rad。0 で南、π で北を向く。+x=西, +z=北, 前は (-sin, -cos)） */
+  startYaw: Math.PI,
 };
 
 export const CAMERA = {
@@ -255,8 +257,16 @@ export const MINIMAP = {
    * 14 で 250px が約1km
    */
   zoom: 14,
-  /** 拡大率を変えられる範囲（8 で約62km 四方、16.5 で約180m 四方） */
-  minZoom: 8,
+  /**
+   * 一番引いた時のミニマップの横幅：地域の広さ（駅のある範囲の長い方の辺）のこの倍（福岡 約60km で 約40km）。
+   * 引ける限度のズームは、この横幅とミニマップの幅 (px) から決める
+   */
+  maxViewPerRegion: 0.67,
+  /** 一番引いた時の横幅の下限 (m)（狭い地域でも、これだけは引ける） */
+  minMaxView: 30000,
+  /** これより引かない（ズーム 8 より下の国土地理院のタイルには水域が無い。幅 250px で 約63km） */
+  lowestZoom: 8,
+  /** 一番寄った時（16.5 で 250px が約180m） */
   maxZoom: 16.5,
   /** ボタン1回で変わる量 */
   zoomStep: 0.5,

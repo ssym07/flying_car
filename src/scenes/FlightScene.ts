@@ -58,7 +58,8 @@ export class FlightScene implements GameScene {
     this.vehicle = new Vehicle({
       position: { x: 0, y: this.groundHeight + VEHICLE.halfHeight + VEHICLE.startAltitude, z: 0 },
       velocity: { x: 0, y: 0, z: 0 },
-      yaw: 0,
+      // 北向きで始める
+      yaw: VEHICLE.startYaw,
     });
     world.scene.add(this.vehicle.mesh);
     // 駅名の看板（建物越しに見えるよう最後に重ねて描く）より、さらに後に自機を描く

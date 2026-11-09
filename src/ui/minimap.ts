@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // （MapLibre が自分で探す場所は、Vite の事前のまとめ・本番のビルドで変わって見つからなくなる）
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LOCATION, MINIMAP } from '../core/config';
+import { REGION } from '../core/region';
 import { STATIONS } from '../data/regionData';
 import { describeStation, nearestStation } from '../world/places';
 import { reverseGeocode } from './geocode';
@@ -67,6 +68,26 @@ const PAN_BOUNDS = (() => {
   return [s - m, w - mLon, n + m, e + mLon] as const;
 })();
 
+/**
+ * 一番引いた時のミニマップの横幅 (m)：地域の広さ（駅のある範囲の長い方の辺）の MINIMAP.maxViewPerRegion 倍。
+ * 福岡（約60km）で約40km、東京で約59km、大阪で約77km
+ */
+const MAX_VIEW_METERS = (() => {
+  const [s, w, n, e] = PAN_BOUNDS;
+  const m = MINIMAP.panMargin;
+  const ns = (n - s - 2 * m) * 111320;
+  const ew = (e - w) * 111320 * Math.cos((((s + n) / 2) * Math.PI) / 180) - 2 * m * 111320;
+  return Math.max(MINIMAP.minMaxView, Math.max(ns, ew) * MINIMAP.maxViewPerRegion);
+})();
+
+/** 幅 width (px) のミニマップの横幅が MAX_VIEW_METERS になるズーム（MapLibre のズーム、512px のタイルが基準） */
+function minZoomFor(width: number): number {
+  const metersPerPx = MAX_VIEW_METERS / width;
+  const equator = 40075016 * Math.cos((REGION.origin.latDeg * Math.PI) / 180);
+  // ズーム 8 より引くと、国土地理院のタイルに水域が無く海が描けない
+  return Math.max(MINIMAP.lowestZoom, Math.log2(equator / (512 * metersPerPx)));
+}
+
 /** pmtiles:// の読み方を MapLibre に登録したか（ページで一度だけ） */
 let protocolAdded = false;
 
@@ -107,6 +128,11 @@ export class Minimap {
   /** 地図の外のピンを縁に出す丸（使い回す） */
   private readonly edgeDots: HTMLDivElement[] = [];
   private readonly edgeLayer: HTMLDivElement;
+  /** 地図の上でボタンを押している（ドラッグになるかもしれない） */
+  private pressing = false;
+  private readonly release = () => {
+    this.pressing = false;
+  };
   private menu: HTMLDivElement | null = null;
   private menuCleanup: (() => void) | null = null;
 
@@ -195,7 +221,7 @@ export class Minimap {
       style: minimapStyle(),
       center: [here.lon, here.lat],
       zoom: MINIMAP.zoom,
-      minZoom: MINIMAP.minZoom,
+      minZoom: minZoomFor(this.width),
       maxZoom: MINIMAP.maxZoom,
       bearing: this.bearingDeg,
       attributionControl: false,
@@ -206,6 +232,16 @@ export class Minimap {
       boxZoom: false,
       renderWorldCopies: false,
       fadeDuration: 0,
+      // ドラッグで探索できるのは、この地域の範囲（駅のある範囲＋まわり）の中だけ。
+      // 中心を範囲に収めるのは MapLibre の中で（ドラッグの途中で中心を置き直すとドラッグが止まる）。
+      // 現在地に合わせて動く時は縛らない（範囲の外へ飛んでも地図は付いてくる）
+      transformConstrain: (lngLat, zoom) => {
+        if (!this.panned) return { center: lngLat, zoom };
+        const [s, w, n, e] = PAN_BOUNDS;
+        lngLat.lat = Math.min(n, Math.max(s, lngLat.lat));
+        lngLat.lng = Math.min(e, Math.max(w, lngLat.lng));
+        return { center: lngLat, zoom };
+      },
       // 漢字・かなは手元の文字で描く（地図の文字の配信からは英数字だけ読む）
       localIdeographFontFamily: "'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif",
     });
@@ -222,14 +258,13 @@ export class Minimap {
       this.setPanned(true);
       this.closeMenu();
     });
-    // ドラッグで探索できるのは、この地域の範囲（駅のある範囲＋まわり）の中だけ
-    map.on('drag', () => {
-      const c = map.getCenter();
-      const [s, w, n, e] = PAN_BOUNDS;
-      const lat = Math.min(n, Math.max(s, c.lat));
-      const lon = Math.min(e, Math.max(w, c.lng));
-      if (lat !== c.lat || lon !== c.lng) map.setCenter([lon, lat]);
+    // ボタンを押している間は、現在地に合わせ直さない（押してから動かし始めるまでの間に合わせ直すと、
+    // MapLibre のドラッグの受け付けが取り消されて、ドラッグが始まらない）
+    map.getCanvasContainer().addEventListener('pointerdown', () => {
+      this.pressing = true;
     });
+    window.addEventListener('pointerup', this.release);
+    window.addEventListener('pointercancel', this.release);
     map.on('click', (e) => {
       const pin = this.pinAt(e.point);
       if (pin) this.openMenu(e.originalEvent, { lat: pin.lat, lon: pin.lon, title: pin.name, saved: true });
@@ -369,7 +404,7 @@ export class Minimap {
     const map = this.map;
     // 進行方向が上。探索中は地図の中心は動かさず、向きだけ合わせる
     // （ドラッグ中・その後の惰性の間は触らない。触るとドラッグが止まる）
-    if (!map.isMoving()) {
+    if (!this.pressing && !map.isMoving()) {
       if (!this.panned) map.jumpTo({ center: [lon, lat], bearing: this.bearingDeg });
       else if (Math.abs(map.getBearing() - this.bearingDeg) > 0.1) map.setBearing(this.bearingDeg);
     }
@@ -424,7 +459,7 @@ export class Minimap {
   private changeZoom(delta: number): void {
     const map = this.map;
     if (!map) return;
-    map.setZoom(Math.min(MINIMAP.maxZoom, Math.max(MINIMAP.minZoom, map.getZoom() + delta)));
+    map.setZoom(Math.min(MINIMAP.maxZoom, Math.max(map.getMinZoom(), map.getZoom() + delta)));
   }
 
   /** 左下の「幅 ○km」：ミニマップの横幅が表す距離 */
@@ -570,6 +605,8 @@ export class Minimap {
     this.root.style.width = `${this.width}px`;
     this.root.style.height = `${this.height}px`;
     this.map?.resize();
+    // 一番引いた時の幅が MINIMAP.maxViewMeters になるよう、地図の幅に合わせて引ける限度を変える
+    this.map?.setMinZoom(minZoomFor(this.width));
   }
 
   private setVisible(visible: boolean): void {
@@ -625,6 +662,8 @@ export class Minimap {
 
   dispose(): void {
     this.disposed = true;
+    window.removeEventListener('pointerup', this.release);
+    window.removeEventListener('pointercancel', this.release);
     this.closeMenu();
     this.clearPick();
     this.map?.remove();

@@ -37,7 +37,9 @@ export class LoadingScene implements GameScene {
     const { camera, groundY, terrain } = this.ctx.world;
     const at = peekStartAt();
     const p = at ? terrain.toLocal(at.lat, at.lon, 0) : { x: 0, z: 0 };
-    camera.position.set(p.x, groundY + VEHICLE.startAltitude + CAMERA.offset.up, p.z + CAMERA.offset.back);
+    // 車の後ろ（飛び始めの向き startYaw の反対側）
+    const back = { x: Math.sin(VEHICLE.startYaw) * CAMERA.offset.back, z: Math.cos(VEHICLE.startYaw) * CAMERA.offset.back };
+    camera.position.set(p.x + back.x, groundY + VEHICLE.startAltitude + CAMERA.offset.up, p.z + back.z);
     camera.lookAt(p.x, groundY + VEHICLE.startAltitude, p.z);
   }
 
