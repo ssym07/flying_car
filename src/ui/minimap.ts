@@ -61,7 +61,8 @@ interface View {
  * 画面下中央のミニマップ。進行方向が上で、中心が現在地（地図を回す）。北の向きは縁の「N」で示す。
  * 地図は国土地理院の淡色地図を CSS フィルタで暗くして、街の配色に合わせる。
  * 地図と、通り名・矢印は別のキャンバスに描く（フィルタが文字や矢印にかからないように）。
- * 右上の ＋/− ボタンか、ミニマップの上でのホイールで拡大率を変えられる
+ * 右上の ＋/− ボタンか、ミニマップの上でのホイールで拡大率を変えられる。
+ * ドラッグで地図をずらして探索できる（右上の ◎ で現在地に戻る）。押すと仮のピン、右クリックで「ここへ行く」「この地点を保存」
  */
 export class Minimap {
   private readonly root: HTMLDivElement;
@@ -78,6 +79,15 @@ export class Minimap {
     null;
   private pickId = 0;
   private hovered: MapPin | null = null;
+  /** ドラッグで探索している時の地図の中心（ズーム 0 での px 座標）。null なら現在地 */
+  private panCenter: WorldPx | null = null;
+  /** 最後に描いた時の現在地（ズーム 0 での px 座標） */
+  private here: WorldPx | null = null;
+  private readonly hereButton: HTMLButtonElement;
+  /** ドラッグ中（押した位置からの動き。少しでも動いたらクリックにしない） */
+  private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
+  /** 直前の押して離したのがドラッグだった（その click を無視する） */
+  private dragged = false;
   /** 最後に描いた時の地図の描き方と進行方向（クリックの位置を緯度経度にする） */
   private view: View | null = null;
   private bearing = 0;
@@ -110,10 +120,13 @@ export class Minimap {
     this.north = north;
     const controls = document.createElement('div');
     controls.className = 'minimap-zoom';
-    controls.innerHTML = `<button type="button" data-zoom="1" aria-label="拡大">＋</button><button type="button" data-zoom="-1" aria-label="縮小">−</button>`;
+    controls.innerHTML = `<button type="button" data-zoom="1" aria-label="拡大">＋</button><button type="button" data-zoom="-1" aria-label="縮小">−</button><button type="button" data-here aria-label="現在地に戻る" title="現在地に戻る" hidden>◎</button>`;
+    this.hereButton = controls.querySelector('[data-here]')!;
     controls.addEventListener('click', (e) => {
       const button = (e.target as HTMLElement).closest('button');
-      if (button) this.changeZoom(Number(button.dataset.zoom) * MINIMAP.zoomStep);
+      if (!button) return;
+      if (button.dataset.here !== undefined) this.setPan(null);
+      else this.changeZoom(Number(button.dataset.zoom) * MINIMAP.zoomStep);
     });
     this.scaleLabel = document.createElement('div');
     this.scaleLabel.className = 'minimap-scale';
@@ -147,11 +160,13 @@ export class Minimap {
   update(lat: number, lon: number, bearing: number): void {
     // 拡大率に近い（少し細かい）ズームのタイルを読み、縮めて描く
     const tileZoom = Math.min(MINIMAP.maxTileZoom, Math.ceil(this.zoom - 1e-6));
-    const center = lonLatToTile(lon, lat, tileZoom);
+    // ドラッグで探索している間は、ずらした場所を中心にする（飛んでも動かない）
+    this.here = toWorldPx(lat, lon);
+    const center = this.panCenter ?? this.here;
     const view: View = {
       tileZoom,
-      cx: center.x * TILE_PX,
-      cy: center.y * TILE_PX,
+      cx: center.x * 2 ** tileZoom,
+      cy: center.y * 2 ** tileZoom,
       scale: this.pixelRatio * 2 ** (this.zoom - tileZoom),
     };
     this.drawMap(view, bearing);
@@ -304,10 +319,57 @@ export class Minimap {
     return !!pick && Math.hypot(pick.sx - x, pick.sy - 18 * this.pixelRatio - y) < 10 * this.pixelRatio;
   }
 
+  private setPan(center: WorldPx | null): void {
+    this.panCenter = center;
+    this.hereButton.hidden = center === null;
+  }
+
   private bindPointer(): void {
     const isControl = (e: Event) => (e.target as HTMLElement).closest('button') !== null;
+    // ドラッグ：地図をずらして探索する（進行方向が上のまま。押して 4px 以上動いたらドラッグ）
+    this.root.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || isControl(e) || !this.view) return;
+      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+      this.dragged = false;
+    });
+    this.root.addEventListener('pointermove', (e) => {
+      const d = this.drag;
+      if (!d || d.id !== e.pointerId || !this.view) return;
+      if (e.buttons === 0) {
+        this.drag = null;
+        return;
+      }
+      const dx = e.clientX - d.x;
+      const dy = e.clientY - d.y;
+      if (!d.moved) {
+        if (Math.hypot(dx, dy) < 4) return;
+        d.moved = true;
+        this.root.setPointerCapture(e.pointerId);
+        this.root.classList.add('dragging');
+        this.tipEl.hidden = true;
+      }
+      d.x = e.clientX;
+      d.y = e.clientY;
+      // 画面の動き（CSS px）→ 地図の動き（ズーム 0 の px）。地図は -bearing 回して描いているので、bearing 回して戻す
+      const { tileZoom, scale } = this.view;
+      const k = this.pixelRatio / scale / 2 ** tileZoom;
+      const cos = Math.cos(this.bearing);
+      const sin = Math.sin(this.bearing);
+      const c = this.panCenter ?? this.here!;
+      this.setPan({ x: c.x - (dx * cos - dy * sin) * k, y: c.y - (dx * sin + dy * cos) * k });
+    });
+    const end = (e: PointerEvent) => {
+      const d = this.drag;
+      if (!d || d.id !== e.pointerId) return;
+      this.dragged = d.moved;
+      this.drag = null;
+      this.root.classList.remove('dragging');
+    };
+    this.root.addEventListener('pointerup', end);
+    this.root.addEventListener('pointercancel', end);
+    this.root.addEventListener('lostpointercapture', end);
     this.root.addEventListener('mousemove', (e) => {
-      if (!this.view) return;
+      if (!this.view || this.drag?.moved) return;
       const p = this.canvasPoint(e);
       const pin = isControl(e) ? null : this.pinAt(p.x, p.y);
       this.hovered = pin;
@@ -317,7 +379,7 @@ export class Minimap {
         this.tipEl.style.borderColor = pin.color;
         this.placeBubble(this.tipEl, pin.sx / this.pixelRatio, pin.sy / this.pixelRatio - 12, pin.sy / this.pixelRatio + 12);
       }
-      this.root.style.cursor = pin || this.onPick(p.x, p.y) ? 'pointer' : 'crosshair';
+      this.root.style.cursor = pin || this.onPick(p.x, p.y) ? 'pointer' : 'grab';
     });
     this.root.addEventListener('mouseleave', () => {
       this.hovered = null;
@@ -325,6 +387,10 @@ export class Minimap {
     });
     // 左クリック：そこに仮のピンを刺して地名を出す（仮のピンを押すと外す）。保存したピンを押すとメニュー
     this.root.addEventListener('click', (e) => {
+      if (this.dragged) {
+        this.dragged = false;
+        return;
+      }
       if (!this.view || isControl(e)) return;
       const p = this.canvasPoint(e);
       const pin = this.pinAt(p.x, p.y);
@@ -570,8 +636,11 @@ export class Minimap {
     const ctx = this.markerCtx;
     const size = ctx.canvas.width;
     const r = this.pixelRatio;
+    // 探索中は自機の場所に描く（地図の外なら描かない）
+    const at = this.panCenter && this.here ? this.project(this.here.x, this.here.y) : { x: size / 2, y: size / 2 };
+    if (at.x < -12 * r || at.y < -12 * r || at.x > size + 12 * r || at.y > size + 12 * r) return;
     ctx.save();
-    ctx.translate(size / 2, size / 2);
+    ctx.translate(at.x, at.y);
 
     // 視野の扇形
     const cone = ctx.createRadialGradient(0, 0, 0, 0, 0, 60 * r);

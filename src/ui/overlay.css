@@ -292,6 +292,8 @@ body {
 
 .minimap {
   pointer-events: auto;
+  touch-action: none;
+  user-select: none;
   position: absolute;
   left: 50%;
   bottom: 16px;
@@ -301,6 +303,14 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   background: #1b2230;
+}
+
+.minimap.dragging {
+  cursor: grabbing !important;
+}
+
+.minimap-zoom button[hidden] {
+  display: none;
 }
 
 .minimap canvas {
