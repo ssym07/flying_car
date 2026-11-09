@@ -6,6 +6,7 @@ import { Airports } from './Airports';
 import { Atmosphere } from './Atmosphere';
 import { computeEcefToLocal } from './geoFrame';
 import { ExpresswayNetwork } from './ExpresswayNetwork';
+import { ExpresswaySigns } from './ExpresswaySigns';
 import { Labels } from './Labels';
 import { PostFX } from './PostFX';
 import { Shadows } from './Shadows';
@@ -34,6 +35,7 @@ export class World {
   readonly rails: RailNetwork;
   /** 高速道路 */
   readonly expressways: ExpresswayNetwork;
+  readonly expresswaySigns: ExpresswaySigns;
   /** 駅の屋根 */
   readonly stationRoofs: StationRoofs;
   /** 作り込んだ建物（東京駅丸の内駅舎など） */
@@ -97,6 +99,7 @@ export class World {
     this.roads = new RoadNetwork(this.terrain);
     this.rails = new RailNetwork(this.terrain);
     this.expressways = new ExpresswayNetwork(this.terrain);
+    this.expresswaySigns = new ExpresswaySigns(this.terrain, this.expressways.group);
     this.stationRoofs = new StationRoofs(this.terrain);
     this.landmarks = new Landmarks(this.terrain);
     this.skyTraffic = new SkyTraffic(this.terrain);
@@ -108,6 +111,7 @@ export class World {
       this.roads.group,
       this.rails.group,
       this.expressways.group,
+      this.expresswaySigns.group,
       this.stationRoofs.group,
       this.landmarks.group,
       this.skyTraffic.group,
@@ -177,6 +181,7 @@ export class World {
     this.atmosphere.update(this.camera, dt);
     this.skyTraffic.update(this.camera.position, dt);
     this.labels.update(this.camera, dt);
+    this.expresswaySigns.update(this.camera, dt);
     this.shadows.update(this.camera, this.groundY);
     this.postFX.render(this.scene, this.camera);
   }
