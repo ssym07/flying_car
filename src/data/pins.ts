@@ -1,6 +1,23 @@
 import { PINS } from '../core/config';
 import type { Region } from '../core/region';
 
+/** ピンの色（選べる色。既定は赤） */
+export const PIN_COLORS = {
+  red: { label: '赤', hex: '#e53935' },
+  blue: { label: '青', hex: '#1e88e5' },
+  green: { label: '緑', hex: '#43a047' },
+  yellow: { label: '黄', hex: '#fdd835' },
+  black: { label: '黒', hex: '#26282c' },
+  white: { label: '白', hex: '#f5f5f5' },
+} as const;
+export type PinColor = keyof typeof PIN_COLORS;
+export const DEFAULT_PIN_COLOR: PinColor = 'red';
+
+/** ピンの色（前に保存した、色の無いピンは赤） */
+export function pinHex(pin: Pick<Pin, 'color'>): string {
+  return PIN_COLORS[pin.color ?? DEFAULT_PIN_COLOR]?.hex ?? PIN_COLORS.red.hex;
+}
+
 /** 保存した地点（ピン）。全部の地域のものをまとめてブラウザ（localStorage）に保存する */
 export interface Pin {
   id: string;
@@ -8,8 +25,13 @@ export interface Pin {
   name: string;
   lat: number;
   lon: number;
-  /** ピンを立てた面（地面・屋上）の標高（ジオイド基準, m） */
-  elevation: number;
+  /**
+   * ピンを立てた面（地面・屋上）の標高（ジオイド基準, m）。
+   * ミニマップから保存した地点は高さが分からないので null（地形を読んだら地面に立てる）
+   */
+  elevation: number | null;
+  /** 色（無ければ赤） */
+  color?: PinColor;
   /** 立てた時刻（ミリ秒） */
   created: number;
 }
@@ -41,7 +63,7 @@ function isPin(p: unknown): p is Pin {
     typeof x.region === 'string' &&
     Number.isFinite(x.lat) &&
     Number.isFinite(x.lon) &&
-    Number.isFinite(x.elevation)
+    (x.elevation === null || Number.isFinite(x.elevation))
   );
 }
 
@@ -80,8 +102,9 @@ export function addPin(pin: Omit<Pin, 'id' | 'created'>): Pin {
   return p;
 }
 
-export function renamePin(id: string, name: string): void {
-  save(load().map((p) => (p.id === id ? { ...p, name: cleanName(name, p.name) } : p)));
+/** 名前と色を変える */
+export function updatePin(id: string, name: string, color: PinColor): void {
+  save(load().map((p) => (p.id === id ? { ...p, name: cleanName(name, p.name), color } : p)));
 }
 
 export function removePin(id: string): void {

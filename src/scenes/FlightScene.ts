@@ -11,7 +11,7 @@ import { RouteMap } from '../ui/routeMap';
 import { StationSearch } from '../ui/stationSearch';
 import { takeStartAt } from '../core/startAt';
 import { REGION } from '../core/region';
-import { addPin, allPins, onPinsChange, type Pin } from '../data/pins';
+import { addPin, allPins, onPinsChange, pinHex, type Pin } from '../data/pins';
 import { PinPanel } from '../ui/pinPanel';
 import { Pins } from '../world/Pins';
 import { describeStation, nearestStation } from '../world/places';
@@ -73,7 +73,11 @@ export class FlightScene implements GameScene {
     this.instruments = new Instruments(this.ctx.overlay);
     this.lastYaw = this.vehicle.state.yaw;
     this.location = new LocationLabel(this.ctx.overlay);
-    this.minimap = new Minimap(this.ctx.overlay);
+    this.minimap = new Minimap(this.ctx.overlay, {
+      onVisit: (lat, lon) => this.jumpTo(lat, lon),
+      // 高さは分からないので、地形を読んだら地面に立てる。名前は地名を仮に入れ、一覧で入れ直してもらう
+      onSave: (lat, lon, name) => this.pinPanel.edit(addPin({ region: REGION.id, name, lat, lon, elevation: null })),
+    });
     this.search = new StationSearch(
       this.ctx.overlay,
       (station) => this.jumpTo(station.lat, station.lon),
@@ -97,7 +101,7 @@ export class FlightScene implements GameScene {
     const showPins = (list: readonly Pin[]) => {
       const local = list.filter((p) => p.region === REGION.id);
       this.pins.set(local);
-      this.minimap.setPins(local);
+      this.minimap.setPins(local.map((p) => ({ ...p, color: pinHex(p) })));
     };
     showPins(allPins());
     this.unsubscribePins = onPinsChange(showPins);

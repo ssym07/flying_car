@@ -1,6 +1,6 @@
 import { PINS } from '../core/config';
 import { REGION, REGIONS, switchRegion } from '../core/region';
-import { allPins, onPinsChange, removePin, renamePin, type Pin } from '../data/pins';
+import { allPins, DEFAULT_PIN_COLOR, onPinsChange, PIN_COLORS, pinHex, removePin, updatePin, type Pin, type PinColor } from '../data/pins';
 import { distanceMeters } from '../world/places';
 
 /**
@@ -67,7 +67,11 @@ export class PinPanel {
   /** 自機の真下にピンを立て、板を開いて名前を入れてもらう */
   place(): void {
     const pin = this.onPlace();
-    if (!pin) return;
+    if (pin) this.edit(pin);
+  }
+
+  /** 板を開いて、ピンの名前を入れる欄を出す（立てたばかりのピン） */
+  edit(pin: Pin): void {
     this.editing = pin.id;
     if (!this.opened) this.toggle(true);
     else this.render();
@@ -155,12 +159,13 @@ export class PinPanel {
       input.maxLength = PINS.maxNameLength;
       input.placeholder = 'ピンの名前';
       input.spellcheck = false;
+      let color: PinColor = pin.color ?? DEFAULT_PIN_COLOR;
       let done = false;
       const finish = (save: boolean) => {
         if (done) return;
         done = true;
         this.editing = null;
-        if (save) renamePin(pin.id, input.value);
+        if (save) updatePin(pin.id, input.value, color);
         else this.render();
         input.blur();
       };
@@ -173,7 +178,28 @@ export class PinPanel {
         }
       });
       input.addEventListener('blur', () => finish(true));
-      li.appendChild(input);
+      // 色：押しても入力欄から外れない（mousedown を止める）ので、名前と一緒に Enter・外を押した時に保存する
+      const swatches = document.createElement('div');
+      swatches.className = 'pin-colors';
+      for (const [key, { label, hex }] of Object.entries(PIN_COLORS) as Array<[PinColor, { label: string; hex: string }]>) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = label;
+        b.setAttribute('aria-label', label);
+        b.style.background = hex;
+        b.classList.toggle('selected', key === color);
+        b.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          color = key;
+          for (const other of swatches.children) other.classList.toggle('selected', other === b);
+        });
+        swatches.appendChild(b);
+      }
+      const hint = document.createElement('span');
+      hint.className = 'pin-colors-hint';
+      hint.textContent = 'Enter で決定';
+      swatches.appendChild(hint);
+      li.append(input, swatches);
       // 板に足してから入力欄へ移る
       requestAnimationFrame(() => {
         input.focus();
@@ -188,6 +214,7 @@ export class PinPanel {
     jump.title = pin.region === REGION.id ? 'ここへ飛ぶ' : `${REGIONS[pin.region]?.name ?? ''}で読み込み直して、ここへ飛ぶ`;
     jump.innerHTML = '<i></i><span></span><small></small>';
     jump.querySelector('span')!.textContent = pin.name;
+    jump.querySelector('i')!.style.background = pinHex(pin);
     jump.querySelector('small')!.textContent = note;
     const edit = document.createElement('button');
     edit.type = 'button';

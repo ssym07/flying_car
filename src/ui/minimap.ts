@@ -1,4 +1,6 @@
-import { MINIMAP } from '../core/config';
+import { LOCATION, MINIMAP } from '../core/config';
+import { describeStation, nearestStation } from '../world/places';
+import { reverseGeocode } from './geocode';
 import { ROAD_LABELS as roadLabels } from '../data/regionData';
 import { lonLatToTile } from '../world/Terrain';
 
@@ -10,6 +12,38 @@ interface RoadLabel {
   x: number;
   y: number;
   angle: number;
+}
+
+/** ズーム 0 での地図全体の px 座標 */
+interface WorldPx {
+  x: number;
+  y: number;
+}
+
+/** ミニマップに出す保存したピン */
+interface MapPin extends WorldPx {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** ピンの色（#rrggbb） */
+  color: string;
+  /** 最後に描いたキャンバスの px 座標と、地図の中だったか（縁に寄せていないか） */
+  sx: number;
+  sy: number;
+  inside: boolean;
+}
+
+export interface MinimapOptions {
+  /** 「ここへ行く」 */
+  onVisit: (lat: number, lon: number) => void;
+  /** 「この地点を保存」（name は地名。保存した後に名前を入れ直してもらう） */
+  onSave: (lat: number, lon: number, name: string) => void;
+}
+
+function toWorldPx(lat: number, lon: number): WorldPx {
+  const t = lonLatToTile(lon, lat, 0);
+  return { x: t.x * TILE_PX, y: t.y * TILE_PX };
 }
 
 /** 今の拡大率での地図の描き方 */
@@ -37,15 +71,31 @@ export class Minimap {
   private readonly tiles = new Map<string, ImageBitmap | null | 'loading'>();
   private readonly pixelRatio = Math.min(window.devicePixelRatio, 2);
   private readonly labels: RoadLabel[];
-  /** ピン（ズーム 0 での px 座標） */
-  private pins: Array<{ x: number; y: number }> = [];
+  /** 保存したピン（x, y はズーム 0 での px 座標、sx, sy は最後に描いたキャンバスの px 座標） */
+  private pins: MapPin[] = [];
+  /** クリックで刺した仮のピン */
+  private pick: (WorldPx & { lat: number; lon: number; sx: number; sy: number; name: string; address: string; station: string }) | null =
+    null;
+  private pickId = 0;
+  private hovered: MapPin | null = null;
+  /** 最後に描いた時の地図の描き方と進行方向（クリックの位置を緯度経度にする） */
+  private view: View | null = null;
+  private bearing = 0;
+  /** 仮のピンの地名の吹き出し・保存したピンの名前（カーソルを合わせた時） */
+  private readonly placeEl: HTMLDivElement;
+  private readonly tipEl: HTMLDivElement;
+  private menu: HTMLDivElement | null = null;
+  private menuCleanup: (() => void) | null = null;
   private readonly textWidths = new Map<string, number>();
   private readonly scaleLabel: HTMLDivElement;
   private readonly north: HTMLDivElement;
   /** 表示の拡大率（地図タイルのズームと同じ尺度。小数も可） */
   private zoom = MINIMAP.zoom;
 
-  constructor(parent: HTMLElement) {
+  constructor(
+    private readonly parent: HTMLElement,
+    private readonly options: MinimapOptions,
+  ) {
     this.root = document.createElement('div');
     this.root.className = 'minimap';
     const size = MINIMAP.size;
@@ -67,7 +117,14 @@ export class Minimap {
     });
     this.scaleLabel = document.createElement('div');
     this.scaleLabel.className = 'minimap-scale';
-    this.root.append(map, marker, north, controls, this.scaleLabel);
+    this.placeEl = document.createElement('div');
+    this.placeEl.className = 'minimap-place';
+    this.placeEl.hidden = true;
+    this.tipEl = document.createElement('div');
+    this.tipEl.className = 'minimap-tip';
+    this.tipEl.hidden = true;
+    this.root.append(map, marker, north, controls, this.scaleLabel, this.placeEl, this.tipEl);
+    this.bindPointer();
     // ミニマップの上のホイールは拡大率に使う（カメラの距離は変えない）
     this.root.addEventListener(
       'wheel',
@@ -100,7 +157,10 @@ export class Minimap {
     this.drawMap(view, bearing);
     this.markerCtx.clearRect(0, 0, this.markerCtx.canvas.width, this.markerCtx.canvas.height);
     if (this.zoom >= MINIMAP.labelMinZoom) this.drawLabels(view, bearing);
-    this.drawPins(view, bearing);
+    this.view = view;
+    this.bearing = bearing;
+    this.drawPins();
+    this.drawPick();
     this.drawMarker();
     this.updateScaleLabel(lat);
     // 「N」は縁の、北の向きに置く
@@ -110,42 +170,272 @@ export class Minimap {
   }
 
   /** 地図に出すピン（今の地域の保存した地点） */
-  setPins(pins: ReadonlyArray<{ lat: number; lon: number }>): void {
-    this.pins = pins.map((p) => {
-      const t = lonLatToTile(p.lon, p.lat, 0);
-      return { x: t.x * TILE_PX, y: t.y * TILE_PX };
-    });
+  setPins(pins: ReadonlyArray<{ id: string; name: string; lat: number; lon: number; color: string }>): void {
+    this.pins = pins.map((p) => ({ id: p.id, name: p.name, lat: p.lat, lon: p.lon, color: p.color, ...toWorldPx(p.lat, p.lon), sx: 0, sy: 0, inside: false }));
   }
 
-  /** ピン：赤い丸。地図の外のものは縁に寄せて小さく出す（どちらの方にあるか分かるように） */
-  private drawPins({ tileZoom, cx, cy, scale }: View, bearing: number): void {
-    if (this.pins.length === 0) return;
+  /** ズーム 0 での px 座標 → キャンバスの px 座標（中心が現在地、進行方向が上） */
+  private project(x: number, y: number): { x: number; y: number } {
+    const { tileZoom, cx, cy, scale } = this.view!;
+    const world = 2 ** tileZoom;
+    const ux = (x * world - cx) * scale;
+    const uy = (y * world - cy) * scale;
+    const cos = Math.cos(-this.bearing);
+    const sin = Math.sin(-this.bearing);
+    const size = this.markerCtx.canvas.width;
+    return { x: ux * cos - uy * sin + size / 2, y: ux * sin + uy * cos + size / 2 };
+  }
+
+  /** キャンバスの px 座標 → 緯度経度（project の逆） */
+  private unproject(sx: number, sy: number): { lat: number; lon: number } {
+    const { tileZoom, cx, cy, scale } = this.view!;
+    const size = this.markerCtx.canvas.width;
+    const dx = sx - size / 2;
+    const dy = sy - size / 2;
+    const cos = Math.cos(this.bearing);
+    const sin = Math.sin(this.bearing);
+    const world = 2 ** tileZoom;
+    const x = (cx + (dx * cos - dy * sin) / scale) / world / TILE_PX;
+    const y = (cy + (dx * sin + dy * cos) / scale) / world / TILE_PX;
+    const lon = x * 360 - 180;
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+    return { lat, lon };
+  }
+
+  /** 保存したピン：赤い丸。地図の外のものは縁に寄せて小さく出す（どちらの方にあるか分かるように） */
+  private drawPins(): void {
     const ctx = this.markerCtx;
     const size = ctx.canvas.width;
     const r = this.pixelRatio;
-    const world = 2 ** tileZoom;
-    const cos = Math.cos(-bearing);
-    const sin = Math.sin(-bearing);
     const edge = size / 2 - 8 * r;
     for (const p of this.pins) {
-      const ux = (p.x * world - cx) * scale;
-      const uy = (p.y * world - cy) * scale;
-      let sx = ux * cos - uy * sin;
-      let sy = ux * sin + uy * cos;
+      const q = this.project(p.x, p.y);
+      let sx = q.x - size / 2;
+      let sy = q.y - size / 2;
       const outside = Math.max(Math.abs(sx), Math.abs(sy)) > edge;
       if (outside) {
         const k = edge / Math.max(Math.abs(sx), Math.abs(sy));
         sx *= k;
         sy *= k;
       }
+      p.sx = sx + size / 2;
+      p.sy = sy + size / 2;
+      p.inside = !outside;
+      const hovered = p === this.hovered;
       ctx.beginPath();
-      ctx.arc(sx + size / 2, sy + size / 2, (outside ? 3.5 : 6) * r, 0, Math.PI * 2);
-      ctx.fillStyle = outside ? 'rgba(229, 57, 53, 0.7)' : '#e53935';
+      ctx.arc(p.sx, p.sy, (outside ? 3.5 : hovered ? 8 : 6) * r, 0, Math.PI * 2);
+      ctx.globalAlpha = outside ? 0.75 : 1;
+      ctx.fillStyle = p.color;
       ctx.fill();
+      ctx.globalAlpha = 1;
       ctx.lineWidth = 2 * r;
-      ctx.strokeStyle = '#ffffff';
+      // 白いピンは縁を濃くする
+      ctx.strokeStyle = p.color.toLowerCase() === '#f5f5f5' ? '#1b2430' : '#ffffff';
       ctx.stroke();
     }
+  }
+
+  /** クリックで刺した仮のピン：黄色い待ち針（先が地点） */
+  private drawPick(): void {
+    const pick = this.pick;
+    if (!pick) return;
+    const ctx = this.markerCtx;
+    const r = this.pixelRatio;
+    const q = this.project(pick.x, pick.y);
+    pick.sx = q.x;
+    pick.sy = q.y;
+    const size = ctx.canvas.width;
+    const visible = q.x >= 0 && q.y >= 0 && q.x <= size && q.y <= size;
+    this.placeEl.hidden = !visible;
+    if (!visible) return;
+    const len = 18 * r;
+    ctx.beginPath();
+    ctx.moveTo(q.x, q.y);
+    ctx.lineTo(q.x, q.y - len);
+    ctx.lineWidth = 2 * r;
+    ctx.strokeStyle = '#f5f7fa';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(q.x, q.y - len, 6 * r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffb300';
+    ctx.fill();
+    ctx.lineWidth = 2 * r;
+    ctx.strokeStyle = '#1b2430';
+    ctx.stroke();
+    // 地名の吹き出しはピンの上（CSS の px）。上の縁に近い時はピンの下に出し、左右ははみ出さないよう寄せる
+    this.placeBubble(this.placeEl, q.x / r, (q.y - len) / r - 10, q.y / r + 8);
+  }
+
+  /** 吹き出しを (x, above) の上に置く。ミニマップの上にはみ出す時は (x, below) の下に置く（CSS の px） */
+  private placeBubble(el: HTMLElement, x: number, above: number, below: number): void {
+    const size = MINIMAP.size;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const left = Math.min(Math.max(x - w / 2, 4), size - w - 4);
+    const top = above - h < 4 ? below : above - h;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  }
+
+  /** マウスの位置（ミニマップの中の CSS px）→ キャンバスの px */
+  private canvasPoint(e: MouseEvent): { x: number; y: number } {
+    const rect = this.root.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) * this.pixelRatio, y: (e.clientY - rect.top) * this.pixelRatio };
+  }
+
+  /** マウスの近く（9px 以内）の、地図の中の保存したピン */
+  private pinAt(x: number, y: number): MapPin | null {
+    let best: MapPin | null = null;
+    let bestD = 9 * this.pixelRatio;
+    for (const p of this.pins) {
+      if (!p.inside) continue;
+      const d = Math.hypot(p.sx - x, p.sy - y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /** 仮のピンの頭の近く（10px 以内）か */
+  private onPick(x: number, y: number): boolean {
+    const pick = this.pick;
+    return !!pick && Math.hypot(pick.sx - x, pick.sy - 18 * this.pixelRatio - y) < 10 * this.pixelRatio;
+  }
+
+  private bindPointer(): void {
+    const isControl = (e: Event) => (e.target as HTMLElement).closest('button') !== null;
+    this.root.addEventListener('mousemove', (e) => {
+      if (!this.view) return;
+      const p = this.canvasPoint(e);
+      const pin = isControl(e) ? null : this.pinAt(p.x, p.y);
+      this.hovered = pin;
+      this.tipEl.hidden = !pin;
+      if (pin) {
+        this.tipEl.textContent = pin.name;
+        this.tipEl.style.borderColor = pin.color;
+        this.placeBubble(this.tipEl, pin.sx / this.pixelRatio, pin.sy / this.pixelRatio - 12, pin.sy / this.pixelRatio + 12);
+      }
+      this.root.style.cursor = pin || this.onPick(p.x, p.y) ? 'pointer' : 'crosshair';
+    });
+    this.root.addEventListener('mouseleave', () => {
+      this.hovered = null;
+      this.tipEl.hidden = true;
+    });
+    // 左クリック：そこに仮のピンを刺して地名を出す（仮のピンを押すと外す）。保存したピンを押すとメニュー
+    this.root.addEventListener('click', (e) => {
+      if (!this.view || isControl(e)) return;
+      const p = this.canvasPoint(e);
+      const pin = this.pinAt(p.x, p.y);
+      if (pin) {
+        this.openMenu(e, { lat: pin.lat, lon: pin.lon, title: pin.name, saved: true });
+        return;
+      }
+      if (this.onPick(p.x, p.y)) {
+        this.clearPick();
+        return;
+      }
+      this.setPick(this.unproject(p.x, p.y));
+    });
+    // 右クリック：その地点（保存したピン・仮のピンの上ならそのピン）のメニュー
+    this.root.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (!this.view || isControl(e)) return;
+      const p = this.canvasPoint(e);
+      const pin = this.pinAt(p.x, p.y);
+      if (pin) {
+        this.openMenu(e, { lat: pin.lat, lon: pin.lon, title: pin.name, saved: true });
+        return;
+      }
+      if (!this.onPick(p.x, p.y)) this.setPick(this.unproject(p.x, p.y));
+      const pick = this.pick!;
+      this.openMenu(e, { lat: pick.lat, lon: pick.lon, title: pick.name, saved: false });
+    });
+  }
+
+  /** 仮のピンを刺し、地名（最寄り駅、届いたら住所）を出す */
+  private setPick({ lat, lon }: { lat: number; lon: number }): void {
+    const near = nearestStation(lat, lon);
+    const station = near ? describeStation(near.station.name, near.distance, LOCATION.nearStation) : '';
+    const id = ++this.pickId;
+    this.pick = { lat, lon, ...toWorldPx(lat, lon), sx: 0, sy: 0, name: station || '地点', address: '', station };
+    this.renderPlace();
+    reverseGeocode(lat, lon)
+      .then((address) => {
+        if (id !== this.pickId || !this.pick) return;
+        this.pick.address = address;
+        if (address) this.pick.name = address;
+        this.renderPlace();
+      })
+      .catch(() => {});
+  }
+
+  private clearPick(): void {
+    this.pick = null;
+    this.pickId++;
+    this.placeEl.hidden = true;
+  }
+
+  private renderPlace(): void {
+    const pick = this.pick;
+    if (!pick) return;
+    this.placeEl.innerHTML = '<b></b><small></small>';
+    this.placeEl.querySelector('b')!.textContent = pick.address || (pick.station ? pick.station : '地点');
+    this.placeEl.querySelector('small')!.textContent = pick.address ? pick.station : '住所を調べています…';
+    this.placeEl.hidden = false;
+  }
+
+  /** 地点のメニュー（画面の上に出す。ミニマップの外にはみ出してよい） */
+  private openMenu(e: MouseEvent, target: { lat: number; lon: number; title: string; saved: boolean }): void {
+    this.closeMenu();
+    const menu = document.createElement('div');
+    menu.className = 'map-menu';
+    menu.innerHTML = `<div class="map-menu-title"></div>
+      <button type="button" data-visit>ここへ行く</button>
+      ${target.saved ? '' : '<button type="button" data-save>この地点を保存</button>'}`;
+    menu.querySelector('.map-menu-title')!.textContent = target.title;
+    menu.addEventListener('click', (ev) => {
+      const b = (ev.target as HTMLElement).closest('button');
+      if (!b) return;
+      this.closeMenu();
+      if (b.dataset.visit !== undefined) {
+        this.options.onVisit(target.lat, target.lon);
+        if (!target.saved) this.clearPick();
+      } else if (b.dataset.save !== undefined) {
+        this.options.onSave(target.lat, target.lon, target.title);
+        this.clearPick();
+      }
+    });
+    this.parent.appendChild(menu);
+    // 画面の端ではみ出さないよう、上・左へずらす
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    menu.style.left = `${Math.min(e.clientX, window.innerWidth - w - 8)}px`;
+    menu.style.top = `${Math.max(8, Math.min(e.clientY, window.innerHeight - h - 8))}px`;
+    this.menu = menu;
+    // メニューの外を押す・Esc で閉じる（Esc でポーズにしない）
+    const onDown = (ev: PointerEvent) => {
+      if (!menu.contains(ev.target as Node)) this.closeMenu();
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.stopImmediatePropagation();
+      this.closeMenu();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    this.menuCleanup = () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }
+
+  private closeMenu(): void {
+    this.menu?.remove();
+    this.menu = null;
+    this.menuCleanup?.();
+    this.menuCleanup = null;
   }
 
   private changeZoom(delta: number): void {
@@ -161,6 +451,7 @@ export class Minimap {
   }
 
   dispose(): void {
+    this.closeMenu();
     this.root.remove();
     for (const tile of this.tiles.values()) if (tile instanceof ImageBitmap) tile.close();
     this.tiles.clear();

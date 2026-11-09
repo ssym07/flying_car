@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PINS } from '../core/config';
-import type { Pin } from '../data/pins';
+import { pinHex, type Pin } from '../data/pins';
 import type { Terrain } from './Terrain';
 
 interface Shown {
@@ -11,22 +11,30 @@ interface Shown {
   sign: THREE.Sprite;
   texture: THREE.CanvasTexture;
   aspect: number;
+  /** 置く場所が決まったか（高さの分からないピンは、地形を読むまで出さない） */
+  placed: boolean;
 }
 
 /** ピンの形（高さ 1。先が原点で上へ伸びる） */
 const NEEDLE = new THREE.CylinderGeometry(0.035, 0.004, 0.68, 10).translate(0, 0.34, 0);
 const HEAD = new THREE.SphereGeometry(0.17, 20, 14).translate(0, 0.8, 0);
-const HEAD_MATERIAL = new THREE.MeshStandardMaterial({
-  color: 0xe53935,
-  emissive: 0x5a0d0b,
-  roughness: 0.35,
-  metalness: 0.1,
-});
+/** 頭の材質（色ごとに共有） */
+const headMaterials = new Map<string, THREE.MeshStandardMaterial>();
+function headMaterial(hex: string): THREE.MeshStandardMaterial {
+  let m = headMaterials.get(hex);
+  if (!m) {
+    const color = new THREE.Color(hex);
+    // 夕方の暗い街でも色が分かるよう、少し自ら光らせる
+    m = new THREE.MeshStandardMaterial({ color, emissive: color.clone().multiplyScalar(0.3), roughness: 0.35, metalness: 0.1 });
+    headMaterials.set(hex, m);
+  }
+  return m;
+}
 const NEEDLE_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xd8dde3, roughness: 0.3, metalness: 0.8 });
 
 /**
  * 保存した地点に立てるピン（赤い頭の待ち針）と、その上に浮かぶ名前の札（常にカメラを向く）。
- * ピンは遠くからも見えるよう、画面上の大きさがおおよそ一定になるように実寸を変える（先は地面に刺したまま）。
+ * ピンは実寸 PINS.size（m）で一律。遠くからは名前の札で分かる（札は画面上の大きさをおおよそ一定にする）。
  * 札は建物に隠れても見えるよう最後に重ねて描く。PINS.radius より遠いピンは出さない
  */
 export class Pins {
@@ -41,7 +49,7 @@ export class Pins {
     const keep = new Set<string>();
     for (const pin of pins) {
       const old = this.shown.get(pin.id);
-      if (old && old.pin.name === pin.name) {
+      if (old && old.pin.name === pin.name && old.pin.color === pin.color) {
         keep.add(pin.id);
         continue;
       }
@@ -54,15 +62,15 @@ export class Pins {
 
   /** 毎フレーム：大きさと濃さ */
   update(camera: THREE.PerspectiveCamera): void {
-    const { radius, screenSize, minHeight, signSize } = PINS;
+    const { radius, size, signSize } = PINS;
     const tanHalf = Math.tan((camera.fov * THREE.MathUtils.DEG2RAD) / 2);
     for (const s of this.shown.values()) {
+      if (!s.placed && !this.locate(s)) continue;
       const p = s.object.position;
       const flat = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
       s.object.visible = flat < radius;
       if (!s.object.visible) continue;
-      const distance = camera.position.distanceTo(p);
-      const height = Math.max(minHeight, screenSize * distance * 2 * tanHalf);
+      const height = size;
       s.body.scale.setScalar(height);
 
       const signDistance = camera.position.distanceTo(s.sign.getWorldPosition(this.tmp));
@@ -78,15 +86,27 @@ export class Pins {
     for (const s of [...this.shown.values()]) this.remove(s);
   }
 
+  /** 置く場所を決める。高さの分からないピンは地形の面に立てる（まだ地形が無ければ false） */
+  private locate(s: Shown): boolean {
+    const { lat, lon, elevation } = s.pin;
+    const height = elevation ?? this.terrain.surfaceHeightAt(lat, lon);
+    if (height === null) {
+      s.object.visible = false;
+      return false;
+    }
+    this.terrain.toLocal(lat, lon, height, s.object.position);
+    s.placed = true;
+    return true;
+  }
+
   private create(pin: Pin): void {
-    const position = this.terrain.toLocal(pin.lat, pin.lon, pin.elevation);
     const body = new THREE.Group();
     const needle = new THREE.Mesh(NEEDLE, NEEDLE_MATERIAL);
-    const head = new THREE.Mesh(HEAD, HEAD_MATERIAL);
+    const head = new THREE.Mesh(HEAD, headMaterial(pinHex(pin)));
     for (const m of [needle, head]) m.userData.noShadow = true;
     body.add(needle, head);
 
-    const canvas = drawPinSign(pin.name);
+    const canvas = drawPinSign(pin.name, pinHex(pin));
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
@@ -100,9 +120,9 @@ export class Pins {
 
     const object = new THREE.Group();
     object.add(body, sign);
-    object.position.copy(position);
+    object.visible = false;
     this.group.add(object);
-    this.shown.set(pin.id, { pin, object, body, sign, texture, aspect: canvas.width / canvas.height });
+    this.shown.set(pin.id, { pin, object, body, sign, texture, aspect: canvas.width / canvas.height, placed: false });
   }
 
   private remove(s: Shown): void {
@@ -115,8 +135,8 @@ export class Pins {
 
 const FONT = `system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
 
-/** 名前の札：白地の角丸に濃い文字、左に赤い丸（ピンの頭）、下に小さな三角（ピンを指す） */
-function drawPinSign(name: string): HTMLCanvasElement {
+/** 名前の札：白地の角丸に濃い文字、左にピンの色の丸（ピンの頭）、下に小さな三角（ピンを指す） */
+function drawPinSign(name: string, hex: string): HTMLCanvasElement {
   const body = 92;
   const tail = 16;
   const pad = 26;
@@ -135,15 +155,20 @@ function drawPinSign(name: string): HTMLCanvasElement {
   g.lineTo(w / 2, body + tail - 2);
   g.lineTo(w / 2 + 14, body - 3);
   g.fill();
-  g.strokeStyle = '#e53935';
+  // 白いピンは白地に溶けるので、縁は灰色にする
+  const edge = hex.toLowerCase() === '#f5f5f5' ? '#9aa3ad' : hex;
+  g.strokeStyle = edge;
   g.lineWidth = 4;
   g.beginPath();
   g.roundRect(2, 2, w - 4, body - 4, 22);
   g.stroke();
-  g.fillStyle = '#e53935';
+  g.fillStyle = hex;
   g.beginPath();
   g.arc(pad + dot / 2, body / 2, dot / 2, 0, Math.PI * 2);
   g.fill();
+  g.strokeStyle = edge === hex ? 'rgba(0, 0, 0, 0.25)' : edge;
+  g.lineWidth = 3;
+  g.stroke();
   g.fillStyle = '#1b2430';
   g.font = `700 48px ${FONT}`;
   g.textBaseline = 'middle';

@@ -1,5 +1,6 @@
 import { LOCATION } from '../core/config';
-import { describeStation, distanceMeters, nearestStation, wardName } from '../world/places';
+import { describeStation, distanceMeters, nearestStation } from '../world/places';
+import { reverseGeocode } from './geocode';
 
 /**
  * 画面右上の現在地表示。
@@ -49,21 +50,10 @@ export class LocationLabel {
     this.pending = true;
 
     const id = this.requestId;
-    const url = LOCATION.reverseGeocoderUrl.replace('{lat}', lat.toFixed(6)).replace('{lon}', lon.toFixed(6));
-    fetch(url, { signal: AbortSignal.timeout(LOCATION.geocodeTimeoutSec * 1000) })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json: { results?: { muniCd: string; lv01Nm: string } } | null) => {
-        // 片付けた後に届いた返事は捨てる
-        if (id !== this.requestId) return;
-        const r = json?.results;
-        // 海の上など住所の無い所は空にする。取れなかった時（応答なし・エラー）は前の住所を残す
-        if (json && !r) {
-          this.addressEl.textContent = '';
-          return;
-        }
-        if (!r) return;
-        const town = r.lv01Nm === '－' ? '' : r.lv01Nm;
-        this.addressEl.textContent = [wardName(r.muniCd), town].filter(Boolean).join(' ');
+    reverseGeocode(lat, lon)
+      .then((address) => {
+        // 片付けた後に届いた返事は捨てる。海の上など住所の無い所は空にする（取れなかった時は catch で前の住所を残す）
+        if (id === this.requestId) this.addressEl.textContent = address;
       })
       .catch(() => {
         // 住所が取れなくても駅名だけ出しておけばよい。すぐに問い合わせ直せるよう、前に問い合わせた場所を忘れる
