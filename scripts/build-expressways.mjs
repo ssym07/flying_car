@@ -526,6 +526,57 @@ console.log(`levelled ${fixed.size} points where lanes in the same direction ove
       list.forEach((n, i) => (found[wi][i] = { ...found[wi][i], [side]: n }));
     }
   });
+  // 分離帯は両側にそろえる：ある道が「逆向きの隣」と判定した点では、相手の道の向かい合う点にも同じすき間の分離帯を付ける
+  // （すき間が MEDIAN_GAP に近いと、ならした後に片側の道だけ判定が残り、反対側は壁高欄だけになって間に溝が開いていた）
+  {
+    /** 相手の道 → 点の番号 → { 側, すき間, 判定した道 } */
+    const marks = new Map();
+    ways.forEach((w, wi) => {
+      found[wi].forEach((best, i) => {
+        for (const side of [1, -1]) {
+          const n = best[side];
+          if (!n || n.kind !== -1) continue;
+          const o = ways[n.oi];
+          // 相手の道の一番近い点と、その点から見てこちらがどちら側か
+          let j = 0;
+          let bestD = Infinity;
+          o.xy.forEach(([x, y], k) => {
+            const d = (x - w.xy[i][0]) ** 2 + (y - w.xy[i][1]) ** 2;
+            if (d < bestD) (bestD = d), (j = k);
+          });
+          const a = o.xy[Math.max(0, j - 1)];
+          const b = o.xy[Math.min(o.xy.length - 1, j + 1)];
+          const across = -(w.xy[i][0] - o.xy[j][0]) * (b[1] - a[1]) + (w.xy[i][1] - o.xy[j][1]) * (b[0] - a[0]);
+          const oside = across > 0 ? 1 : -1;
+          if (!marks.has(n.oi)) marks.set(n.oi, new Map());
+          const m = marks.get(n.oi);
+          if (!m.has(j)) m.set(j, { side: oside, gap: n.gap, oi: wi, oh: w.h[i] });
+        }
+      });
+    });
+    let added = 0;
+    for (const [oi, m] of marks) {
+      const js = [...m.keys()].sort((x, y) => x - y);
+      const set = (j, mark) => {
+        const cur = found[oi][j][mark.side];
+        if (cur && cur.kind === -1) return;
+        // 同じ向きの道とつながっている側はそのまま
+        if (cur && cur.kind === 1) return;
+        found[oi][j] = { ...found[oi][j], [mark.side]: { oi: mark.oi, gap: mark.gap, kind: -1, oh: mark.oh } };
+        added++;
+      };
+      js.forEach((j, k) => {
+        const mark = m.get(j);
+        set(j, mark);
+        // 相手の点の間引きで飛んだ点（3点まで）も埋める
+        const next = js[k + 1];
+        if (next !== undefined && next - j <= 3 && m.get(next).side === mark.side) {
+          for (let t = j + 1; t < next; t++) set(t, mark);
+        }
+      });
+    }
+    console.log(`medians mirrored to ${added} points on the other carriageway`);
+  }
   let joined = 0;
   let medians = 0;
   ways.forEach((w, wi) => {
