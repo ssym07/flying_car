@@ -16,6 +16,8 @@ export const KEYS = {
   up: ['Space'],
   down: ['ShiftLeft', 'ShiftRight'],
   pause: ['Escape'],
+  /** 自機の真下にピンを立てる */
+  pin: ['KeyP'],
   start: ['Enter', 'Space'],
 };
 
@@ -347,6 +349,22 @@ export const ATMOSPHERE = {
       elevation: 0.5,
     },
   },
+};
+
+/** 保存した地点のピン */
+export const PINS = {
+  /** ブラウザに保存する時の名前 */
+  storageKey: 'sky-drive.pins',
+  /** この距離 (m) 以内のピンを出す（radius の 0.75 倍から薄くする） */
+  radius: 8000,
+  /** ピンの画面上の縦の大きさ（画面の高さに対する割合）。遠くでも見えるよう、距離で実寸を変える */
+  screenSize: 0.08,
+  /** ピンの実寸の最小 (m)。近くで小さくなりすぎないように */
+  minHeight: 8,
+  /** 名前の札の画面上の縦の大きさ（画面の高さに対する割合） */
+  signSize: 0.04,
+  /** 名前の長さの上限（文字） */
+  maxNameLength: 40,
 };
 
 /** 3D 空間に置く駅名・通り名 */

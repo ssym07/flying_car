@@ -37,6 +37,8 @@ export class Minimap {
   private readonly tiles = new Map<string, ImageBitmap | null | 'loading'>();
   private readonly pixelRatio = Math.min(window.devicePixelRatio, 2);
   private readonly labels: RoadLabel[];
+  /** ピン（ズーム 0 での px 座標） */
+  private pins: Array<{ x: number; y: number }> = [];
   private readonly textWidths = new Map<string, number>();
   private readonly scaleLabel: HTMLDivElement;
   private readonly north: HTMLDivElement;
@@ -98,12 +100,52 @@ export class Minimap {
     this.drawMap(view, bearing);
     this.markerCtx.clearRect(0, 0, this.markerCtx.canvas.width, this.markerCtx.canvas.height);
     if (this.zoom >= MINIMAP.labelMinZoom) this.drawLabels(view, bearing);
+    this.drawPins(view, bearing);
     this.drawMarker();
     this.updateScaleLabel(lat);
     // 「N」は縁の、北の向きに置く
     const r = MINIMAP.size / 2 - 14;
     this.north.style.left = `${MINIMAP.size / 2 - Math.sin(bearing) * r}px`;
     this.north.style.top = `${MINIMAP.size / 2 - Math.cos(bearing) * r}px`;
+  }
+
+  /** 地図に出すピン（今の地域の保存した地点） */
+  setPins(pins: ReadonlyArray<{ lat: number; lon: number }>): void {
+    this.pins = pins.map((p) => {
+      const t = lonLatToTile(p.lon, p.lat, 0);
+      return { x: t.x * TILE_PX, y: t.y * TILE_PX };
+    });
+  }
+
+  /** ピン：赤い丸。地図の外のものは縁に寄せて小さく出す（どちらの方にあるか分かるように） */
+  private drawPins({ tileZoom, cx, cy, scale }: View, bearing: number): void {
+    if (this.pins.length === 0) return;
+    const ctx = this.markerCtx;
+    const size = ctx.canvas.width;
+    const r = this.pixelRatio;
+    const world = 2 ** tileZoom;
+    const cos = Math.cos(-bearing);
+    const sin = Math.sin(-bearing);
+    const edge = size / 2 - 8 * r;
+    for (const p of this.pins) {
+      const ux = (p.x * world - cx) * scale;
+      const uy = (p.y * world - cy) * scale;
+      let sx = ux * cos - uy * sin;
+      let sy = ux * sin + uy * cos;
+      const outside = Math.max(Math.abs(sx), Math.abs(sy)) > edge;
+      if (outside) {
+        const k = edge / Math.max(Math.abs(sx), Math.abs(sy));
+        sx *= k;
+        sy *= k;
+      }
+      ctx.beginPath();
+      ctx.arc(sx + size / 2, sy + size / 2, (outside ? 3.5 : 6) * r, 0, Math.PI * 2);
+      ctx.fillStyle = outside ? 'rgba(229, 57, 53, 0.7)' : '#e53935';
+      ctx.fill();
+      ctx.lineWidth = 2 * r;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+    }
   }
 
   private changeZoom(delta: number): void {

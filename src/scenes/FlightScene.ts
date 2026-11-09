@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { KEYS, PHYSICS, SEARCH, TERRAIN, VEHICLE, WORLD } from '../core/config';
+import { KEYS, LOCATION, PHYSICS, SEARCH, TERRAIN, VEHICLE, WORLD } from '../core/config';
 import type { GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
@@ -10,6 +10,11 @@ import { Minimap } from '../ui/minimap';
 import { RouteMap } from '../ui/routeMap';
 import { StationSearch } from '../ui/stationSearch';
 import { takeStartAt } from '../core/startAt';
+import { REGION } from '../core/region';
+import { addPin, allPins, onPinsChange, type Pin } from '../data/pins';
+import { PinPanel } from '../ui/pinPanel';
+import { Pins } from '../world/Pins';
+import { describeStation, nearestStation } from '../world/places';
 import { forwardOf, step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
 import { Collision } from '../world/Collision';
@@ -28,6 +33,9 @@ export class FlightScene implements GameScene {
   private minimap!: Minimap;
   private search!: StationSearch;
   private routeMap!: RouteMap;
+  private pinPanel!: PinPanel;
+  private pins!: Pins;
+  private unsubscribePins!: () => void;
   /** ホーム（行き先を選ぶタイトル）へ戻るボタン */
   private homeButton!: HTMLButtonElement;
   /** 地形の読込を待っているジャンプ先 */
@@ -75,7 +83,24 @@ export class FlightScene implements GameScene {
       this.ctx.overlay,
       (station) => this.jumpTo(station.lat, station.lon),
       () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
+      () => this.pinPanel.close(),
     );
+    this.pinPanel = new PinPanel(
+      this.ctx.overlay,
+      () => this.placePin(),
+      (pin) => this.jumpTo(pin.lat, pin.lon),
+      () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
+      () => this.routeMap.close(),
+    );
+    this.pins = new Pins(world.terrain);
+    world.scene.add(this.pins.group);
+    const showPins = (list: readonly Pin[]) => {
+      const local = list.filter((p) => p.region === REGION.id);
+      this.pins.set(local);
+      this.minimap.setPins(local);
+    };
+    showPins(allPins());
+    this.unsubscribePins = onPinsChange(showPins);
 
     this.homeButton = document.createElement('button');
     this.homeButton.type = 'button';
@@ -104,6 +129,10 @@ export class FlightScene implements GameScene {
     this.minimap.dispose();
     this.search.dispose();
     this.routeMap.dispose();
+    this.pinPanel.dispose();
+    this.unsubscribePins();
+    this.ctx.world.scene.remove(this.pins.group);
+    this.pins.dispose();
     this.homeButton.remove();
   }
 
@@ -115,6 +144,24 @@ export class FlightScene implements GameScene {
   private jumpTo(lat: number, lon: number): void {
     this.pendingJump = { lat, lon };
     this.place(lat, lon, this.ctx.world.terrain.surfaceHeightAt(lat, lon));
+  }
+
+  /**
+   * 自機の真下（地面・屋上）にピンを立てる。名前は最寄り駅からの仮の名前（このあと一覧で入れ直してもらう）
+   */
+  private placePin(): Pin | null {
+    const world = this.ctx.world;
+    const latLon = world.toLatLon(this.vehicle.mesh.position);
+    if (!latLon) return null;
+    const seaLevel = world.terrain.toLocal(latLon.lat, latLon.lon, 0, this.seaPoint).y;
+    const near = nearestStation(latLon.lat, latLon.lon);
+    return addPin({
+      region: REGION.id,
+      name: near ? describeStation(near.station.name, near.distance, LOCATION.nearStation) : 'ピン',
+      lat: latLon.lat,
+      lon: latLon.lon,
+      elevation: this.groundHeight - seaLevel,
+    });
   }
 
   private place(lat: number, lon: number, ground: number | null): void {
@@ -135,6 +182,7 @@ export class FlightScene implements GameScene {
       this.ctx.go.pause();
       return;
     }
+    if (input.consumePress(KEYS.pin)) this.pinPanel.place();
 
     if (this.pendingJump) {
       const { lat, lon } = this.pendingJump;
@@ -188,11 +236,13 @@ export class FlightScene implements GameScene {
       this.sinceLocation += frameDt;
       if (this.sinceLocation >= 0.5) {
         this.location.update(latLon.lat, latLon.lon);
+        this.pinPanel.updateDistances();
         this.sinceLocation = 0;
       }
     }
 
     this.routeMap.update();
+    this.pins.update(world.camera);
     world.render(frameDt);
   }
 

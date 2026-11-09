@@ -489,8 +489,8 @@ body {
 .home-button {
   position: absolute;
   top: 16px;
-  /* 路線図のボタン（幅 72px）の左 */
-  right: calc(16px + min(280px, calc(100vw - 32px)) + 8px + 72px + 8px);
+  /* 路線図・ピンのボタン（幅 72px）の左 */
+  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 2 + 8px);
   height: 38px;
   padding: 0 14px;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -592,6 +592,192 @@ body {
   margin-right: 5px;
   vertical-align: middle;
   border-radius: 2px;
+}
+
+/* ピン：路線図のボタンの左のボタンで開く、保存した地点の一覧（路線図と同じ場所に出す） */
+.pin-toggle {
+  position: absolute;
+  top: 16px;
+  right: calc(16px + min(280px, calc(100vw - 32px)) + 8px + 72px + 8px);
+  width: 72px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pin-toggle:hover,
+.pin-toggle.active {
+  background: rgba(229, 57, 53, 0.45);
+}
+
+.pin-panel {
+  position: absolute;
+  top: 132px;
+  right: 16px;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 148px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(10, 20, 35, 0.88);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.pin-panel[hidden] {
+  display: none;
+}
+
+.pin-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.pin-panel-title {
+  font-weight: 700;
+}
+
+.pin-add {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: #e53935;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pin-add:hover {
+  background: #f05350;
+}
+
+.pin-add kbd {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  font: inherit;
+  font-size: 11px;
+}
+
+.pin-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.pin-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.pin-list li:not(.pin-section, .pin-empty):hover {
+  background: rgba(229, 57, 53, 0.18);
+}
+
+.pin-list .pin-section {
+  padding: 10px 8px 4px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  letter-spacing: 0.1em;
+}
+
+.pin-list .pin-empty {
+  padding: 10px 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+.pin-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pin-name i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e53935;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.pin-name span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-name small {
+  flex: none;
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pin-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.pin-icon:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+}
+
+.pin-list li.editing {
+  padding: 4px;
+}
+
+.pin-list li.editing input {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  border: 1px solid #e53935;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+  outline: none;
 }
 
 /* 狭い画面：地域ボタンを1行に並べ、列島はその下に描く */

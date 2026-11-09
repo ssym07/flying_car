@@ -82,6 +82,8 @@ export class RouteMap {
     parent: HTMLElement,
     private readonly onSelect: (station: { name: string; lat: number; lon: number }) => void,
     private readonly hereFn: () => { lat: number; lon: number } | null,
+    /** 開いた時（同じ場所に出るピンの一覧を閉じる） */
+    private readonly onOpen: () => void = () => {},
   ) {
     this.button = document.createElement('button');
     this.button.type = 'button';
@@ -165,7 +167,14 @@ export class RouteMap {
     this.opened = open;
     this.panel.hidden = !open;
     this.button.classList.toggle('active', open);
-    if (open) this.centerOnHere();
+    if (open) {
+      this.onOpen();
+      this.centerOnHere();
+    }
+  }
+
+  close(): void {
+    if (this.opened) this.toggle(false);
   }
 
   private setData(data: RouteMapData): void {
