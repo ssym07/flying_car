@@ -282,7 +282,27 @@ export class RouteMap {
       const r = c.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
+    // 離した合図（pointerup）が届かないこと（右クリックのメニュー、ほかのウィンドウへの切り替え、捕まえていたポインタを失う）がある。
+    // 残ったままだと、ボタンを押していないのに地図がカーソルについて動いたり、2本指の拡大縮小のままになったりするので、
+    // そういう時は押していた状態を捨てる
+    const reset = () => {
+      this.pointers.clear();
+      this.pinch = null;
+      this.drag = null;
+    };
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('lostpointercapture', (e) => {
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size < 2) this.pinch = null;
+      if (this.pointers.size === 0) this.drag = null;
+    });
+    window.addEventListener('blur', reset);
     c.addEventListener('pointerdown', (e) => {
+      // マウスは左ボタンだけ。マウスは1つしかないので、前に押した記録が残っていても捨てる（2本指の拡大縮小にしない）
+      if (e.pointerType === 'mouse') {
+        if (e.button !== 0) return;
+        reset();
+      }
       c.setPointerCapture(e.pointerId);
       const p = local(e);
       this.pointers.set(e.pointerId, p);
@@ -295,6 +315,8 @@ export class RouteMap {
       }
     });
     c.addEventListener('pointermove', (e) => {
+      // ボタンを離しているのに押した状態が残っている（離した合図を取りこぼした）
+      if (e.pointerType === 'mouse' && e.buttons === 0 && (this.drag || this.pinch || this.pointers.size > 0)) reset();
       const p = local(e);
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, p);
       if (this.pinch && this.pointers.size === 2) {
