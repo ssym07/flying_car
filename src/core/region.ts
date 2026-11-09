@@ -54,7 +54,8 @@ export const REGIONS: Record<Region['id'], Region> = {
   },
   nagoya: {
     id: 'nagoya',
-    name: '名古屋',
+    // 名古屋市と春日井・北名古屋・豊山・東海・大府・知多・常滑（データの置き場所と ?region=nagoya はそのまま）
+    name: '愛知',
     // 名古屋駅（桜通口）
     origin: { latDeg: 35.1709, lonDeg: 136.8815, ellipsoidHeight: 40 },
     geoidHeight: 38.07,
@@ -79,13 +80,18 @@ export function regionUrl(file: string): string {
   return `${import.meta.env.BASE_URL}${REGION.dataDir}${file}`;
 }
 
-/** 別の地域でページを読み込み直す（start なら、タイトルを飛ばして読込へ進む） */
-export function switchRegion(id: Region['id'], start: boolean): void {
+/**
+ * 別の地域でページを読み込み直す（start なら、タイトルを飛ばして読込へ進む）。
+ * at を渡すと、そこ（駅の上空）から飛び始める（core/startAt.ts）
+ */
+export function switchRegion(id: Region['id'], start: boolean, at?: { lat: number; lon: number }): void {
   const params = new URLSearchParams(location.search);
   if (id === 'tokyo') params.delete('region');
   else params.set('region', id);
   if (start) params.set('start', '1');
   else params.delete('start');
+  if (at) params.set('at', `${at.lat.toFixed(6)},${at.lon.toFixed(6)}`);
+  else params.delete('at');
   const q = params.toString();
   location.search = q ? `?${q}` : '';
 }

@@ -9,6 +9,7 @@ import { LocationLabel } from '../ui/locationLabel';
 import { Minimap } from '../ui/minimap';
 import { RouteMap } from '../ui/routeMap';
 import { StationSearch } from '../ui/stationSearch';
+import { takeStartAt } from '../core/startAt';
 import { forwardOf, step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
 import { Collision } from '../world/Collision';
@@ -83,6 +84,10 @@ export class FlightScene implements GameScene {
     this.homeButton.title = '行き先（東京・大阪）を選ぶ画面へ戻る';
     this.homeButton.addEventListener('click', () => this.ctx.go.title());
     this.ctx.overlay.appendChild(this.homeButton);
+
+    // ホームの駅検索で選んだ駅の上空から始める
+    const at = takeStartAt();
+    if (at) this.jumpTo(at.lat, at.lon);
 
     // 開発時だけ、コンソールや自動テストから状態を覗けるようにする
     if (import.meta.env.DEV) Object.assign(window, { __flight: this });

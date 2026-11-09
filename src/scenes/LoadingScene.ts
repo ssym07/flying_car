@@ -1,6 +1,7 @@
 import { CAMERA, TERRAIN, VEHICLE, WORLD } from '../core/config';
 import { mountScreen, type GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
+import { peekStartAt } from '../core/startAt';
 
 /** 読込キューが空の状態がこの秒数続いたら完了とみなす */
 const SETTLE_SEC = 1.0;
@@ -32,10 +33,12 @@ export class LoadingScene implements GameScene {
     this.bar = this.el.querySelector('.progress > div')!;
     this.label = this.el.querySelector('[data-label]')!;
 
-    // Flight 開始時とほぼ同じ視点に置いて、必要なタイルを読ませる
-    const { camera, groundY } = this.ctx.world;
-    camera.position.set(0, groundY + VEHICLE.startAltitude + CAMERA.offset.up, CAMERA.offset.back);
-    camera.lookAt(0, groundY + VEHICLE.startAltitude, 0);
+    // Flight 開始時とほぼ同じ視点に置いて、必要なタイルを読ませる（駅を選んで始める時は、その駅の上空）
+    const { camera, groundY, terrain } = this.ctx.world;
+    const at = peekStartAt();
+    const p = at ? terrain.toLocal(at.lat, at.lon, 0) : { x: 0, z: 0 };
+    camera.position.set(p.x, groundY + VEHICLE.startAltitude + CAMERA.offset.up, p.z + CAMERA.offset.back);
+    camera.lookAt(p.x, groundY + VEHICLE.startAltitude, p.z);
   }
 
   exit(): void {

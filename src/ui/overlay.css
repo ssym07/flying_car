@@ -67,6 +67,12 @@ body {
   justify-content: flex-start;
 }
 
+/* ホームの駅検索：飛行中の駅検索と同じ右上。全部の地域から探すので少し広く */
+.screen.title .search.title-search {
+  z-index: 2;
+  width: min(360px, calc(100vw - 32px));
+}
+
 .screen.title .start-hint {
   position: absolute;
   right: 6vw;

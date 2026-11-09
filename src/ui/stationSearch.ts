@@ -3,16 +3,29 @@ import { distanceMeters, type Station } from '../world/places';
 import { REGION } from '../core/region';
 import { STATIONS as stations } from '../data/regionData';
 
+/** 検索の設定（ホームの全地域の駅検索で使う） */
+export interface StationSearchOptions<S extends Station> {
+  /** 探す駅（無ければ今の地域の駅）。まだ読めていなければ null */
+  stations?: () => readonly S[] | null;
+  /** 入力欄が初めて使われた時（駅の一覧を読み始める） */
+  onFirstFocus?: () => void;
+  placeholder?: string;
+  className?: string;
+  /** 候補の右に出す文字（無ければ今いる場所からの距離） */
+  note?: (station: S) => string;
+}
+
 /**
  * 画面右上の駅検索。駅名を入力すると候補を下に出し、選ぶと onSelect を呼ぶ。
  * 候補はクリック、または ↑↓ と Enter で選べる。Esc で閉じる。
  */
-export class StationSearch {
+export class StationSearch<S extends Station = Station> {
   private readonly root: HTMLDivElement;
   private readonly input: HTMLInputElement;
   private readonly list: HTMLUListElement;
-  private results: Station[] = [];
+  private results: S[] = [];
   private active = -1;
+  private focused = false;
 
   /**
    * @param onSelect 駅が選ばれた時
@@ -20,13 +33,14 @@ export class StationSearch {
    */
   constructor(
     parent: HTMLElement,
-    private readonly onSelect: (station: Station) => void,
+    private readonly onSelect: (station: S) => void,
     private readonly here: () => { lat: number; lon: number } | null,
+    private readonly options: StationSearchOptions<S> = {},
   ) {
     this.root = document.createElement('div');
-    this.root.className = 'search';
+    this.root.className = options.className ?? 'search';
     this.root.innerHTML = `
-      <input type="search" placeholder="駅名で検索（例：${REGION.searchExample}）" autocomplete="off" spellcheck="false" />
+      <input type="search" placeholder="${options.placeholder ?? `駅名で検索（例：${REGION.searchExample}）`}" autocomplete="off" spellcheck="false" />
       <ul class="search-results" role="listbox"></ul>
     `;
     this.input = this.root.querySelector('input')!;
@@ -34,7 +48,11 @@ export class StationSearch {
     parent.appendChild(this.root);
 
     this.input.addEventListener('input', () => this.update());
-    this.input.addEventListener('focus', () => this.update());
+    this.input.addEventListener('focus', () => {
+      if (!this.focused) options.onFirstFocus?.();
+      this.focused = true;
+      this.update();
+    });
     this.input.addEventListener('keydown', (e) => this.onKey(e));
     // 候補のクリックより先に blur で閉じないよう、mousedown で選ぶ
     this.list.addEventListener('mousedown', (e) => {
@@ -81,8 +99,14 @@ export class StationSearch {
     this.render();
   }
 
+  /** 入力し直さずに候補を出し直す（駅の一覧を読み終えた時） */
+  refresh(): void {
+    if (document.activeElement === this.input) this.update();
+  }
+
   private update(): void {
-    this.results = searchStations(this.input.value, this.here());
+    const list = this.options.stations ? this.options.stations() : (stations as unknown as readonly S[]);
+    this.results = list ? searchStations(this.input.value, this.here(), list) : [];
     this.active = this.results.length > 0 ? 0 : -1;
     this.render();
   }
@@ -99,10 +123,15 @@ export class StationSearch {
       name.className = 'search-name';
       name.textContent = `${s.name}駅`;
       li.appendChild(name);
-      if (here) {
+      const note = this.options.note
+        ? this.options.note(s)
+        : here
+          ? `${(distanceMeters(here.lat, here.lon, s.lat, s.lon) / 1000).toFixed(1)}km`
+          : '';
+      if (note) {
         const d = document.createElement('span');
         d.className = 'search-distance';
-        d.textContent = `${(distanceMeters(here.lat, here.lon, s.lat, s.lon) / 1000).toFixed(1)}km`;
+        d.textContent = note;
         li.appendChild(d);
       }
       this.list.appendChild(li);
@@ -122,14 +151,14 @@ function normalize(text: string): string {
 }
 
 /** 完全一致 → 前方一致 → 部分一致の順、同じ順位なら近い順に SEARCH.maxResults 件 */
-export function searchStations(
+export function searchStations<S extends Station = Station>(
   query: string,
   here: { lat: number; lon: number } | null,
-  list: readonly Station[] = stations,
-): Station[] {
+  list: readonly S[] = stations as unknown as readonly S[],
+): S[] {
   const q = normalize(query);
   if (q === '') return [];
-  const scored: Array<{ s: Station; rank: number; d: number }> = [];
+  const scored: Array<{ s: S; rank: number; d: number }> = [];
   for (const s of list) {
     const name = normalize(s.name);
     const rank = name === q ? 0 : name.startsWith(q) ? 1 : name.includes(q) ? 2 : -1;

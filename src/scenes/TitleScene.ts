@@ -2,10 +2,14 @@ import { KEYS } from '../core/config';
 import { mountScreen, type GameContext } from '../core/context';
 import { REGION, REGIONS, type Region, switchRegion } from '../core/region';
 import type { GameScene } from '../core/SceneManager';
+import { setStartAt } from '../core/startAt';
+import { loadAllStations, type RegionStation } from '../data/allStations';
 import japan from '../data/japanDots.json';
+import { StationSearch } from '../ui/stationSearch';
 
 export class TitleScene implements GameScene {
   private el?: HTMLDivElement;
+  private search?: StationSearch<RegionStation>;
 
   constructor(private readonly ctx: GameContext) {}
 
@@ -35,6 +39,38 @@ export class TitleScene implements GameScene {
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-region]')) {
       b.addEventListener('click', () => this.start(b.dataset.region as Region['id']));
     }
+
+    // 全部の地域の駅から探して、その駅の上空から飛び始める。駅の一覧は入力欄を使い始めた時に読む
+    let stations: RegionStation[] | null = null;
+    this.search = new StationSearch<RegionStation>(
+      // 飛行中の駅検索と同じ右上
+      this.el,
+      (s) => this.startAt(s),
+      () => null,
+      {
+        className: 'search title-search',
+        placeholder: '駅名で探して、その駅から始める（例：博多・栄・梅田）',
+        stations: () => stations,
+        onFirstFocus: () => {
+          void loadAllStations().then((list) => {
+            stations = list;
+            this.search?.refresh();
+          });
+        },
+        note: (s) => REGIONS[s.region].name,
+      },
+    );
+  }
+
+  /** 選んだ駅の上空から始める。別の地域の駅なら、その地域で読み込み直す */
+  private startAt(s: RegionStation): void {
+    const at = { lat: s.lat, lon: s.lon };
+    if (s.region === REGION.id) {
+      setStartAt(at);
+      this.ctx.go.loading();
+    } else {
+      switchRegion(s.region, true, at);
+    }
   }
 
   /** 今の地域ならそのまま読込へ、違う地域ならその地域で読み込み直してから読込へ */
@@ -44,6 +80,7 @@ export class TitleScene implements GameScene {
   }
 
   exit(): void {
+    this.search?.dispose();
     this.el?.remove();
   }
 
