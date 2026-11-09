@@ -366,17 +366,26 @@ export const ATMOSPHERE = {
 export const EXPRESSWAY_SIGNS = {
   /** この距離 (m) 以内の看板を作る（高速の近くを飛ぶ時に見えればよい） */
   radius: 900,
-  /** 路面から板の下までの高さ (m) */
-  clearance: 5.2,
+  /** 板の下の端の、真下の一番高い路面からの高さ (m)（実物は 5m 前後。少なくとも 4m） */
+  clearance: 5.0,
   /** 板の高さ (m) */
-  boardHeight: 3.4,
-  /** 1つの方面の区画の幅 (m)（路面の幅を方面の数で分ける。この範囲に収める） */
-  minPanelWidth: 4.6,
+  boardHeight: 3.0,
+  /** 1つの方面の板の幅 (m)（路面の幅を方面の数で分ける。この範囲に収める） */
+  minPanelWidth: 5.0,
   maxPanelWidth: 7.5,
-  /** 柱を路面の縁から外へ出す (m) */
-  postMargin: 0.8,
+  /** 隣の板との間 (m) */
+  boardGap: 0.4,
+  /** 門型の柱の太さ・梁の高さ (m) */
+  postSize: 0.6,
+  beamHeight: 0.75,
+  /** 柱を路面の端から外へ出す (m)（壁高欄の外） */
+  postMargin: 0.9,
   /** 路面を探す範囲 (m)：見込みの高さからこれ以上離れた面（上下に重なる別の高速）は取らない */
   searchRange: 9,
+  /** 路面の幅を測る：横へこの間隔 (m) で、この距離まで。隣の点との高さの差がこれ以下なら同じ路面が続く */
+  scanStep: 0.5,
+  scanMax: 30,
+  scanRise: 0.35,
   /** 板の明るさ（反射材のように少し光らせる） */
   glow: 0.35,
 };

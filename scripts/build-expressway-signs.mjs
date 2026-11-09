@@ -13,16 +13,28 @@
 // - 看板の高さは描く側で、路面に下ろして決める（ここでは路面の地面からの高さを目安として入れておく）
 //
 // 出力の形式: { "s": [[緯度, 経度（1e-6度）, 進む向き（北から時計回り、0.1度）, 路面の地面からの高さ（0.1m）,
-//   路面の半幅（0.1m）, [[向き（-1 左・0 まっすぐ・1 右）, 路線番号, 方面1, 方面2, 出口(0/1)], ...]], ...] }
+//   路面の半幅（0.1m）, [[向き（-1 左・0 まっすぐ・1 右）, 出口(0/1), 路線番号, 路線名, 路線名の英語,
+//   [[地名, 地名の英語], ...（2つまで）]], ...]], ...] }
+//
+// 看板を立てる路線は段階的に増やす（ENABLED。上流の道の名前で選ぶ）
 // データ: © OpenStreetMap contributors (ODbL)
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { regionPath, SETTINGS } from './lib/region.mjs';
+import { REGION_ID, regionPath, SETTINGS } from './lib/region.mjs';
 
 const CACHE_DIR = new URL('../data/cache/expressways/', import.meta.url);
 const RAW = regionPath('data/osm/expressways.json');
 const TILE_DIR = regionPath('public/expressways/15/');
 const OUT = regionPath('public/expressway-signs.json');
 const STATIONS = regionPath('src/data/stations.json');
+const STATION_EN = regionPath('data/osm/station-en.json');
+
+/** 看板を立てる路線（上流の道の名前）。首都高から始めて、外環・湾岸・東名・ほかの地域と順に増やす */
+const ENABLED = {
+  tokyo: [/^首都高速/],
+  osaka: [],
+  fukuoka: [],
+  nagoya: [],
+}[REGION_ID];
 
 /** 看板を立てる、分岐の手前の距離 (m) */
 const BEFORE = 230;
@@ -110,11 +122,33 @@ function shortName(name) {
   return base.replace(/^首都高速(道路)?/, '').replace(/^阪神高速(道路)?/, '').replace(/^名古屋高速(道路)?/, '').replace(/^福岡高速(道路)?/, '').replace(/^(.+自動車道).*$/, '$1').replace(/\s.*$/, '');
 }
 const roadName = (t) => t['name:ja'] ?? t.name ?? '';
+/** 路線の英語名を看板向けに短くする（「Hanshin Expressway Route 4 Bayshore Line」→「Bayshore Line」） */
+function shortEnglish(name) {
+  if (!name) return '';
+  return name
+    .split(';')[0]
+    .replace(/^(Shuto|Metropolitan|Hanshin|Fukuoka|Kitakyushu|Nagoya) Expressway\s*/i, '')
+    .replace(/^Route\s*\d+\s*/i, '')
+    .trim();
+}
 const firstRef = (t) => (t.ref ?? '').split(';')[0].trim();
 
 // ---- 駅（方面の推定） ----
 const stations = JSON.parse(await readFile(STATIONS, 'utf8'));
 const hubs = stations.filter((s) => (SETTINGS.hubs ?? []).includes(s.name));
+/** 駅名 → 英語（長音の記号は外す：Tōkyō → Tokyo） */
+const stationEn = JSON.parse(await readFile(STATION_EN, 'utf8').catch(() => '{}'));
+const plain = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const placeEn = (name) => plain(stationEn[name] ?? stationEn[name.replace(/ケ/g, 'ヶ')] ?? stationEn[name.replace(/ヶ/g, 'ケ')] ?? '');
+/** 路線名（短くしたもの）→ 英語（OSM の name:en を短くしたもの） */
+const roadEn = new Map();
+for (const w of ways) {
+  const ja = shortName(roadName(w.tags));
+  const en = shortEnglish(w.tags['name:en']);
+  if (ja && en && !roadEn.has(ja)) roadEn.set(ja, en);
+}
+/** 方面の言葉が路線名か（「湾岸線」「中央道」「第三京浜」など） */
+const isRoad = (name) => /(線|道|道路|通り|街道|バイパス|高速|京浜|東名|名神|圏央|外環)$/.test(name) || roadEn.has(name);
 function nearest(list, p, max) {
   let best = null;
   let bestD = max;
@@ -189,17 +223,38 @@ function walkBack(w, i, distance) {
   return null;
 }
 
-/** 分かれた先の道の方面 */
+/** 道の先 distance m の所に近い大きな駅（無ければ駅） */
+function hubAhead(way, i, distance) {
+  const ahead = walkForward(way, i, distance);
+  return nearest(hubs, ahead.p, 6000) ?? nearest(stations, ahead.p, 3000);
+}
+
+/**
+ * 分かれた先の道の方面：{ exit, ref, route, routeEn, places: [[地名, 英語], ...] }
+ */
 function destinationOf(branch) {
+  const ahead = walkForward(branch.w, branch.i, LOOKAHEAD);
+  // 連絡路のまま一般道へ出て終わる＝出口
+  const exit = ahead.ended && ahead.path.every(({ way: w }) => w.link);
+
   // 1. OSM の方面（この道か、すぐ先の道に付いていれば）
   let way = branch.w;
   for (let k = 0, walked = 0; k < 4 && way && walked < 1500; k++) {
     const t = way.tags;
     const dest = t['destination:ja'] ?? t.destination;
     if (dest) {
-      const names = dest.split(';').map((s) => s.trim()).filter(Boolean).slice(0, 2);
-      const ref = (t['destination:ref'] ?? '').split(';')[0].trim();
-      return { ref, names, exit: false };
+      const names = dest.split(/[;|]/).map((x) => x.trim()).filter(Boolean);
+      const ens = (t['destination:en'] ?? '').split(/[;|]/).map((x) => x.trim());
+      const enOf = (n, i) => (ens.length === names.length ? plain(ens[i]) : '') || placeEn(n) || roadEn.get(n) || '';
+      // 路線名（1つ目）は路線の札に、地名は地名の段に。出口の看板には一般道の路線名を出さない
+      const roadIndex = exit ? -1 : names.findIndex(isRoad);
+      const route = roadIndex >= 0 ? names[roadIndex] : '';
+      const places = names
+        .map((n, i) => [n, enOf(n, i)])
+        .filter(([n]) => !isRoad(n))
+        .slice(0, 2);
+      const ref = exit ? '' : (t['destination:ref'] ?? '').split(';')[0].trim();
+      return { exit, ref, route, routeEn: route ? enOf(route, roadIndex) : '', places, osm: true };
     }
     walked += way.length;
     const next = outgoing(way.pts[way.pts.length - 1], way);
@@ -207,26 +262,41 @@ function destinationOf(branch) {
   }
 
   // 2. つながりをたどって推定
-  const start = branch.w;
-  const startName = roadName(start.tags);
-  const ahead = walkForward(start, branch.i, LOOKAHEAD);
-  // 別の名前の高速（本線）に入ったら、その路線
-  for (const { way: w } of ahead.path) {
+  if (exit) {
+    const st = nearest(stations, ahead.p, 4000);
+    return { exit, ref: '', route: '', routeEn: '', places: st ? [[st.name, placeEn(st.name)]] : [], osm: false };
+  }
+  const startName = roadName(branch.w.tags);
+  // 別の名前の高速（本線）に入ったら、その路線と、その路線の先の大きな駅
+  for (const step of ahead.path) {
+    const w = step.way;
     if (w.link) continue;
     const name = roadName(w.tags);
     if (name && name !== startName) {
-      return { ref: firstRef(w.tags), names: [shortName(name)], exit: false };
+      const route = shortName(name);
+      const st = hubAhead(w, w.pts.indexOf(step.p), 6000);
+      return {
+        exit,
+        ref: firstRef(w.tags),
+        route,
+        routeEn: roadEn.get(route) ?? shortEnglish(w.tags['name:en']),
+        places: st ? [[st.name, placeEn(st.name)]] : [],
+        osm: false,
+      };
     }
   }
-  // 連絡路のまま一般道へ出て終わる＝出口
-  if (ahead.ended && ahead.path.every(({ way: w }) => w.link)) {
-    const s = nearest(stations, ahead.p, 4000);
-    return { ref: '', names: s ? [s.name] : [], exit: true };
-  }
-  // 同じ道が続く：先の方の大きな駅
-  const s = nearest(hubs, ahead.p, 6000) ?? nearest(stations, ahead.p, 3000);
-  const w = ahead.path.find(({ way: x }) => !x.link)?.way ?? start;
-  return { ref: firstRef(w.tags), names: [s?.name, shortName(roadName(w.tags))].filter(Boolean).slice(0, 2), exit: false };
+  // 同じ道が続く：その路線と、先の方の大きな駅
+  const main = ahead.path.find(({ way: x }) => !x.link)?.way ?? branch.w;
+  const route = shortName(roadName(main.tags));
+  const st = nearest(hubs, ahead.p, 6000) ?? nearest(stations, ahead.p, 3000);
+  return {
+    exit,
+    ref: firstRef(main.tags),
+    route,
+    routeEn: roadEn.get(route) ?? shortEnglish(main.tags['name:en']),
+    places: st ? [[st.name, placeEn(st.name)]] : [],
+    osm: false,
+  };
 }
 
 // ---- 路面の高さ（build-expressways.mjs の出力から、近い点の地面からの高さ） ----
@@ -284,6 +354,7 @@ for (const w of ways) {
   if (inc.length === 0) continue;
   done.add(k);
   const up = inc.find((n) => !n.w.link) ?? inc[0];
+  if (!ENABLED.some((re) => re.test(roadName(up.w.tags)))) continue;
   const back = walkBack(up.w, up.i, BEFORE);
   if (!back || back.walked < MIN_BEFORE) continue;
   // 分岐の点での進む向きと、それぞれの道の向き（分岐から 80m 先へ）
@@ -305,15 +376,14 @@ for (const w of ways) {
     return 0;
   };
   const panels = branches.map((b, index) => {
-    const dest = destinationOf(b);
-    if ((b.w.tags['destination:ja'] ?? b.w.tags.destination) !== undefined) fromOsm++;
+    const d = destinationOf(b);
+    if (d.osm) fromOsm++;
     else inferred++;
-    const side = sideOf(b, index);
-    return [side, dest.ref, dest.names[0] ?? '', dest.names[1] ?? '', dest.exit ? 1 : 0];
+    return [sideOf(b, index), d.exit ? 1 : 0, d.ref, d.route, d.routeEn, d.places];
   });
   // 中身の無い看板・同じ方面だけの看板は立てない
-  if (panels.every((p) => !p[2])) continue;
-  if (new Set(panels.map((p) => `${p[1]}|${p[2]}`)).size < panels.length) continue;
+  if (panels.some((p) => !p[3] && p[5].length === 0)) continue;
+  if (new Set(panels.map((p) => `${p[3]}|${p[5].map((x) => x[0]).join()}`)).size < panels.length) continue;
   const h = liftAt(back.p);
   if (h === null) continue;
   const lanes = Number(back.way.tags.lanes) || (back.way.link ? 1 : 2);
