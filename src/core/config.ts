@@ -817,6 +817,8 @@ export const AIRPORTS = {
 
 /** 高速道路（首都高・湾岸線・外環道など。scripts/fetch-expressways.mjs → build-expressways.mjs で作る） */
 export const EXPRESSWAYS = {
+  /** 壁高欄・手すりの真ん中が、別の道の路面の縁からこれより内側（m）に来る所は描かない（分岐・合流の付け根） */
+  railOnDeckMargin: 0.6,
   tilePath: `${REGION.dataDir}expressways/15/{x}/{y}.json`,
   /** 車線幅・路肩の幅 (m) */
   laneWidth: 3.5,

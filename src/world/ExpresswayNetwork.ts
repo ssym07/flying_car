@@ -43,6 +43,16 @@ export class ExpresswayNetwork implements ChunkListener {
   private gradeWidths: number[] = [];
   /** 今作っている道の、地面より低い（掘割の印の無い掘割の）区間 */
   private lowLines: THREE.Vector3[][] = [];
+  /**
+   * タイルの中の道の路面の範囲（中心線の点・半幅）。壁高欄・手すりは全部の道の路面ができてから描き、
+   * 別の道の路面の上に来る所（分岐・合流の付け根で隣の道の判定が外れた所）は描かない
+   */
+  private footprints: Array<{ id: number; pts: THREE.Vector3[]; half: number }> = [];
+  /** 後で描く壁高欄・手すり（footprints がそろってから） */
+  private deferred: Array<() => void> = [];
+  /** 路面の範囲の格子（20m 四方。線分の番号） */
+  private footprintGrid = new Map<string, Array<{ f: number; i: number }>>();
+  private wayId = 0;
   private readonly concrete = new THREE.MeshStandardMaterial({
     color: EXPRESSWAYS.concreteColor,
     roughness: 0.8,
@@ -108,6 +118,10 @@ export class ExpresswayNetwork implements ChunkListener {
     this.smoothCache = new Map();
     this.gradeLines = [];
     this.gradeWidths = [];
+    this.footprints = [];
+    this.deferred = [];
+    this.footprintGrid = new Map();
+    this.wayId = 0;
     const decks = new Map<number, MeshBuilder>();
     const parts = {
       wall: new MeshBuilder(),
@@ -122,6 +136,7 @@ export class ExpresswayNetwork implements ChunkListener {
     const noPier = data.x.map(([lat, lon, r]) => [lat / 1e6, lon / 1e6, r] as const);
 
     for (const [link, lanes, cut, name, coords, offsets, left, right] of data.w) {
+      this.wayId++;
       if (!decks.has(lanes)) decks.set(lanes, new MeshBuilder());
       const line = this.buildWay(
         { link: link === 1, lanes, cut: cut === 1, name },
@@ -140,6 +155,10 @@ export class ExpresswayNetwork implements ChunkListener {
       cuts.push(...this.lowLines);
       this.lowLines = [];
     }
+    // 壁高欄・手すり：全部の道の路面の範囲がそろってから（別の道の路面の上には描かない）
+    this.indexFootprints();
+    for (const draw of this.deferred) draw();
+    this.deferred = [];
     if (cuts.length > 0) this.terrain.addCarve(`expressway:${key}`, cuts, EXPRESSWAYS.cutWidth, EXPRESSWAYS.cutSlope);
     // 地面の高さの区間：路面の幅の地形を路面の高さにそろえ（高い所は削り、低い所は盛る）、その外はなだらかに戻す
     if (this.gradeLines.length > 0) {
@@ -184,6 +203,55 @@ export class ExpresswayNetwork implements ChunkListener {
       group.add(name);
     }
     return group;
+  }
+
+  /** 路面の範囲の線分を 20m の格子に入れる */
+  private indexFootprints(): void {
+    const cell = 20;
+    this.footprints.forEach((fp, f) => {
+      for (let i = 0; i < fp.pts.length - 1; i++) {
+        const a = fp.pts[i];
+        const b = fp.pts[i + 1];
+        const pad = fp.half;
+        const x0 = Math.floor((Math.min(a.x, b.x) - pad) / cell);
+        const x1 = Math.floor((Math.max(a.x, b.x) + pad) / cell);
+        const z0 = Math.floor((Math.min(a.z, b.z) - pad) / cell);
+        const z1 = Math.floor((Math.max(a.z, b.z) + pad) / cell);
+        for (let x = x0; x <= x1; x++) {
+          for (let z = z0; z <= z1; z++) {
+            const k = `${x},${z}`;
+            let list = this.footprintGrid.get(k);
+            if (!list) this.footprintGrid.set(k, (list = []));
+            list.push({ f, i });
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * 点 p が、別の道（id 以外）の路面の内側（縁から EXPRESSWAYS.railOnDeckMargin m より内）で、
+   * 高さもほぼ同じ（±1.5m）か。壁高欄・手すりをそこに描かないため
+   */
+  private onOtherDeck(p: THREE.Vector3, id: number): boolean {
+    const list = this.footprintGrid.get(`${Math.floor(p.x / 20)},${Math.floor(p.z / 20)}`);
+    if (!list) return false;
+    for (const { f, i } of list) {
+      const fp = this.footprints[f];
+      if (fp.id === id) continue;
+      const a = fp.pts[i];
+      const b = fp.pts[i + 1];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2));
+      const qx = a.x + dx * t;
+      const qz = a.z + dz * t;
+      const y = a.y + (b.y - a.y) * t;
+      if (Math.abs(p.y - y) > 1.5) continue;
+      if (Math.hypot(p.x - qx, p.z - qz) < fp.half - EXPRESSWAYS.railOnDeckMargin) return true;
+    }
+    return false;
   }
 
   /** 1本の道（一方通行）。中心線の点（ローカル座標）を返す */
@@ -298,6 +366,8 @@ export class ExpresswayNetwork implements ChunkListener {
     const half = (way.lanes * E.laneWidth) / 2 + E.shoulder;
     const at = (i: number, across: number, dy: number) =>
       pts[i].clone().addScaledVector(sides[i], across).setY(pts[i].y + dy);
+    const id = this.wayId;
+    this.footprints.push({ id, pts, half });
 
     /** pts に沿った帯（a(i)・b(i) の2本の線の間）。filter が false の所は切る */
     const strip = (
@@ -383,12 +453,23 @@ export class ExpresswayNetwork implements ChunkListener {
         0,
         TEXTURE_LENGTH_M,
       );
-      strip(parts.wall, (i) => at(i, wi(i), 0), (i) => at(i, wi(i), h), walled);
-      strip(parts.wall, (i) => at(i, wi(i), h), (i) => at(i, wo(i), h), walled);
-      strip(parts.wall, (i) => at(i, wo(i), h), (i) => at(i, wo(i), outer(i) && elevated[i] ? -E.girderDepth : -0.3), walled);
       const r = (i: number) => dir * (wallInAt(i, dir) + E.barrierThickness / 2);
-      strip(parts.railing, (i) => at(i, r(i) - 0.06, h + E.railHeight), (i) => at(i, r(i) + 0.06, h + E.railHeight), outer);
-      strip(parts.railing, (i) => at(i, r(i), h + E.railHeight), (i) => at(i, r(i), h + E.railHeight - 0.12), outer);
+      // 壁高欄・手すりは、全部の道の路面がそろってから描く。壁の真ん中が別の道の路面の上に来る所は描かない
+      this.deferred.push(() => {
+        const free = pts.map((_, i) => !this.onOtherDeck(at(i, r(i), 0), id));
+        const wallHere = (i: number) => walled(i) && free[i];
+        const railHere = (i: number) => outer(i) && free[i];
+        strip(parts.wall, (i) => at(i, wi(i), 0), (i) => at(i, wi(i), h), wallHere);
+        strip(parts.wall, (i) => at(i, wi(i), h), (i) => at(i, wo(i), h), wallHere);
+        strip(
+          parts.wall,
+          (i) => at(i, wo(i), h),
+          (i) => at(i, wo(i), outer(i) && elevated[i] ? -E.girderDepth : -0.3),
+          wallHere,
+        );
+        strip(parts.railing, (i) => at(i, r(i) - 0.06, h + E.railHeight), (i) => at(i, r(i) + 0.06, h + E.railHeight), railHere);
+        strip(parts.railing, (i) => at(i, r(i), h + E.railHeight), (i) => at(i, r(i), h + E.railHeight - 0.12), railHere);
+      });
     }
     const wallOut = half + E.barrierThickness;
     // 桁の裏側（高架の所だけ）。つながる側・分離帯の側は、隣の桁とすき間なく
