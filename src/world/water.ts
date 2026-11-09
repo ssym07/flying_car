@@ -152,7 +152,26 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         uniform vec3 bankColor;
         uniform vec3 beachShallowColor;
         uniform vec3 wetSandColor;
-        varying vec3 vWaterWorld;`,
+        varying vec3 vWaterWorld;
+        // さざ波のノイズ：値と傾き（d/dx, d/dy）を一緒に返す。5次の補間で、格子の境目でも傾きがなめらかにつながる
+        // （地面の模様の luNoise は境目で傾きが折れ、水面に網目が浮き出る）
+        float waterHash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        vec3 waterNoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+          vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+          float a = waterHash(i);
+          float b = waterHash(i + vec2(1.0, 0.0));
+          float c = waterHash(i + vec2(0.0, 1.0));
+          float d = waterHash(i + vec2(1.0, 1.0));
+          float k1 = b - a;
+          float k2 = c - a;
+          float k4 = a - b - c + d;
+          return vec3(a + k1 * u.x + k2 * u.y + k4 * u.x * u.y, du * vec2(k1 + k4 * u.y, k2 + k4 * u.x));
+        }`,
       )
       .replace(
         '#include <map_fragment>',
@@ -162,6 +181,9 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         float waterDepth = waterSample.g;
         // 岸辺は明るい青緑、沖は深い青
         vec3 waterColor = mix(shallowColor, deepColor, smoothstep(0.0, 1.0, waterDepth));
+        // 本物の水は地の色がとても暗く、見える色のほとんどが空の映り込み（浅い角度ほど強い）。地の色を暗くし、
+        // 映り込みを強める（下の lights_fragment_maps）。泡・波打ち際の白は暗くしない
+        waterColor *= ${WATER.albedo.toFixed(3)};
         // 波打ち際：水側の縁に白い泡の線（ゆっくり揺らぐ）
         float foam = smoothstep(0.5, 0.6, waterSample.r) * (1.0 - smoothstep(0.6, 0.82, waterSample.r));
         foam *= 0.65 + 0.35 * sin(waterTime * 1.6 + (vWaterWorld.x + vWaterWorld.z) * 0.35);
@@ -197,6 +219,14 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         diffuseColor.rgb = mix(land, waterColor, isWater);`,
       )
       .replace(
+        '#include <lights_fragment_maps>',
+        `#include <lights_fragment_maps>
+        #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+        // 水面は空の映り込みを強める（地の色を暗くした分、見える色の大部分を空にする）
+        radiance *= mix(1.0, ${WATER.reflection.toFixed(2)}, isWater);
+        #endif`,
+      )
+      .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor, ${WATER.roughness.toFixed(3)}, isWater);`,
@@ -205,14 +235,25 @@ export function addWater(material: THREE.MeshStandardMaterial, waterMap: THREE.T
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
         if (isWater > 0.0) {
-          // さざ波：向きと速さの違う波を重ねる。沖ほど大きく
+          // さざ波：向き・大きさ・速さの違う不規則な波（ノイズ）を重ね、その傾きで法線を揺らす。
+          // 規則的な正弦波は縞模様になり、遠くでちらつくので使わない。遠いほど弱めて鏡のようにする（空がそのまま映る）
           vec2 p = vWaterWorld.xz;
           float t = waterTime;
-          float amp = ${WATER.waveStrength.toFixed(3)} * mix(0.6, 1.6, waterDepth);
-          vec2 g = vec2(
-            sin(p.x * 0.31 + p.y * 0.12 + t * 1.3) + 0.5 * sin(p.x * 0.83 - p.y * 0.57 - t * 1.9) + 0.25 * sin(p.x * 2.1 + p.y * 1.7 + t * 2.7),
-            cos(p.y * 0.37 - p.x * 0.09 - t * 1.1) + 0.5 * cos(p.y * 0.97 + p.x * 0.44 + t * 1.6) + 0.25 * cos(p.y * 2.3 - p.x * 1.4 - t * 3.1)
-          );
+          float dist = length(vWaterWorld - cameraPosition);
+          float amp = ${WATER.waveStrength.toFixed(3)} * mix(0.7, 1.3, waterDepth) * (1.0 - ${WATER.waveFarFlatten.toFixed(2)} * smoothstep(${WATER.waveFadeNear.toFixed(1)}, ${WATER.waveFadeFar.toFixed(1)}, dist));
+          vec2 g = vec2(0.0);
+          float scale = ${WATER.waveScale.toFixed(2)};
+          float w = 1.0;
+          vec2 drift = vec2(0.6, 0.35);
+          for (int i = 0; i < 4; i++) {
+            vec2 q = p / scale + drift * t * (0.35 + 0.15 * float(i)) + float(i) * 17.3;
+            g += w * waterNoise(q).yz;
+            scale *= 0.47;
+            w *= 0.62;
+            drift = vec2(-drift.y, drift.x) * 1.3;
+            // 細かい波ほど、遠くでは画素より細かくなってちらつくので消す
+            if (dist > ${WATER.waveFadeNear.toFixed(1)} * (3.0 - float(i))) break;
+          }
           vec3 waveNormal = normalize((viewMatrix * vec4(normalize(vec3(g.x * amp, 1.0, g.y * amp)), 0.0)).xyz);
           normal = normalize(mix(normal, waveNormal, isWater));
         }`,

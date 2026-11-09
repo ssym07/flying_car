@@ -456,9 +456,18 @@ export const WATER = {
   /** 沖・深い所の色（海） */
   deepColor: 0x1f5fa8,
   /** 水面のなめらかさ（小さいほど空がくっきり映る） */
-  roughness: 0.12,
-  /** さざ波の強さ */
-  waveStrength: 0.09,
+  roughness: 0.06,
+  /** 水の地の色の明るさ（shallowColor・deepColor に掛ける）。本物の水は暗く、見える色の大部分は空の映り込み */
+  albedo: 0.6,
+  /** 空の映り込みの強さ（浅い角度ほど強く映るのは、材質の計算のまま） */
+  reflection: 6,
+  /** さざ波の強さ・一番大きい波の大きさ (m) */
+  waveStrength: 0.35,
+  waveScale: 9,
+  /** さざ波を waveFadeNear〜waveFadeFar (m) で waveFarFlatten の割合だけ弱める（遠くの水面は鏡のように空を映す） */
+  waveFadeNear: 120,
+  waveFadeFar: 1200,
+  waveFarFlatten: 0.85,
 };
 
 /** 橋（道路データの橋の区間を、地形に沿わせず橋桁として作る） */
