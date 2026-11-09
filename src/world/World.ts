@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA, TERRAIN, WORLD } from '../core/config';
-import { REGION } from '../core/region';
+import { REGION, dataUrl } from '../core/region';
 import { WARDS } from '../data/wards';
 import { Airports } from './Airports';
 import { Atmosphere } from './Atmosphere';
@@ -86,7 +86,7 @@ export class World {
     this.buildings = wards.map(
       (ward) =>
         new Tiles(
-          localWards.has(ward.code) ? `${import.meta.env.BASE_URL}plateau/${ward.code}/tileset.json` : ward.url,
+          localWards.has(ward.code) ? dataUrl(`plateau/${ward.code}/tileset.json`) : ward.url,
           ward.kind === 'lod2-texture' ? WORLD.buildings.errorTarget : WORLD.buildings.plainErrorTarget,
           // テクスチャの無い区には、手続き的に描いた外壁テンプレートを貼る
           ward.kind === 'lod2-texture' ? 'original' : 'facade',

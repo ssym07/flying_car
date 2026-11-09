@@ -4,6 +4,7 @@ import { PARKS, RAILWAYS, TERRAIN } from '../core/config';
 import { addLanduse, buildGraves, fetchLanduse, isBeachAt } from './landuse';
 import { addParks, buildTrees, fetchParks } from './parks';
 import { addWater, fetchWaterMask, flattenWater, waterTime } from './water';
+import { DATA_BASE } from '../core/region';
 
 /** 標高タイルの「データなし」（水面など） */
 const NO_DATA = Number.NaN;
@@ -917,7 +918,7 @@ function fetchPads(x: number, y: number): Promise<Float32Array | null> {
 
 async function loadPads(x: number, y: number): Promise<Float32Array | null> {
   try {
-    const url = `${import.meta.env.BASE_URL}${TERRAIN.pads.path.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
+    const url = `${DATA_BASE}${TERRAIN.pads.path.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     // 開発サーバーは無いファイルの代わりに HTML を返すので、PNG かどうかで見分ける
     if (!res.ok || !res.headers.get('content-type')?.includes('png')) return null;
@@ -948,7 +949,7 @@ async function railDistance(x: number, y: number, z: number, pxMeters: number): 
   const tiles = await Promise.all(
     grid(3).map(async ([i, j]) => {
       try {
-        const url = `${import.meta.env.BASE_URL}${RAILWAYS.tilePath.replace('{x}', `${x + i - 1}`).replace('{y}', `${y + j - 1}`)}`;
+        const url = `${DATA_BASE}${RAILWAYS.tilePath.replace('{x}', `${x + i - 1}`).replace('{y}', `${y + j - 1}`)}`;
         const res = await fetch(url);
         if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
         return (await res.json()) as { t: Array<[number, number[], number[]]> };

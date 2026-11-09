@@ -4,6 +4,7 @@ import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
 import { cutFloor, fillGaps, smoothGround, stationGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
 import { type Approach, type PortalRecord, TunnelPortalBuilder } from './tunnelPortals';
+import { DATA_BASE } from '../core/region';
 
 /**
  * 線路データ1タイル（scripts/build-rail-heights.mjs の出力）。
@@ -64,7 +65,7 @@ export class RailNetwork implements ChunkListener {
     const key = `${x}/${y}`;
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
-    const url = `${import.meta.env.BASE_URL}${RAILWAYS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
+    const url = `${DATA_BASE}${RAILWAYS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
     fetch(url)
       // 線路の無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
       .then((res) =>

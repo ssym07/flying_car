@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PARKS } from '../core/config';
+import { DATA_BASE } from '../core/region';
 
 /**
  * 公園。OpenStreetMap の公園・林・グラウンドの形と園路（public/parks、scripts/fetch-parks.mjs で作る）から、
@@ -45,7 +46,7 @@ export async function fetchParks(
   let data: ParkTile;
   try {
     const res = await fetch(
-      `${import.meta.env.BASE_URL}${PARKS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`,
+      `${DATA_BASE}${PARKS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`,
     );
     // 公園の無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;

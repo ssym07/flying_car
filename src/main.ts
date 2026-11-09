@@ -3,7 +3,7 @@ import './ui/overlay.css';
 import type { GameContext } from './core/context';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
-import { takeAutoStart } from './core/region';
+import { takeAutoStart, dataUrl } from './core/region';
 import { SceneManager } from './core/SceneManager';
 import { FlightScene } from './scenes/FlightScene';
 import { LoadingScene } from './scenes/LoadingScene';
@@ -26,7 +26,7 @@ overlay.appendChild(attribution);
 /** 手元に加工済みの建物データがある区（public/plateau/wards.json。無ければ空） */
 async function loadLocalWards(): Promise<Set<string>> {
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}plateau/wards.json`);
+    const res = await fetch(dataUrl('plateau/wards.json'));
     // ファイルが無いと開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return new Set();
     return new Set((await res.json()) as string[]);

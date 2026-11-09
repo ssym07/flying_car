@@ -3,6 +3,7 @@ import { RAILWAYS, STATION_ROOFS } from '../core/config';
 import { stationGround } from './groundProfile';
 import { createSidewalkMaterial } from './roadTemplates';
 import type { ChunkListener, Terrain } from './Terrain';
+import { DATA_BASE } from '../core/region';
 
 /**
  * 屋根データ1件：[種類（0=駅舎, 1=上屋, 2=ホーム）, 地面からの高さ(m), 駅の番号, 座標（1e-6度、先頭以外は差分）,
@@ -56,7 +57,7 @@ export class StationRoofs implements ChunkListener {
     const key = `${x}/${y}`;
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
-    const url = `${import.meta.env.BASE_URL}${STATION_ROOFS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
+    const url = `${DATA_BASE}${STATION_ROOFS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
     fetch(url)
       // 屋根の無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
       .then((res) =>

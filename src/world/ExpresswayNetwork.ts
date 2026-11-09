@@ -3,6 +3,7 @@ import { EXPRESSWAYS, WATER } from '../core/config';
 import { cutFloor, fillGaps, smoothGround } from './groundProfile';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
 import type { ChunkListener, Terrain } from './Terrain';
+import { DATA_BASE } from '../core/region';
 
 /**
  * 高速道路データ1タイル（scripts/build-expressways.mjs の出力）。
@@ -66,7 +67,7 @@ export class ExpresswayNetwork implements ChunkListener {
     const key = `${x}/${y}`;
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
-    const url = `${import.meta.env.BASE_URL}${EXPRESSWAYS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
+    const url = `${DATA_BASE}${EXPRESSWAYS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
     fetch(url)
       // 高速道路の無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
       .then((res) =>

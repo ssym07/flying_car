@@ -75,9 +75,21 @@ function pick(): Region {
 
 export const REGION: Region = pick();
 
+/**
+ * データ（タイル・建物・路線図など、public の下のファイル）を置いた所。
+ * ビルドの時に VITE_DATA_URL（例 https://data.example.com/）を渡すと、そこから読む（公開版：データは Cloudflare R2）。
+ * 渡さなければ今までどおりページと同じ所（開発サーバー・手元のビルド）
+ */
+export const DATA_BASE: string = import.meta.env.VITE_DATA_URL || import.meta.env.BASE_URL;
+
+/** データのファイルの URL（path は public からの相対パス。例 'roads/15/1/2.json'） */
+export function dataUrl(path: string): string {
+  return `${DATA_BASE}${path}`;
+}
+
 /** この地域のひとまとまりのファイルの URL */
 export function regionUrl(file: string): string {
-  return `${import.meta.env.BASE_URL}${REGION.dataDir}${file}`;
+  return dataUrl(`${REGION.dataDir}${file}`);
 }
 
 /**

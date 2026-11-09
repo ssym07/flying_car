@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LANDUSE, TERRAIN } from '../core/config';
 import { roadMask } from './roadMask';
+import { DATA_BASE } from '../core/region';
 
 /**
  * 道路・公園・水以外の地面。OpenStreetMap の土地の種類（駐車場・線路の敷地・墓地・寺社・学校・工事現場・工場・草地・畑・広場・砂浜、
@@ -45,7 +46,7 @@ export async function fetchLanduse(x: number, y: number, z: number): Promise<Lan
   let data: LanduseTile;
   try {
     const res = await fetch(
-      `${import.meta.env.BASE_URL}${LANDUSE.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`,
+      `${DATA_BASE}${LANDUSE.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`,
     );
     // データの無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;

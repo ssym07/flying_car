@@ -1,6 +1,7 @@
 import { ROADS } from '../core/config';
 import type { RoadClass } from './roadTemplates';
 import { roadWidths } from './roadSpec';
+import { DATA_BASE } from '../core/region';
 
 /** 道路データ1タイルの道（RoadNetwork.ts の RoadTile と同じ並び。6番目は橋なら 0 以外） */
 type RoadWay = [RoadClass, number, 0 | 1, number[], number[], unknown?];
@@ -18,7 +19,7 @@ export async function roadMask(
 ): Promise<Uint8Array | null> {
   let tile: { w: RoadWay[] };
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
+    const res = await fetch(`${DATA_BASE}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`);
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
     tile = await res.json();
   } catch {

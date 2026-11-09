@@ -12,6 +12,7 @@ import {
 } from './roadTemplates';
 import { fillGaps, smoothGround } from './groundProfile';
 import type { ChunkListener, Terrain } from './Terrain';
+import { DATA_BASE } from '../core/region';
 
 /** 道路データ1タイル（scripts/fetch-road-network.mjs の出力） */
 interface RoadTile {
@@ -107,7 +108,7 @@ export class RoadNetwork implements ChunkListener {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this.buildWhenReady(x + dx, y + dy);
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
-    const url = `${import.meta.env.BASE_URL}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
+    const url = `${DATA_BASE}${ROADS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
     fetch(url)
       // 道路の無いタイルはファイルが無い（開発サーバーは代わりに HTML を返すので、JSON かどうかで見分ける）
       .then((res) =>
