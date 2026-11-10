@@ -236,4 +236,17 @@ export const WARDS: Ward[] = [
   { code: '23224', name: '知多市', kind: 'lod1', url: '' },
   { code: '23216', name: '常滑市', kind: 'lod1', url: '' },
   { code: '23447', name: '東浦町', kind: 'lod1', url: '' },
+  // 北西（2026-11-10）：岐阜市・大垣市は PLATEAU、ほかは国土地理院の建物の形から作る
+  { code: '21201', name: '岐阜市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/1c/43b59a-14ef-415d-9337-fc3f4a2bb875/21201_gifu-shi_city_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '21202', name: '大垣市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/f6/8b712e-29c7-4796-88a6-e7ffbcc43db6/21202_ogaki-shi_city_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '23203', name: '一宮市', kind: 'lod1', url: '' },
+  { code: '23217', name: '江南市', kind: 'lod1', url: '' },
+  { code: '23219', name: '小牧市', kind: 'lod1', url: '' },
+  { code: '23220', name: '稲沢市', kind: 'lod1', url: '' },
+  { code: '23229', name: '岩倉市', kind: 'lod1', url: '' },
+  { code: '23233', name: '清須市', kind: 'lod1', url: '' },
+  { code: '21213', name: '各務原市', kind: 'lod1', url: '' },
+  { code: '21216', name: '瑞穂市', kind: 'lod1', url: '' },
+  { code: '21302', name: '岐南町', kind: 'lod1', url: '' },
+  { code: '21383', name: '安八町', kind: 'lod1', url: '' },
 ];

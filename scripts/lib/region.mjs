@@ -144,7 +144,7 @@ const REGION_SETTINGS = {
     ringLine: /名城線/,
     cutLoops: true,
     keepSides: true,
-    prefectures: ['23'],
+    prefectures: ['23', '21'],
   },
 };
 export const SETTINGS = REGION_SETTINGS[REGION_ID];

@@ -23,6 +23,8 @@ const MARGIN = 0.7;
 const CELL = 125;
 const RIVER = 250;
 const MIN_SEA = 8;
+/** 格子の端（外の海）につながらない水は、これ (km²) 以上のもの（琵琶湖・霞ヶ浦）だけ描く。木曽川などの広い川を湖のように描かない */
+const MIN_LAKE = 50;
 /** 範囲からこれ（度）より離れた水のかたまりは描かない */
 const NEAR = 0.2;
 /** 水にする細い陸の線の幅の半分（升の数）。1 なら幅 250m 弱まで */
@@ -161,7 +163,9 @@ const sea = new Uint8Array(cols * rows);
       const lon = W + ((p % cols) + 0.5) * dLon;
       return AREAS.some(([s, w, n, e]) => lat >= s - NEAR && lat <= n + NEAR && lon >= w - NEAR && lon <= e + NEAR);
     });
-    if (near && members.length >= minCells) for (const p of members) sea[p] = 1;
+    const edge = members.some((p) => p < cols || p >= (rows - 1) * cols || p % cols === 0 || p % cols === cols - 1);
+    const lake = !edge && members.length < (MIN_LAKE * 1e6) / (CELL * CELL);
+    if (near && !lake && members.length >= minCells) for (const p of members) sea[p] = 1;
   }
 }
 // 海から水づたいに HARBOR m までの水（港・運河の入口・広い川の河口）も海にする（開くと消える、埠頭の間の水面など）
