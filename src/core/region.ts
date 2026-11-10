@@ -1,15 +1,15 @@
 /**
- * 遊ぶ地域（ワールド）。URL の ?region=kinki・?region=fukuoka・?region=chubu で選ぶ（無ければ関東）。
- * 地域の名前（id）は 関東 kanto・近畿 kinki・福岡 fukuoka・中部 chubu。ホームに出す名前（name）は 東京・大阪・福岡・愛知 のまま。
- * 前の名前（?region=osaka・nagoya、保存したピンの tokyo・osaka・nagoya）も読める（OLD_IDS）
+ * 遊ぶ地域（ワールド）。URL の ?region=kinki・?region=kyushu・?region=chubu で選ぶ（無ければ関東）。
+ * 地域の名前（id）は 関東 kanto・近畿 kinki・九州 kyushu・中部 chubu。ホームに出す名前（name）は 東京・大阪・福岡・愛知 のまま。
+ * 前の名前（?region=osaka・fukuoka・nagoya、保存したピンの tokyo・osaka・fukuoka・nagoya）も読める（OLD_IDS）
  * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
  *
  * 地域で作るデータ（道路・線路・地面の種類などのタイル、路線図・空路・駅の形）は、地域ごとに dataDir の下に置く
- * （関東は public の直下、近畿は public/kinki、福岡は public/fukuoka、中部は public/chubu）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
+ * （関東は public の直下、近畿は public/kinki、九州は public/kyushu、中部は public/chubu）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
  * 地域で分けておかないと、片方を作り直した時にもう片方が消える。建物（public/plateau）は区ごとなので共通
  */
 export interface Region {
-  id: 'kanto' | 'kinki' | 'fukuoka' | 'chubu';
+  id: 'kanto' | 'kinki' | 'kyushu' | 'chubu';
   name: string;
   /** 飛行開始地点。ここがローカル原点になる */
   origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
@@ -44,31 +44,31 @@ export const REGIONS: Record<Region['id'], Region> = {
     prefectures: ['26', '27', '28'],
     searchExample: '梅田',
   },
-  fukuoka: {
-    id: 'fukuoka',
+  kyushu: {
+    id: 'kyushu',
     name: '福岡',
     // 博多駅
     origin: { latDeg: 33.5897, lonDeg: 130.4207, ellipsoidHeight: 38 },
     geoidHeight: 32.61,
-    dataDir: 'fukuoka/',
+    dataDir: 'kyushu/',
     prefectures: ['40', '41'],
     searchExample: '天神',
   },
   chubu: {
     id: 'chubu',
-    // 名古屋市と春日井・北名古屋・豊山・東海・大府・知多・常滑
+    // 名古屋市と春日井・北名古屋・豊山・東海・大府・知多・常滑、北西の一宮・稲沢・江南・岩倉・小牧・清須、岐阜県の岐阜・各務原・岐南・瑞穂・大垣・安八
     name: '愛知',
     // 名古屋駅（桜通口）
     origin: { latDeg: 35.1709, lonDeg: 136.8815, ellipsoidHeight: 40 },
     geoidHeight: 38.07,
     dataDir: 'chubu/',
-    prefectures: ['23'],
+    prefectures: ['23', '21'],
     searchExample: '栄',
   },
 };
 
 /** 前の地域の名前 → 今の名前 */
-const OLD_IDS: Record<string, Region['id']> = { tokyo: 'kanto', osaka: 'kinki', nagoya: 'chubu' };
+const OLD_IDS: Record<string, Region['id']> = { tokyo: 'kanto', osaka: 'kinki', fukuoka: 'kyushu', nagoya: 'chubu' };
 
 /** 地域の名前を今の名前にそろえる（前の名前も受け付ける。知らない名前は null） */
 export function regionId(id: string | null | undefined): Region['id'] | null {

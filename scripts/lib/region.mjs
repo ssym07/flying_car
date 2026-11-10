@@ -1,5 +1,5 @@
 /**
- * データを作る地域。環境変数 REGION=kinki で近畿（大阪）、REGION=chubu で中部（愛知）、REGION=fukuoka で福岡（無ければ関東）。src/core/region.ts と同じ分け方。
+ * データを作る地域。環境変数 REGION=kinki で近畿（大阪）、REGION=chubu で中部（愛知）、REGION=kyushu で九州（福岡）（無ければ関東）。src/core/region.ts と同じ分け方。
  *
  * 地域で作るデータは地域ごとの置き場所に書く：東京は今までどおり public・data・src/data の直下、
  * 近畿は public/kinki・data/kinki・src/data/kinki の下。出力先を丸ごと作り直すスクリプトがあるので、
@@ -8,10 +8,10 @@
  */
 const ROOT = new URL('../../', import.meta.url);
 
-// 前の名前（osaka・nagoya・tokyo）も受け付ける
-const OLD_IDS = { tokyo: 'kanto', osaka: 'kinki', nagoya: 'chubu' };
+// 前の名前（osaka・fukuoka・nagoya・tokyo）も受け付ける
+const OLD_IDS = { tokyo: 'kanto', osaka: 'kinki', fukuoka: 'kyushu', nagoya: 'chubu' };
 const requested = OLD_IDS[process.env.REGION] ?? process.env.REGION;
-export const REGION_ID = ['kinki', 'fukuoka', 'chubu'].includes(requested) ? requested : 'kanto';
+export const REGION_ID = ['kinki', 'kyushu', 'chubu'].includes(requested) ? requested : 'kanto';
 
 /**
  * データを取る範囲：[南, 西, 北, 東] の長方形のならび。
@@ -59,7 +59,7 @@ const REGION_AREAS = {
   ],
   // 福岡：福岡市の市街地（姪浜〜天神・博多〜香椎、大橋、福岡空港、百道浜）
   // 2・3つ目は春日・大野城・筑紫野（二日市）・太宰府
-  fukuoka: [
+  kyushu: [
     [33.52, 130.3, 33.67, 130.48],
     [33.46, 130.42, 33.52, 130.58],
     [33.52, 130.48, 33.56, 130.58],
@@ -84,6 +84,12 @@ const REGION_AREAS = {
     // 3つ目は東海市・大府市・知多市の北・東浦町の北、4つ目は知多市の南・常滑市・中部国際空港
     [34.97, 136.8, 35.04, 137.01],
     [34.82, 136.78, 34.97, 136.92],
+    // 5〜8つ目は北西（2026-11-10）：一宮市・稲沢市の北・江南市・岩倉市・小牧市の西／稲沢市の南／
+    // 岐阜市・各務原市・岐南町・瑞穂市（北の山は入れない）／大垣市・安八町
+    [35.27, 136.66, 35.37, 136.9],
+    [35.18, 136.7, 35.27, 136.79],
+    [35.37, 136.66, 35.45, 136.96],
+    [35.32, 136.56, 35.42, 136.66],
   ],
 };
 export const AREAS = REGION_AREAS[REGION_ID];
@@ -117,7 +123,7 @@ const REGION_SETTINGS = {
     keepSides: [34.6, 134.5, 34.9, 135.1],
     prefectures: ['26', '27', '28'],
   },
-  fukuoka: {
+  kyushu: {
     center: [33.5897, 130.4207],
     lat0: 33.59,
     geoid: 32.61,
@@ -133,7 +139,7 @@ const REGION_SETTINGS = {
     center: [35.1709, 136.8815],
     lat0: 35.16,
     geoid: 38.07,
-    hubs: ['名古屋', '名鉄名古屋', '近鉄名古屋', '栄', '伏見', '久屋大通', '金山', '大曽根', '千種', '今池', '鶴舞', '熱田', '神宮前', '八事', '本山', '星ヶ丘', '藤が丘', '新瑞橋', '名古屋港', '黒川', '上小田井', '高畑', '野並', '徳重', 'ナゴヤドーム前矢田', '勝川', '春日井', '高蔵寺', '西春', '太田川', '大府', '朝倉', '常滑', '中部国際空港'],
+    hubs: ['名古屋', '名鉄名古屋', '近鉄名古屋', '栄', '伏見', '久屋大通', '金山', '大曽根', '千種', '今池', '鶴舞', '熱田', '神宮前', '八事', '本山', '星ヶ丘', '藤が丘', '新瑞橋', '名古屋港', '黒川', '上小田井', '高畑', '野並', '徳重', 'ナゴヤドーム前矢田', '勝川', '春日井', '高蔵寺', '西春', '太田川', '大府', '朝倉', '常滑', '中部国際空港', '尾張一宮', '名鉄一宮', '稲沢', '国府宮', '江南', '岩倉', '小牧', '岐阜', '名鉄岐阜', '各務ケ原', '新那加', '穂積', '大垣'],
     // 名城線（環状）
     ringLine: /名城線/,
     cutLoops: true,

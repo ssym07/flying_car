@@ -9,7 +9,7 @@ export interface RegionStation extends Station {
 const loaders: Record<Region['id'], () => Promise<{ default: Station[] }>> = {
   kanto: () => import('./stations.json'),
   kinki: () => import('./kinki/stations.json'),
-  fukuoka: () => import('./fukuoka/stations.json'),
+  kyushu: () => import('./kyushu/stations.json'),
   chubu: () => import('./chubu/stations.json'),
 };
 

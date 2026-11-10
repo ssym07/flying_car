@@ -2,7 +2,7 @@
 // 坂では PLATEAU の建物（LOD1）の底が敷地のいちばん低い地面の高さで平らなので、なめらかな地形の斜面が坂の上側の1階を覆う。
 // アプリは地形を作る時、この地図の建物の底より上に地面が出ないよう下げ、実際の造成地のように家ごとの平らな段にする。
 //
-// 使い方: REGION=fukuoka node scripts/build-building-pads.mjs [市区町村コード ...]   （省略するとその地域の手元にある区すべて）
+// 使い方: REGION=kyushu node scripts/build-building-pads.mjs [市区町村コード ...]   （省略するとその地域の手元にある区すべて）
 // 入力: public/plateau/{市区町村コード}/（build-local-buildings・build-gsi-buildings が書いたもの）の末端のタイル
 // 出力: public/{地域}/pads/15/{x}/{y}.png。国土地理院の標高 PNG と同じ形式（標高 = RGB の 24bit × 0.01m、建物の無い所は (128,0,0)）
 //

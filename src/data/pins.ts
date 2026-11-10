@@ -46,7 +46,7 @@ function load(): Pin[] {
   try {
     const raw = localStorage.getItem(PINS.storageKey);
     const list = raw ? (JSON.parse(raw) as unknown) : [];
-    // 前の地域の名前（tokyo・osaka・nagoya）で保存したピンは、今の名前（kanto・kinki・chubu）にする
+    // 前の地域の名前（tokyo・osaka・fukuoka・nagoya）で保存したピンは、今の名前（kanto・kinki・kyushu・chubu）にする
     return Array.isArray(list)
       ? list.filter(isPin).flatMap((p) => {
           const region = regionId(p.region);

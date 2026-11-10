@@ -20,7 +20,7 @@ export interface RoadLabelEntry {
 const loaders = {
   kanto: () => Promise.all([import('./stations.json'), import('./roadLabels.json')]),
   kinki: () => Promise.all([import('./kinki/stations.json'), import('./kinki/roadLabels.json')]),
-  fukuoka: () => Promise.all([import('./fukuoka/stations.json'), import('./fukuoka/roadLabels.json')]),
+  kyushu: () => Promise.all([import('./kyushu/stations.json'), import('./kyushu/roadLabels.json')]),
   chubu: () => Promise.all([import('./chubu/stations.json'), import('./chubu/roadLabels.json')]),
 };
 const [stationsModule, roadLabelsModule] = await loaders[REGION.id]();
