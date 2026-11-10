@@ -4,9 +4,9 @@ dist
 .DS_Store
 data/cache
 public/plateau
-data/osaka/cache
+data/kinki/cache
 data/fukuoka/cache
-data/nagoya/cache
+data/chubu/cache
 
 # 作業の進み具合のログ（一時フォルダへのリンク）
 logs

@@ -2,7 +2,7 @@ import { REGION } from '../core/region';
 
 /**
  * 地域ごとの駅と道路名（scripts/fetch-stations.mjs・fetch-roads.mjs が作る）。
- * 東京は src/data の直下、大阪は src/data/osaka。選んだ地域の分だけ読む
+ * 関東は src/data の直下、近畿は src/data/kinki。選んだ地域の分だけ読む
  */
 export interface StationEntry {
   name: string;
@@ -18,10 +18,10 @@ export interface RoadLabelEntry {
 }
 
 const loaders = {
-  tokyo: () => Promise.all([import('./stations.json'), import('./roadLabels.json')]),
-  osaka: () => Promise.all([import('./osaka/stations.json'), import('./osaka/roadLabels.json')]),
+  kanto: () => Promise.all([import('./stations.json'), import('./roadLabels.json')]),
+  kinki: () => Promise.all([import('./kinki/stations.json'), import('./kinki/roadLabels.json')]),
   fukuoka: () => Promise.all([import('./fukuoka/stations.json'), import('./fukuoka/roadLabels.json')]),
-  nagoya: () => Promise.all([import('./nagoya/stations.json'), import('./nagoya/roadLabels.json')]),
+  chubu: () => Promise.all([import('./chubu/stations.json'), import('./chubu/roadLabels.json')]),
 };
 const [stationsModule, roadLabelsModule] = await loaders[REGION.id]();
 export const STATIONS: StationEntry[] = stationsModule.default;

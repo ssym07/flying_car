@@ -1,14 +1,17 @@
 /**
- * データを作る地域。環境変数 REGION=osaka で大阪（無ければ東京）。src/core/region.ts と同じ分け方。
+ * データを作る地域。環境変数 REGION=kinki で近畿（大阪）、REGION=chubu で中部（愛知）、REGION=fukuoka で福岡（無ければ関東）。src/core/region.ts と同じ分け方。
  *
  * 地域で作るデータは地域ごとの置き場所に書く：東京は今までどおり public・data・src/data の直下、
- * 大阪は public/osaka・data/osaka・src/data/osaka の下。出力先を丸ごと作り直すスクリプトがあるので、
+ * 近畿は public/kinki・data/kinki・src/data/kinki の下。出力先を丸ごと作り直すスクリプトがあるので、
  * 分けておかないと片方を作り直した時にもう片方が消える。
  * 建物（public/plateau）と取得のキャッシュ（data/cache）は場所ごとなので共通
  */
 const ROOT = new URL('../../', import.meta.url);
 
-export const REGION_ID = ['osaka', 'fukuoka', 'nagoya'].includes(process.env.REGION) ? process.env.REGION : 'tokyo';
+// 前の名前（osaka・nagoya・tokyo）も受け付ける
+const OLD_IDS = { tokyo: 'kanto', osaka: 'kinki', nagoya: 'chubu' };
+const requested = OLD_IDS[process.env.REGION] ?? process.env.REGION;
+export const REGION_ID = ['kinki', 'fukuoka', 'chubu'].includes(requested) ? requested : 'kanto';
 
 /**
  * データを取る範囲：[南, 西, 北, 東] の長方形のならび。
@@ -21,7 +24,7 @@ export const REGION_ID = ['osaka', 'fukuoka', 'nagoya'].includes(process.env.REG
  * 長方形ごとに区画に分けて取るので、長方形を足しても、前の長方形の区画のキャッシュはそのまま使える
  */
 const REGION_AREAS = {
-  tokyo: [
+  kanto: [
     [35.3, 139.46, 35.82, 139.92],
     [35.52, 139.34, 35.82, 139.46],
     [35.82, 139.37, 35.89, 139.79],
@@ -36,7 +39,7 @@ const REGION_AREAS = {
     [35.8, 140.01, 35.93, 140.09],
     [35.89, 139.86, 35.93, 139.92],
   ],
-  osaka: [
+  kinki: [
     [34.57, 135.37, 34.77, 135.59],
     [34.77, 135.33, 34.84, 135.57],
     [34.66, 135.33, 34.77, 135.37],
@@ -74,7 +77,7 @@ const REGION_AREAS = {
     [33.75, 130.5, 33.79, 130.53],
   ],
   // 名古屋：名古屋市16区（西の庄内川・南の名古屋港から、東の名東区・天白区・緑区まで。まわりの清須・北名古屋・豊明・日進・長久手・尾張旭の端も入る）
-  nagoya: [
+  chubu: [
     [35.04, 136.79, 35.27, 137.06],
     // 2つ目は春日井市の北（勝川・春日井・高蔵寺。東の山は入れない。北名古屋市・豊山町は1つ目に入っている）
     [35.27, 136.9, 35.34, 137.06],
@@ -87,7 +90,7 @@ export const AREAS = REGION_AREAS[REGION_ID];
 
 /** 地域ごとの値（東京は今までの値のまま。src/core/region.ts と同じ） */
 const REGION_SETTINGS = {
-  tokyo: {
+  kanto: {
     /** 開始地点の駅（都心の中心） */
     center: [35.6812, 139.7671],
     /** 東西の長さの計算に使う緯度 */
@@ -101,7 +104,7 @@ const REGION_SETTINGS = {
     /** この地域の建物の区のコードの頭（都道府県コード。src/core/region.ts と同じ） */
     prefectures: ['11', '12', '13', '14'],
   },
-  osaka: {
+  kinki: {
     center: [34.7025, 135.4959],
     lat0: 34.69,
     geoid: 37.59,
@@ -126,7 +129,7 @@ const REGION_SETTINGS = {
     // 佐賀県（鳥栖市・基山町）も入る
     prefectures: ['40', '41'],
   },
-  nagoya: {
+  chubu: {
     center: [35.1709, 136.8815],
     lat0: 35.16,
     geoid: 38.07,
@@ -148,14 +151,14 @@ export const BOUNDS = [
   Math.max(...AREAS.map((a) => a[3])),
 ];
 /** Overpass に渡す範囲の文字列 '南,西,北,東'（東京は今まで使っていた値のまま） */
-export const BBOX = REGION_ID === 'tokyo' ? '35.27,139.34,36.06,140.09' : BOUNDS.join(',');
+export const BBOX = REGION_ID === 'kanto' ? '35.27,139.34,36.06,140.09' : BOUNDS.join(',');
 
 /**
  * リポジトリの中のパス（'public/roads/15/' など）を、この地域の置き場所の URL にする。
- * 大阪：public/X → public/osaka/X、data/X → data/osaka/X、src/data/X → src/data/osaka/X
+ * 近畿：public/X → public/kinki/X、data/X → data/kinki/X、src/data/X → src/data/kinki/X
  */
 export function regionPath(path) {
-  if (REGION_ID === 'tokyo') return new URL(path, ROOT);
+  if (REGION_ID === 'kanto') return new URL(path, ROOT);
   const parts = path.split('/');
   const head = parts[0] === 'src' ? parts.splice(0, 2).join('/') : parts.splice(0, 1)[0];
   return new URL(`${head}/${REGION_ID}/${parts.join('/')}`, ROOT);

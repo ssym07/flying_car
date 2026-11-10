@@ -1,13 +1,15 @@
 /**
- * 遊ぶ地域（ワールド）。URL の ?region=osaka・?region=fukuoka・?region=nagoya で選ぶ（無ければ東京）。
+ * 遊ぶ地域（ワールド）。URL の ?region=kinki・?region=fukuoka・?region=chubu で選ぶ（無ければ関東）。
+ * 地域の名前（id）は 関東 kanto・近畿 kinki・福岡 fukuoka・中部 chubu。ホームに出す名前（name）は 東京・大阪・福岡・愛知 のまま。
+ * 前の名前（?region=osaka・nagoya、保存したピンの tokyo・osaka・nagoya）も読める（OLD_IDS）
  * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
  *
  * 地域で作るデータ（道路・線路・地面の種類などのタイル、路線図・空路・駅の形）は、地域ごとに dataDir の下に置く
- * （東京は public の直下、大阪は public/osaka、福岡は public/fukuoka、名古屋は public/nagoya）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
+ * （関東は public の直下、近畿は public/kinki、福岡は public/fukuoka、中部は public/chubu）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
  * 地域で分けておかないと、片方を作り直した時にもう片方が消える。建物（public/plateau）は区ごとなので共通
  */
 export interface Region {
-  id: 'tokyo' | 'osaka' | 'fukuoka' | 'nagoya';
+  id: 'kanto' | 'kinki' | 'fukuoka' | 'chubu';
   name: string;
   /** 飛行開始地点。ここがローカル原点になる */
   origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
@@ -22,8 +24,8 @@ export interface Region {
 }
 
 export const REGIONS: Record<Region['id'], Region> = {
-  tokyo: {
-    id: 'tokyo',
+  kanto: {
+    id: 'kanto',
     name: '東京',
     // 東京駅 丸の内側
     origin: { latDeg: 35.6812, lonDeg: 139.7671, ellipsoidHeight: 40 },
@@ -32,13 +34,13 @@ export const REGIONS: Record<Region['id'], Region> = {
     prefectures: ['11', '12', '13', '14'],
     searchExample: '品川',
   },
-  osaka: {
-    id: 'osaka',
+  kinki: {
+    id: 'kinki',
     name: '大阪',
     // 大阪駅（うめきた側）
     origin: { latDeg: 34.7025, lonDeg: 135.4959, ellipsoidHeight: 41 },
     geoidHeight: 37.59,
-    dataDir: 'osaka/',
+    dataDir: 'kinki/',
     prefectures: ['26', '27', '28'],
     searchExample: '梅田',
   },
@@ -52,25 +54,35 @@ export const REGIONS: Record<Region['id'], Region> = {
     prefectures: ['40', '41'],
     searchExample: '天神',
   },
-  nagoya: {
-    id: 'nagoya',
-    // 名古屋市と春日井・北名古屋・豊山・東海・大府・知多・常滑（データの置き場所と ?region=nagoya はそのまま）
+  chubu: {
+    id: 'chubu',
+    // 名古屋市と春日井・北名古屋・豊山・東海・大府・知多・常滑
     name: '愛知',
     // 名古屋駅（桜通口）
     origin: { latDeg: 35.1709, lonDeg: 136.8815, ellipsoidHeight: 40 },
     geoidHeight: 38.07,
-    dataDir: 'nagoya/',
+    dataDir: 'chubu/',
     prefectures: ['23'],
     searchExample: '栄',
   },
 };
+
+/** 前の地域の名前 → 今の名前 */
+const OLD_IDS: Record<string, Region['id']> = { tokyo: 'kanto', osaka: 'kinki', nagoya: 'chubu' };
+
+/** 地域の名前を今の名前にそろえる（前の名前も受け付ける。知らない名前は null） */
+export function regionId(id: string | null | undefined): Region['id'] | null {
+  if (!id) return null;
+  if (id in REGIONS) return id as Region['id'];
+  return OLD_IDS[id] ?? null;
+}
 
 function pick(): Region {
   // Web Worker の中では location が Worker のファイルを指すので、ページの ?region=… を Worker の名前で受け取る（world/water.ts）
   const inWorker = typeof document === 'undefined' && typeof self !== 'undefined' && 'name' in self;
   const search = inWorker ? (self as unknown as { name: string }).name : typeof location === 'undefined' ? null : location.search;
   const id = search === null ? null : new URLSearchParams(search).get('region');
-  return id === 'osaka' || id === 'fukuoka' || id === 'nagoya' ? REGIONS[id] : REGIONS.tokyo;
+  return REGIONS[regionId(id) ?? 'kanto'];
 }
 
 export const REGION: Region = pick();
@@ -98,7 +110,7 @@ export function regionUrl(file: string): string {
  */
 export function switchRegion(id: Region['id'], start: boolean, at?: { lat: number; lon: number }): void {
   const params = new URLSearchParams(location.search);
-  if (id === 'tokyo') params.delete('region');
+  if (id === 'kanto') params.delete('region');
   else params.set('region', id);
   if (start) params.set('start', '1');
   else params.delete('start');

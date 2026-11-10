@@ -21,7 +21,7 @@ const wards = [...source.matchAll(/^ {2}\{ code: '(\d+)', name: '([^']+)', kind:
 );
 const RESTRIP = process.argv.includes('--restrip');
 // --clip を付けると、地域のデータを取る範囲（scripts/lib/region.mjs の AREAS）にかからないタイルは取らない
-// （京都市の左京区・右京区・北区の山奥など、道路や線路を取っていない所に建物だけ並ばないように。REGION=osaka などで地域を選ぶ）
+// （京都市の左京区・右京区・北区の山奥など、道路や線路を取っていない所に建物だけ並ばないように。REGION=kinki などで地域を選ぶ）
 const CLIP = process.argv.includes('--clip');
 const only = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const targets = only.length > 0 ? wards.filter((w) => only.includes(w.code)) : wards;

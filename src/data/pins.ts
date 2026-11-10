@@ -1,5 +1,5 @@
 import { PINS } from '../core/config';
-import type { Region } from '../core/region';
+import { regionId, type Region } from '../core/region';
 
 /** ピンの色（選べる色。既定は赤） */
 export const PIN_COLORS = {
@@ -46,7 +46,13 @@ function load(): Pin[] {
   try {
     const raw = localStorage.getItem(PINS.storageKey);
     const list = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(list) ? list.filter(isPin) : [];
+    // 前の地域の名前（tokyo・osaka・nagoya）で保存したピンは、今の名前（kanto・kinki・chubu）にする
+    return Array.isArray(list)
+      ? list.filter(isPin).flatMap((p) => {
+          const region = regionId(p.region);
+          return region ? [{ ...p, region }] : [];
+        })
+      : [];
   } catch {
     // 保存できない環境（プライベートウィンドウ・サイトのデータを消した時など）でも、遊んでいる間は使える
     return pins;

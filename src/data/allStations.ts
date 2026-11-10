@@ -7,10 +7,10 @@ export interface RegionStation extends Station {
 }
 
 const loaders: Record<Region['id'], () => Promise<{ default: Station[] }>> = {
-  tokyo: () => import('./stations.json'),
-  osaka: () => import('./osaka/stations.json'),
+  kanto: () => import('./stations.json'),
+  kinki: () => import('./kinki/stations.json'),
   fukuoka: () => import('./fukuoka/stations.json'),
-  nagoya: () => import('./nagoya/stations.json'),
+  chubu: () => import('./chubu/stations.json'),
 };
 
 let all: Promise<RegionStation[]> | null = null;

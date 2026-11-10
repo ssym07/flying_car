@@ -1,8 +1,8 @@
 // 空港の搭乗橋の付け根（ターミナルから細く突き出た通路）を、PLATEAU の建物の形から探し、
-// data/airports/fixed-links.json（大阪は data/osaka/airports/fixed-links.json）に書き出す。
+// data/airports/fixed-links.json（大阪は data/kinki/airports/fixed-links.json）に書き出す。
 // PLATEAU ではこの部分がターミナルと同じ高さの箱になっているので、scripts/build-station-cutouts.mjs が通路の高さだけ残して切り抜く。
 // 使い方: node scripts/build-airport-fixed-links.mjs 区コード...（fetch-airports.mjs の後、build-station-cutouts.mjs の前に実行）
-//   例: node scripts/build-airport-fixed-links.mjs 13111 / REGION=osaka node scripts/build-airport-fixed-links.mjs 27203
+//   例: node scripts/build-airport-fixed-links.mjs 13111 / REGION=kinki node scripts/build-airport-fixed-links.mjs 27203
 //
 // 探し方：搭乗橋の根元のまわりの建物の三角形を上から見た格子（GRID m）に塗り、「開く」（OPEN m 縮めてから広げる）と
 // 消える細い所のうち、根元から REACH m 以内のひとかたまりを、凸包の形にする。

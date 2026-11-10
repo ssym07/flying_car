@@ -1,9 +1,9 @@
 // 空港（滑走路・誘導路・駐機場・駐機位置・管制塔・空港の敷地）を OpenStreetMap (Overpass API) から取得し、
-// public/airports.json（大阪は public/osaka/airports.json）に書き出す。ゲームの src/world/Airports.ts が読む。
+// public/airports.json（大阪は public/kinki/airports.json）に書き出す。ゲームの src/world/Airports.ts が読む。
 // あわせて、空港の敷地を地面の種類のタイル（public/landuse/15）の一番下に「空港の芝地」（種類 11）として、
 // 駐機場を「駐機場」（種類 12）として書き足す（どちらも OpenStreetMap の地面の種類には無い番号なので、
 // 前に足したものを見分けて消してから足せる。何回流してもよい）。
-// 使い方: node scripts/fetch-airports.mjs（fetch-landuse.mjs の後に実行。REGION=osaka で大阪）
+// 使い方: node scripts/fetch-airports.mjs（fetch-landuse.mjs の後に実行。REGION=kinki で大阪）
 // データ: © OpenStreetMap contributors (ODbL)
 //
 // 出力の形式:
@@ -25,7 +25,7 @@ const APRON = 12;
 /** 幅の印の無い誘導路の幅 (m) */
 const TAXIWAY_WIDTH = 23;
 /** OpenStreetMap に管制塔の無い空港の管制塔 [緯度, 経度, 高さ(m)]（地図と写真から） */
-const EXTRA_TOWERS = { tokyo: [], osaka: [[34.78555, 135.43785, 52]] };
+const EXTRA_TOWERS = { kanto: [], kinki: [[34.78555, 135.43785, 52]] };
 const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass-api.de/api/interpreter',

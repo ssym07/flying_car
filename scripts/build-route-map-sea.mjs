@@ -1,5 +1,5 @@
-// 路線図の海（public/route-map-sea.json、大阪は public/osaka/route-map-sea.json）を作る。src/ui/routeMap.ts が背景に水色で塗る。
-// 使い方: node scripts/build-route-map-sea.mjs（fetch-route-map.mjs の後に実行。REGION=osaka で大阪）
+// 路線図の海（public/route-map-sea.json、大阪は public/kinki/route-map-sea.json）を作る。src/ui/routeMap.ts が背景に水色で塗る。
+// 使い方: node scripts/build-route-map-sea.mjs（fetch-route-map.mjs の後に実行。REGION=kinki で大阪）
 //
 // - 海の形：国土地理院の淡色地図（ズーム ZOOM）の水色の画素を水とし、「開く」（RIVER m 縮めてから広げる）で川・運河・池を落とす。
 //   残った水のうち、広さが MIN_SEA km² 以上のかたまりを海とする

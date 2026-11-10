@@ -1,7 +1,7 @@
 // 砂浜（OpenStreetMap の natural=beach）の形を取得し、地面の種類のタイル（public/landuse/15）に「砂浜」（種類 10）として書き足す。
 // 地面の種類（scripts/fetch-landuse.mjs）は区画ごとに取得結果を残しているので、種類を足すと全部を取り直すことになる。
 // 砂浜は少ないので、地域の範囲全体を1回で取って、できているタイルに足す（前に足した砂浜は消してから足すので、何回流してもよい）。
-// 使い方: node scripts/add-beaches.mjs（fetch-landuse.mjs の後に実行。REGION=osaka で大阪）
+// 使い方: node scripts/add-beaches.mjs（fetch-landuse.mjs の後に実行。REGION=kinki で大阪）
 // データ: © OpenStreetMap contributors (ODbL)
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { BOUNDS, REGION_ID, regionPath } from './lib/region.mjs';
