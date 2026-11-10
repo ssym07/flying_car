@@ -68,6 +68,8 @@ export class RouteMap {
   private dirty = true;
   /** 海（模式図の座標の形。scripts/build-route-map-sea.mjs の public/route-map-sea.json） */
   private sea: Path2D | null = null;
+  /** 駅のある島へ海を渡る区間（「駅名|駅名」）。まわりを陸の色で塗らない */
+  private bridges = new Set<string>();
   /** まだ Path2D にしていない海の多角形 */
   private seaPolygons: number[][] | null = null;
   /** 動かせる範囲（海と陸を描いている範囲の内側の長方形。模式図の座標 [左, 上, 右, 下]） */
@@ -117,13 +119,15 @@ export class RouteMap {
     fetch(regionUrl('route-map-sea.json'))
       .then((res) =>
         res.ok && res.headers.get('content-type')?.includes('json')
-          ? (res.json() as Promise<{ b?: [number, number, number, number]; p: number[][] }>)
+          ? (res.json() as Promise<{ b?: [number, number, number, number]; p: number[][]; w?: Array<[string, string]> }>)
           : null,
       )
       .then((data) => {
         if (!data) return;
         // 海の形（数万の多角形）は、初めて開いた時に作る（作るのに時間がかかり、開かなければ要らない）
         this.seaPolygons = data.p;
+        this.bridges = new Set((data.w ?? []).flatMap(([a, b]) => [`${a}|${b}`, `${b}|${a}`]));
+        this.dirty = true;
         let bounds = data.b;
         if (!bounds) {
           const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
@@ -467,11 +471,31 @@ export class RouteMap {
           continue;
         }
         line.ids.forEach((id, k) => {
-          if (k === 0) g.moveTo(this.stops[id].x, this.stops[id].y);
+          const bridge = k > 0 && this.bridges.has(`${this.stops[line.ids[k - 1]].name}|${this.stops[id].name}`);
+          if (k === 0 || bridge) g.moveTo(this.stops[id].x, this.stops[id].y);
           else g.lineTo(this.stops[id].x, this.stops[id].y);
         });
       }
       g.stroke();
+      // 島へ渡る区間は、両端の駅のまわりの陸が海にはみ出して島とつながるので、その区間に沿って海の所だけ海の色に戻す
+      if (this.bridges.size > 0) {
+        g.save();
+        g.clip(this.sea);
+        g.strokeStyle = SEA;
+        g.lineCap = 'butt';
+        g.beginPath();
+        for (const line of this.lines) {
+          for (let k = 1; k < line.ids.length; k++) {
+            const a = this.stops[line.ids[k - 1]];
+            const b = this.stops[line.ids[k]];
+            if (!this.bridges.has(`${a.name}|${b.name}`)) continue;
+            g.moveTo(a.x, a.y);
+            g.lineTo(b.x, b.y);
+          }
+        }
+        g.stroke();
+        g.restore();
+      }
       g.setTransform(ratio, 0, 0, ratio, 0, 0);
     }
 
