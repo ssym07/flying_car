@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // （MapLibre が自分で探す場所は、Vite の事前のまとめ・本番のビルドで変わって見つからなくなる）
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LOCATION, MINIMAP } from '../core/config';
-import { REGION } from '../core/region';
+import { REGION, regionUrl } from '../core/region';
 import { STATIONS } from '../data/regionData';
 import { describeStation, nearestStation } from '../world/places';
 import { reverseGeocode } from './geocode';
@@ -250,6 +250,8 @@ export class Minimap {
     map.scrollZoom.disable();
     this.map = map;
     map.on('load', () => {
+      // 駅名より下に置く（重なったら駅名を残す）
+      this.addJunctions(map);
       this.addStations(map);
       this.addPinLayer(map);
       this.renderPins();
@@ -295,6 +297,45 @@ export class Minimap {
     map.on('mouseout', () => {
       this.tipEl.hidden = true;
     });
+  }
+
+  /**
+   * 高速道路の JCT・IC の名前（scripts/fetch-expressway-junctions.mjs が作る junctions.json）。
+   * 高速道路の色の文字で、JCT は駅名より引いた所から、IC は駅名と同じくらいから出す。ファイルが無い地域では出さない
+   */
+  private addJunctions(map: MapLibreMap): void {
+    map.addSource('junctions', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'junction-name',
+      type: 'symbol',
+      source: 'junctions',
+      filter: ['any', ['==', ['get', 'kind'], 1], ['>=', ['zoom'], 11.5]],
+      minzoom: 10,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 15, 12],
+        'text-max-width': 9,
+        'text-padding': 4,
+        // JCT を先に置く（重なったら IC を消す）
+        'symbol-sort-key': ['-', 1, ['get', 'kind']],
+      },
+      paint: { 'text-color': COLORS.junction, 'text-halo-color': '#ffffff', 'text-halo-width': 1.8 },
+    });
+    fetch(regionUrl('junctions.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { j: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        (map.getSource('junctions') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: data.j.map(([name, lat, lon, kind]) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: { name, kind },
+          })),
+        });
+      })
+      .catch(() => {});
   }
 
   /** ゲームの駅データの駅名（白い丸と、白い縁取りの文字） */

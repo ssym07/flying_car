@@ -27,6 +27,8 @@ export const COLORS = {
   cityText: '#3c4043',
   park: '#3f8f4a',
   station: '#3c4043',
+  /** 高速道路の JCT・IC の名前（高速道路の縁の色を濃くしたもの） */
+  junction: '#a0661a',
 };
 
 /** 高速道路（有料の自動車専用道路を含む） */
