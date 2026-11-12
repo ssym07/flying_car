@@ -259,4 +259,14 @@ export const WARDS: Ward[] = [
   { code: '23447', name: '武豊町', kind: 'lod1', url: '' },
   { code: '23446', name: '美浜町', kind: 'lod1', url: '' },
   { code: '23445', name: '南知多町', kind: 'lod1', url: '' },
+  // 西部と桑名（2026-11-12）：津島市は PLATEAU（2020 年）、ほかは国土地理院の建物の形から作る
+  { code: '23208', name: '津島市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e7/3da6f2-c44d-46af-b2f6-c7270df6adb0/23208_tsushima-shi_city_2020_citygml_7_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '23425', name: '蟹江町', kind: 'lod1', url: '' },
+  { code: '23235', name: '弥富市', kind: 'lod1', url: '' },
+  { code: '23237', name: 'あま市', kind: 'lod1', url: '' },
+  { code: '23232', name: '愛西市', kind: 'lod1', url: '' },
+  { code: '23424', name: '大治町', kind: 'lod1', url: '' },
+  { code: '23427', name: '飛島村', kind: 'lod1', url: '' },
+  { code: '24303', name: '木曽岬町', kind: 'lod1', url: '' },
+  { code: '24205', name: '桑名市', kind: 'lod1', url: '' },
 ];

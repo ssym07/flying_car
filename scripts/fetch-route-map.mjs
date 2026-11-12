@@ -147,11 +147,13 @@ for (const rel of relations.values()) {
 // OpenStreetMap のリレーションに駅が抜けている・リレーションが無い路線は、設定の駅の並び（SETTINGS.extraLines）で置き換える・足す
 // （愛知の近鉄名古屋線は烏森の次が佐古木に飛んでいる、JR関西本線は旅客のリレーションが無い）。範囲の外の駅は後で切る
 for (const { name, operator, colour, stops: names } of SETTINGS.extraLines ?? []) {
-  const stops = names.map((n) => {
-    const i = stations.findIndex((s) => s.name === n);
-    if (i < 0) throw new Error(`extraLines の駅が見つかりません: ${n}`);
-    return i;
-  });
+  const stops = names
+    .map((n) => {
+      const i = stations.findIndex((s) => s.name === n);
+      if (i < 0) console.warn(`extraLines の駅が見つかりません（飛ばします）: ${n}`);
+      return i;
+    })
+    .filter((i) => i >= 0);
   for (const [key, line] of byLine) if (line.name.replace(/\s*(各駅停車|普通|各停)$/, '') === name) byLine.delete(key);
   byLine.set(`${operator}|${name}`, { name, operator, colour, stops });
 }
