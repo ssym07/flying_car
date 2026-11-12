@@ -250,7 +250,8 @@ export class Minimap {
     map.scrollZoom.disable();
     this.map = map;
     map.on('load', () => {
-      // 駅名より下に置く（重なったら駅名を残す）
+      // 駅名より下に置く（重なったら駅名・JCT・IC・川の名前の順に残す）
+      this.addRivers(map);
       this.addJunctions(map);
       this.addStations(map);
       this.addPinLayer(map);
@@ -297,6 +298,48 @@ export class Minimap {
     map.on('mouseout', () => {
       this.tipEl.hidden = true;
     });
+  }
+
+  /**
+   * 川の名前（scripts/fetch-river-names.mjs が作る rivers.json）。線は描かず、川の線に沿って水の色の文字で書く。
+   * 国土地理院の地図の注記には川の名前がほとんど無いので、OpenStreetMap の川の線を使う。ファイルが無い地域では出さない
+   */
+  private addRivers(map: MapLibreMap): void {
+    map.addSource('rivers', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'river-name',
+      type: 'symbol',
+      source: 'rivers',
+      minzoom: 11,
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 150,
+        'text-field': ['get', 'name'],
+        'text-font': FONT,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11, 11, 15, 13],
+        'text-letter-spacing': 0.15,
+        'text-max-angle': 60,
+        'text-padding': 2,
+      },
+      paint: { 'text-color': COLORS.waterText, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
+    });
+    fetch(regionUrl('rivers.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { r: [string, number[]][] } | null) => {
+        if (!data) return;
+        (map.getSource('rivers') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: data.r.map(([name, flat]) => ({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: Array.from({ length: flat.length / 2 }, (_, i) => [flat[2 * i], flat[2 * i + 1]]),
+            },
+            properties: { name },
+          })),
+        });
+      })
+      .catch(() => {});
   }
 
   /**
