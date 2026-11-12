@@ -3,17 +3,21 @@
 //
 // - OpenStreetMap の highway=motorway_junction（本線から分かれる点）のうち、名前のあるもの。
 //   SA・PA への分岐は除く。名前に JCT・ジャンクションがあれば JCT、ほかは IC（出入口）
+// - OpenStreetMap に無い IC（大阪の千里 IC など）は、国土地理院の最適化ベクトルタイルの注記（ズーム 14、分類 412「IC」）で足す。
+//   同じ名前のものが近く（SAME m 以内）にあれば足さない
 // - 同じ名前の点（上り・下り、ランプごと）は、近いもの（GROUP m 以内）をまとめて1つにし、位置はその平均
 // - データを取る範囲（AREAS）の中のものだけ
 //
 // 出力の形式: { "j": [[名前, 緯度, 経度, 種類（0 IC・1 JCT）], ...] }
 // データ: © OpenStreetMap contributors (ODbL)
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { gsiAnno, tileOf } from './lib/gsi-anno.mjs';
 import { AREAS, BOUNDS, REGION_ID, regionPath } from './lib/region.mjs';
 
 const OUT = regionPath('public/junctions.json');
 /** 取った点のキャッシュ（名前のそろえ方を変えた時に取り直さない。範囲を広げたら消す） */
 const CACHE = new URL(`../data/cache/junctions-${REGION_ID}.json`, import.meta.url);
+const GSI_CACHE = new URL(`../data/cache/junctions-gsi-${REGION_ID}.json`, import.meta.url);
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -21,6 +25,8 @@ const ENDPOINTS = [
 ];
 /** 同じ名前の点をまとめる距離 (m) */
 const GROUP = 3000;
+/** 国土地理院の IC を、同じ名前の点があるとみなして足さない距離 (m) */
+const SAME = 5000;
 
 async function overpass(query) {
   // 混んでいても粘る（約20分）
@@ -67,6 +73,8 @@ function normalize(raw) {
     .replace(/[Ａ-Ｚａ-ｚ０-９／]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/\s*[（(][^）)]*[）)]\s*$/g, '')
     .replace(/スマートインター(チェンジ)?/, 'スマートIC')
+    // 国土地理院の「刈谷SIC」「厚木PASIC」も「〇〇スマートIC」に
+    .replace(/(SA|PA)?SIC$/, 'スマートIC')
     .replace(/\s*インターチェンジ/, 'IC')
     .replace(/\s*ジャンクション/, 'JCT')
     .replace(/(IC|JCT)?(第[一二三]|[東西南北]側)$/, '$1')
@@ -79,7 +87,7 @@ function normalize(raw) {
     if (!ic) return null;
     name = /^スマートIC$/.test(ic) ? parts[0].replace(/(SA|PA)$/, '') + ic : ic;
   }
-  if (/(SA|PA)$|サービスエリア|パーキングエリア|ハイウェイオアシス/.test(name)) return null;
+  if (/(SA|PA)$|サービスエリア|パーキングエリア|ハイウェイオアシス|道の駅/.test(name)) return null;
   return name;
 }
 
@@ -88,12 +96,57 @@ for (const el of elements) {
   if (!inArea(el.lat, el.lon)) continue;
   const name = normalize(el.tags.name);
   if (!name) continue;
-  const kind = /JCT$/.test(name) ? 1 : 0;
+  const kind = /JCT/.test(name) ? 1 : 0;
   const point = { lat: el.lat, lon: el.lon };
   const group = groups.find((g) => g.name === name && g.points.some((p) => dist(p, point) < GROUP));
   if (group) group.points.push(point);
   else groups.push({ name, kind, points: [point] });
 }
+// 国土地理院の注記の IC（範囲のズーム 14 のタイルを全部読む。キャッシュする）
+let gsi = await readFile(GSI_CACHE, 'utf8').then(JSON.parse, () => null);
+if (!gsi) {
+  const tiles = new Set();
+  for (const [s, w, n, e] of AREAS) {
+    const [x0, y0] = tileOf(n, w, 14);
+    const [x1, y1] = tileOf(s, e, 14);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) tiles.add(`${x}/${y}`);
+  }
+  const queue = [...tiles];
+  gsi = [];
+  let done = 0;
+  await Promise.all(
+    Array.from({ length: 12 }, async () => {
+      while (queue.length > 0) {
+        const [x, y] = queue.pop().split('/').map(Number);
+        for (let attempt = 0; ; attempt++) {
+          try {
+            for (const note of await gsiAnno(14, x, y)) if (note.code === 412) gsi.push({ text: note.text, lat: +note.lat.toFixed(5), lon: +note.lon.toFixed(5) });
+            break;
+          } catch (e) {
+            if (attempt >= 5) throw e;
+            await new Promise((r) => setTimeout(r, 5000));
+          }
+        }
+        if (++done % 200 === 0) console.log(`国土地理院 ${done}/${tiles.size} タイル`);
+      }
+    }),
+  );
+  await writeFile(GSI_CACHE, JSON.stringify(gsi));
+}
+let added = 0;
+for (const note of gsi) {
+  if (!inArea(note.lat, note.lon)) continue;
+  const name = normalize(note.text);
+  if (!name) continue;
+  // 同じ名前（「千里IC」と「千里出入口」も同じとみなす）の点が近くにあれば、OpenStreetMap にあるので足さない。
+  // 同じ IC がタイルの境で2つに分かれていることもあるので、足したものとも比べる
+  const base = (n) => n.replace(/(IC|出入口|出口|入口)$/, '');
+  if (groups.some((g) => base(g.name) === base(name) && g.points.some((p) => dist(p, note) < SAME))) continue;
+  groups.push({ name, kind: /JCT/.test(name) ? 1 : 0, points: [{ lat: note.lat, lon: note.lon }] });
+  added++;
+}
+console.log(`国土地理院から足した IC: ${added}`);
+
 // 都市高速の「白川出口」「白川入口」のように、近くに出口と入口がそろっていれば「白川出入口」1つにする
 for (const g of groups) {
   if (!g.name.endsWith('出口')) continue;
