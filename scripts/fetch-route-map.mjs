@@ -144,6 +144,18 @@ for (const rel of relations.values()) {
   if (!prev || stops.length > prev.stops.length) byLine.set(key, { name: base, operator: t.operator ?? '', colour: t.colour, stops });
 }
 
+// OpenStreetMap のリレーションに駅が抜けている・リレーションが無い路線は、設定の駅の並び（SETTINGS.extraLines）で置き換える・足す
+// （愛知の近鉄名古屋線は烏森の次が佐古木に飛んでいる、JR関西本線は旅客のリレーションが無い）。範囲の外の駅は後で切る
+for (const { name, operator, colour, stops: names } of SETTINGS.extraLines ?? []) {
+  const stops = names.map((n) => {
+    const i = stations.findIndex((s) => s.name === n);
+    if (i < 0) throw new Error(`extraLines の駅が見つかりません: ${n}`);
+    return i;
+  });
+  for (const [key, line] of byLine) if (line.name.replace(/\s*(各駅停車|普通|各停)$/, '') === name) byLine.delete(key);
+  byLine.set(`${operator}|${name}`, { name, operator, colour, stops });
+}
+
 // まとめる：快速・急行・直通運転などの種別は除き、各駅に止まる路線だけにする。
 // 駅の多い路線から順に、まだ描いていない駅の間（隣どうしの駅の組）を半分以上持つものだけを残す
 const SERVICE = /快速|区快|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|^ソニック|^きらめき|^かもめ|^みどり|^ハウステンボス|^有明$|^はまかぜ$|ミュースカイ/;

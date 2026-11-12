@@ -150,6 +150,11 @@ const REGION_SETTINGS = {
     cutLoops: true,
     keepSides: true,
     prefectures: ['23', '21'],
+    // OpenStreetMap で駅が抜けている・旅客のリレーションが無い路線（fetch-route-map.mjs）
+    extraLines: [
+      { name: '近鉄名古屋線', operator: '近畿日本鉄道', colour: '#153f97', stops: ['近鉄名古屋', '米野', '黄金', '烏森', '近鉄八田', '伏屋', '戸田', '近鉄蟹江', '富吉', '佐古木', '近鉄弥富'] },
+      { name: 'JR関西本線', operator: '東海旅客鉄道', colour: '#009a44', stops: ['名古屋', '八田', '春田', '蟹江', '永和', '弥富'] },
+    ],
   },
 };
 export const SETTINGS = REGION_SETTINGS[REGION_ID];
