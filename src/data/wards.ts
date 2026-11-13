@@ -269,4 +269,10 @@ export const WARDS: Ward[] = [
   { code: '23427', name: '飛島村', kind: 'lod1', url: '' },
   { code: '24303', name: '木曽岬町', kind: 'lod1', url: '' },
   { code: '24205', name: '桑名市', kind: 'lod1', url: '' },
+  // 三重（2026-11-13）：四日市市は PLATEAU（2022 年）、ほかは国土地理院の建物の形から作る
+  { code: '24202', name: '四日市市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/10/6645ff-8a6d-4e50-bebc-9cc3c590835c/24202_yokkaichi-shi_city_2022_citygml_4_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '24343', name: '朝日町', kind: 'lod1', url: '' },
+  { code: '24344', name: '川越町', kind: 'lod1', url: '' },
+  { code: '24207', name: '鈴鹿市', kind: 'lod1', url: '' },
+  { code: '24201', name: '津市', kind: 'lod1', url: '' },
 ];
