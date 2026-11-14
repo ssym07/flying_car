@@ -185,6 +185,9 @@ export const WARDS: Ward[] = [
   { code: '26210', name: '八幡市', kind: 'lod1', url: '' },
   { code: '26322', name: '久御山町', kind: 'lod1', url: '' },
   { code: '26204', name: '宇治市', kind: 'lod1', url: '' },
+  // 範囲の中なのに建物が無かった市（2026-11-15）：摂津市は PLATEAU（2020 年）、四條畷市は PLATEAU が無いので国土地理院の建物の形から作る
+  { code: '27224', name: '摂津市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/99/c3052c-6493-4e43-a342-1a461f1b0e85/27224_settsu-shi_city_2020_citygml_7_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '27229', name: '四條畷市', kind: 'lod1', url: '' },
   // 福岡市（福岡のワールド。市街地の範囲だけ取る：scripts/build-local-buildings.mjs --clip）
   { code: '40131', name: '福岡市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d2/833c4a-acbd-476c-8fe7-c0cde4d9d579/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40131_higashi-ku_lod1/tileset.json' },
   { code: '40132', name: '福岡市博多区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/19/b41be6-0ae1-4e9a-90b6-fe059b4d1ade/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40132_hakata-ku_lod1/tileset.json' },
