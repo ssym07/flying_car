@@ -209,6 +209,13 @@ export const WARDS: Ward[] = [
   // 小郡市・基山町（佐賀県）：PLATEAU が無いので国土地理院の建物の形から作る
   { code: '40216', name: '小郡市', kind: 'lod1', url: '' },
   { code: '41341', name: '基山町', kind: 'lod1', url: '' },
+  // 佐賀平野（2026-11-14）：小城市は PLATEAU（2022 年）、ほかは国土地理院の建物の形から作る
+  { code: '41208', name: '小城市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/b1/d1b8dd-ec55-4218-9e7f-f692aa5a4b30/41208_ogi-shi_city_2022_citygml_4_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '41201', name: '佐賀市', kind: 'lod1', url: '' },
+  { code: '41210', name: '神埼市', kind: 'lod1', url: '' },
+  { code: '41327', name: '吉野ヶ里町', kind: 'lod1', url: '' },
+  { code: '41345', name: '上峰町', kind: 'lod1', url: '' },
+  { code: '41346', name: 'みやき町', kind: 'lod1', url: '' },
   // 名古屋市（名古屋のワールド。2022）
   { code: '23101', name: '名古屋市千種区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e3/c5a409-dfb4-415c-a0a1-3c2c565fb3b8/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23101_chikusa-ku_lod1/tileset.json' },
   { code: '23102', name: '名古屋市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/02/d91205-c321-4541-b93d-47d699041068/23100_nagoya-shi_city_2022_citygml_4_op_bldg_3dtiles_23102_higashi-ku_lod1/tileset.json' },

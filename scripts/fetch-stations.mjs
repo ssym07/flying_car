@@ -14,12 +14,15 @@ const ENDPOINTS = [
 /** 同じ名前の駅をまとめる距離 (m) */
 const MERGE_DISTANCE = 800;
 
+// 駅を点ではなく敷地の形（way・relation）で書いてあるもの（佐賀駅など）も取る。位置はその中心
 const query = `[out:json][timeout:80];
 (
   node["railway"="station"](${BBOX});
   node["public_transport"="station"]["station"~"subway|light_rail|monorail"](${BBOX});
+  way["railway"="station"](${BBOX});
+  relation["railway"="station"](${BBOX});
 );
-out body;`;
+out body center;`;
 
 async function fetchElements() {
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -56,7 +59,10 @@ const stations = [];
 for (const el of elements) {
   const name = el.tags?.name?.replace(/駅$/, '');
   if (!name || el.tags.railway === 'halt' || el.tags.usage === 'freight') continue;
-  const p = { lat: el.lat, lon: el.lon };
+  const p = { lat: el.lat ?? el.center.lat, lon: el.lon ?? el.center.lon };
+  // 敷地の形の駅は、中心が範囲の中のものだけ（路線全体を「駅」にしたリレーションなどは中心が遠くになる）
+  const [south, west, north, east] = BBOX.split(',').map(Number);
+  if (p.lat < south || p.lat > north || p.lon < west || p.lon > east) continue;
   const same = stations.find((s) => s.name === name && distance(s, p) < MERGE_DISTANCE);
   if (same) {
     same.lat = (same.lat * same.n + p.lat) / (same.n + 1);
