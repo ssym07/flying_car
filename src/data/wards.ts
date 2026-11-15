@@ -188,6 +188,16 @@ export const WARDS: Ward[] = [
   // 範囲の中なのに建物が無かった市（2026-11-15）：摂津市は PLATEAU（2020 年）、四條畷市は PLATEAU が無いので国土地理院の建物の形から作る
   { code: '27224', name: '摂津市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/99/c3052c-6493-4e43-a342-1a461f1b0e85/27224_settsu-shi_city_2020_citygml_7_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '27229', name: '四條畷市', kind: 'lod1', url: '' },
+  // 堺市（2026-11-15）：PLATEAU（2024 年）。市街地の範囲だけ取る。大東市・宝塚市は PLATEAU が無いので国土地理院の建物の形から作る
+  { code: '27141', name: '堺市堺区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e7/63daa2-efca-4ce1-b563-16851fc95f7c/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27141_sakai-ku_lod1/tileset.json' },
+  { code: '27142', name: '堺市中区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a4/3efb49-d4a4-4d1d-b547-30d7ae1ee30c/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27142_naka-ku_lod1/tileset.json' },
+  { code: '27143', name: '堺市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/47/fe62c8-1c7b-45e3-8aa4-535d973ae7f9/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27143_higashi-ku_lod1/tileset.json' },
+  { code: '27144', name: '堺市西区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a1/99c1f4-c998-410d-89d9-b45652f1f2a8/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27144_nishi-ku_lod1/tileset.json' },
+  { code: '27145', name: '堺市南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/18/7e1474-084a-4d85-a026-ca229d9b4a29/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27145_minami-ku_lod1/tileset.json' },
+  { code: '27146', name: '堺市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/03/cb7028-84ac-4d40-bc4e-b74b99a2209f/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27146_kita-ku_lod1/tileset.json' },
+  { code: '27147', name: '堺市美原区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/bb/53ed4e-0fa2-4b27-a48e-e530fce83997/27140_sakai-shi_city_2024_citygml_1_op_bldg_3dtiles_27147_mihara-ku_lod1/tileset.json' },
+  { code: '27218', name: '大東市', kind: 'lod1', url: '' },
+  { code: '28214', name: '宝塚市', kind: 'lod1', url: '' },
   // 福岡市（福岡のワールド。市街地の範囲だけ取る：scripts/build-local-buildings.mjs --clip）
   { code: '40131', name: '福岡市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d2/833c4a-acbd-476c-8fe7-c0cde4d9d579/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40131_higashi-ku_lod1/tileset.json' },
   { code: '40132', name: '福岡市博多区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/19/b41be6-0ae1-4e9a-90b6-fe059b4d1ade/40130_fukuoka-shi_city_2024_citygml_2_op_bldg_3dtiles_40132_hakata-ku_lod1/tileset.json' },
