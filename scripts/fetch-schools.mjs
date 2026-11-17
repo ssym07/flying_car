@@ -86,7 +86,8 @@ const clean = (raw) =>
  */
 function kindOf(name) {
   // 「旧〇〇小学校」（もう無い学校）・「〇〇小学校跡」は出さない
-  if (/^旧|跡(地)?$/.test(name)) return null;
+  // 「大学本部B棟」のように「大学」で始まるものは、大学の名前ではないので出さない
+  if (/^旧|跡(地)?$|^大学/.test(name)) return null;
   if (/支援学校|養護学校|聾学校|盲学校|専門学校|専修学校|大学校|予備校|塾|教室|幼稚園|保育|教習所/.test(name)) return null;
   if (/(高等学校|高校|中等教育学校)$/.test(name)) return 2;
   if (/(中学校|中学)$/.test(name)) return 1;
