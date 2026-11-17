@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
 import { LABELS, TERRAIN } from '../core/config';
+import { regionUrl } from '../core/region';
 import { ROAD_LABELS as roadLabels, STATIONS as stations } from '../data/regionData';
 
 interface Place {
-  kind: 'station' | 'road';
+  kind: 'station' | 'road' | 'school';
   name: string;
   /** ローカル座標（高さは地面が分かるまで未定） */
   position: THREE.Vector3;
+  /** 学校の種類（0 小学校・1 中学校・2 高校・3 大学など）。学校のほかは 0 */
+  level?: number;
   /** 通りの向き（ローカル座標の水平な単位ベクトル）。駅は null */
   direction: THREE.Vector3 | null;
   object: THREE.Object3D | null;
@@ -17,6 +20,7 @@ interface Place {
  * 3D 空間に置く駅名・通り名。
  * - 駅名：駅の上空に浮かぶ看板（常にカメラを向く）。地面まで細い線を下ろす
  * - 通り名：道路の地面に描いた文字（道に沿った向き。読める向きに自動で反転）
+ * - 学校名：駅名より小さく低い看板（scripts/fetch-schools.mjs が作る schools.json。読み込めたら足す）
  * カメラの近くだけ作り、離れたら捨てる。地面の高さは地形が読めてから決める
  */
 export class Labels {
@@ -59,6 +63,17 @@ export class Labels {
       },
     );
     this.places = [...stationPlaces, ...roadPlaces];
+
+    // 学校名（ファイルが無い地域では出さない）
+    fetch(regionUrl('schools.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { s: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        for (const [name, lat, lon, level] of data.s) {
+          this.places.push({ kind: 'school', name, level, position: toLocal(lat, lon), direction: null, object: null });
+        }
+      })
+      .catch(() => {});
   }
 
   /** 毎フレーム呼ぶ。作る・捨てるの判定は数回/秒、向きと濃さは毎フレーム */
@@ -81,18 +96,29 @@ export class Labels {
   private refresh(cameraPosition: THREE.Vector3): void {
     const distanceTo = (p: Place) => Math.hypot(p.position.x - cameraPosition.x, p.position.z - cameraPosition.z);
 
-    // 駅は近い順に maxCount 件だけ
-    const { radius, maxCount } = LABELS.station;
-    const nearStations = new Set(
-      this.places
-        .filter((p) => p.kind === 'station' && distanceTo(p) < radius)
+    // 駅・学校は近い順に maxCount 件だけ
+    const nearest = (kind: 'station' | 'school', limit?: number) => {
+      const { radius } = LABELS[kind];
+      const maxCount = limit ?? LABELS[kind].maxCount;
+      return this.places
+        .filter((p) => p.kind === kind && distanceTo(p) < radius)
         .sort((a, b) => distanceTo(a) - distanceTo(b))
-        .slice(0, maxCount),
-    );
+        .slice(0, maxCount);
+    };
+    // 学校は、選んだ看板どうしが近すぎるもの（同じ敷地の中学校・高校、隣り合う大学など）を飛ばす（看板が重なって読めないので）
+    const schools: Place[] = [];
+    for (const p of nearest('school', Infinity)) {
+      if (schools.length >= LABELS.school.maxCount) break;
+      const tooClose = schools.some(
+        (q) => Math.hypot(p.position.x - q.position.x, p.position.z - q.position.z) < LABELS.school.spacing,
+      );
+      if (!tooClose) schools.push(p);
+    }
+    const near = new Set([...nearest('station'), ...schools]);
     for (const place of this.places) {
-      if (place.kind === 'station') {
-        if (place.object && !nearStations.has(place)) this.remove(place);
-        else if (!place.object && nearStations.has(place)) this.create(place);
+      if (place.kind !== 'road') {
+        if (place.object && !near.has(place)) this.remove(place);
+        else if (!place.object && near.has(place)) this.create(place);
         continue;
       }
       const d = distanceTo(place);
@@ -107,8 +133,8 @@ export class Labels {
     if (groundY === null) return;
 
     const tex = this.acquireTexture(place);
-    if (place.kind === 'station') {
-      const { height } = LABELS.station;
+    if (place.kind !== 'road') {
+      const { height } = LABELS[place.kind];
       const sign = new THREE.Sprite(
         new THREE.SpriteMaterial({ map: tex.texture, transparent: true, depthWrite: false, fog: false }),
       );
@@ -116,7 +142,8 @@ export class Labels {
       sign.position.y = height;
       // 建物に隠れても見えるように、最後に重ねて描く
       sign.material.depthTest = false;
-      sign.renderOrder = 10;
+      // 駅名を学校名より手前に
+      sign.renderOrder = place.kind === 'station' ? 11 : 10;
       const pole = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, height, 0)]),
         new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }),
@@ -152,8 +179,8 @@ export class Labels {
   private updateObject(place: Place, camera: THREE.Camera): void {
     const object = place.object!;
     const d = Math.hypot(object.position.x - camera.position.x, object.position.z - camera.position.z);
-    if (place.kind === 'station') {
-      const { radius, screenSize, fadeNear } = LABELS.station;
+    if (place.kind !== 'road') {
+      const { radius, screenSize, fadeNear } = LABELS[place.kind];
       // 画面上の大きさを距離で緩やかに小さくする（実寸 = 画面の割合 × 距離 × 視野の高さ）
       const sign = object.children[1] as THREE.Sprite;
       const distance = camera.position.distanceTo(sign.getWorldPosition(this.tmp));
@@ -203,7 +230,7 @@ export class Labels {
   }
 
   private textureKey(place: Place): string {
-    return `${place.kind}:${place.name}`;
+    return `${place.kind}:${place.level ?? 0}:${place.name}`;
   }
 
   /** 名前ごとに文字の画像を共有する（使う人がいなくなったら捨てる） */
@@ -211,7 +238,12 @@ export class Labels {
     const key = this.textureKey(place);
     let entry = this.textures.get(key);
     if (!entry) {
-      const canvas = place.kind === 'station' ? drawStationSign(place.name) : drawRoadName(place.name);
+      const canvas =
+        place.kind === 'station'
+          ? drawStationSign(place.name)
+          : place.kind === 'school'
+            ? drawSchoolSign(place.name, place.level ?? 0)
+            : drawRoadName(place.name);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
@@ -270,6 +302,41 @@ function drawStationSign(name: string): HTMLCanvasElement {
   g.font = `700 52px ${FONT}`;
   g.textBaseline = 'middle';
   g.fillText(name, pad + icon + 16, h / 2 + 2);
+  return canvas;
+}
+
+/** 学校名の看板：深緑の角丸に白文字、左に種類（小・中・高・大）の丸 */
+function drawSchoolSign(name: string, level: number): HTMLCanvasElement {
+  const h = 84;
+  const pad = 22;
+  const icon = 52;
+  const measure = document.createElement('canvas').getContext('2d')!;
+  measure.font = `700 44px ${FONT}`;
+  const w = Math.ceil(pad + icon + 14 + measure.measureText(name).width + pad);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = 'rgba(16, 52, 34, 0.86)';
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, h - 4, 18);
+  g.fill();
+  g.strokeStyle = 'rgba(134, 214, 150, 0.9)';
+  g.lineWidth = 4;
+  g.stroke();
+  g.fillStyle = '#86d696';
+  g.beginPath();
+  g.arc(pad + icon / 2, h / 2, icon / 2, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = 'rgba(16, 52, 34, 1)';
+  g.font = `800 34px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('小中高大'[level] ?? '学', pad + icon / 2, h / 2 + 2);
+  g.fillStyle = '#ffffff';
+  g.font = `700 44px ${FONT}`;
+  g.textAlign = 'left';
+  g.fillText(name, pad + icon + 14, h / 2 + 2);
   return canvas;
 }
 

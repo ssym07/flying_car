@@ -250,7 +250,8 @@ export class Minimap {
     map.scrollZoom.disable();
     this.map = map;
     map.on('load', () => {
-      // 駅名より下に置く（重なったら駅名・JCT・IC・川の名前の順に残す）
+      // 駅名より下に置く（重なったら駅名・JCT・IC・川の名前・学校名の順に残す）
+      this.addSchools(map);
       this.addRivers(map);
       this.addJunctions(map);
       this.addStations(map);
@@ -298,6 +299,45 @@ export class Minimap {
     map.on('mouseout', () => {
       this.tipEl.hidden = true;
     });
+  }
+
+  /**
+   * 学校名（scripts/fetch-schools.mjs が作る schools.json）。大学・短大・高専は少し引いた所から、小・中・高は寄った時だけ出す。
+   * 文字は学校の色（深緑）で小さめに。ファイルが無い地域では出さない
+   */
+  private addSchools(map: MapLibreMap): void {
+    map.addSource('schools', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'school-name',
+      type: 'symbol',
+      source: 'schools',
+      filter: ['any', ['==', ['get', 'kind'], 3], ['>=', ['zoom'], 13.5]],
+      minzoom: 12,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 12],
+        'text-max-width': 8,
+        'text-padding': 2,
+        // 大学を先に置く（重なったら小・中・高を消す）
+        'symbol-sort-key': ['-', 3, ['get', 'kind']],
+      },
+      paint: { 'text-color': COLORS.school, 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 },
+    });
+    fetch(regionUrl('schools.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { s: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        (map.getSource('schools') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: data.s.map(([name, lat, lon, kind]) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: { name, kind },
+          })),
+        });
+      })
+      .catch(() => {});
   }
 
   /**
