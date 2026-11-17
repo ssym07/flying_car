@@ -5,11 +5,11 @@ import { regionUrl } from '../core/region';
 import { ROAD_LABELS as roadLabels, STATIONS as stations } from '../data/regionData';
 
 interface Place {
-  kind: 'station' | 'road' | 'school';
+  kind: 'station' | 'road' | 'school' | 'park' | 'museum';
   name: string;
   /** ローカル座標（高さは地面が分かるまで未定） */
   position: THREE.Vector3;
-  /** 学校の種類（0 小学校・1 中学校・2 高校・3 大学など）。学校のほかは 0 */
+  /** 学校の種類（0 小学校・1 中学校・2 高校・3 大学など）、美術館などの種類（0 美術館・1 科学館・2 博物館）。ほかは 0 */
   level?: number;
   /** 通りの向き（ローカル座標の水平な単位ベクトル）。駅は null */
   direction: THREE.Vector3 | null;
@@ -21,6 +21,8 @@ interface Place {
  * - 駅名：駅の上空に浮かぶ看板（常にカメラを向く）。地面まで細い線を下ろす
  * - 通り名：道路の地面に描いた文字（道に沿った向き。読める向きに自動で反転）
  * - 学校名：駅名より小さく低い看板（scripts/fetch-schools.mjs が作る schools.json。読み込めたら足す）
+ * - 公園名：大きな公園だけ、学校と同じ形の看板（scripts/fetch-park-names.mjs が作る park-names.json）
+ * - 美術館・科学館・博物館：学校と同じ形の紫の看板（scripts/fetch-museums.mjs が作る museums.json）
  * カメラの近くだけ作り、離れたら捨てる。地面の高さは地形が読めてから決める
  */
 export class Labels {
@@ -74,6 +76,29 @@ export class Labels {
         }
       })
       .catch(() => {});
+
+    // 美術館・科学館・博物館（ファイルが無い地域では出さない）
+    fetch(regionUrl('museums.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { m: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        for (const [name, lat, lon, level] of data.m) {
+          this.places.push({ kind: 'museum', name, level, position: toLocal(lat, lon), direction: null, object: null });
+        }
+      })
+      .catch(() => {});
+
+    // 公園名（広い公園だけ。ファイルが無い地域では出さない）
+    fetch(regionUrl('park-names.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { p: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        for (const [name, lat, lon, area] of data.p) {
+          if (area < LABELS.park.minArea) continue;
+          this.places.push({ kind: 'park', name, position: toLocal(lat, lon), direction: null, object: null });
+        }
+      })
+      .catch(() => {});
   }
 
   /** 毎フレーム呼ぶ。作る・捨てるの判定は数回/秒、向きと濃さは毎フレーム */
@@ -97,7 +122,7 @@ export class Labels {
     const distanceTo = (p: Place) => Math.hypot(p.position.x - cameraPosition.x, p.position.z - cameraPosition.z);
 
     // 駅・学校は近い順に maxCount 件だけ
-    const nearest = (kind: 'station' | 'school', limit?: number) => {
+    const nearest = (kind: 'station' | 'school' | 'park' | 'museum', limit?: number) => {
       const { radius } = LABELS[kind];
       const maxCount = limit ?? LABELS[kind].maxCount;
       return this.places
@@ -105,16 +130,19 @@ export class Labels {
         .sort((a, b) => distanceTo(a) - distanceTo(b))
         .slice(0, maxCount);
     };
-    // 学校は、選んだ看板どうしが近すぎるもの（同じ敷地の中学校・高校、隣り合う大学など）を飛ばす（看板が重なって読めないので）
-    const schools: Place[] = [];
-    for (const p of nearest('school', Infinity)) {
-      if (schools.length >= LABELS.school.maxCount) break;
-      const tooClose = schools.some(
-        (q) => Math.hypot(p.position.x - q.position.x, p.position.z - q.position.z) < LABELS.school.spacing,
-      );
-      if (!tooClose) schools.push(p);
-    }
-    const near = new Set([...nearest('station'), ...schools]);
+    // 学校・公園は、選んだ看板どうしが近すぎるもの（同じ敷地の中学校・高校、隣り合う大学など）を飛ばす（看板が重なって読めないので）
+    const spaced = (kind: 'school' | 'park' | 'museum') => {
+      const chosen: Place[] = [];
+      for (const p of nearest(kind, Infinity)) {
+        if (chosen.length >= LABELS[kind].maxCount) break;
+        const tooClose = chosen.some(
+          (q) => Math.hypot(p.position.x - q.position.x, p.position.z - q.position.z) < LABELS[kind].spacing,
+        );
+        if (!tooClose) chosen.push(p);
+      }
+      return chosen;
+    };
+    const near = new Set([...nearest('station'), ...spaced('school'), ...spaced('park'), ...spaced('museum')]);
     for (const place of this.places) {
       if (place.kind !== 'road') {
         if (place.object && !near.has(place)) this.remove(place);
@@ -243,7 +271,11 @@ export class Labels {
           ? drawStationSign(place.name)
           : place.kind === 'school'
             ? drawSchoolSign(place.name, place.level ?? 0)
-            : drawRoadName(place.name);
+            : place.kind === 'park'
+              ? drawParkSign(place.name)
+              : place.kind === 'museum'
+                ? drawMuseumSign(place.name, place.level ?? 0)
+                : drawRoadName(place.name);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
@@ -336,6 +368,75 @@ function drawSchoolSign(name: string, level: number): HTMLCanvasElement {
   g.fillStyle = '#ffffff';
   g.font = `700 44px ${FONT}`;
   g.textAlign = 'left';
+  g.fillText(name, pad + icon + 14, h / 2 + 2);
+  return canvas;
+}
+
+/** 美術館・科学館・博物館の看板：紫の角丸に白文字、左に種類（美・科・博）の丸 */
+function drawMuseumSign(name: string, level: number): HTMLCanvasElement {
+  const h = 84;
+  const pad = 22;
+  const icon = 52;
+  const measure = document.createElement('canvas').getContext('2d')!;
+  measure.font = `700 44px ${FONT}`;
+  const w = Math.ceil(pad + icon + 14 + measure.measureText(name).width + pad);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = 'rgba(58, 30, 82, 0.86)';
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, h - 4, 18);
+  g.fill();
+  g.strokeStyle = 'rgba(200, 160, 236, 0.9)';
+  g.lineWidth = 4;
+  g.stroke();
+  g.fillStyle = '#c8a0ec';
+  g.beginPath();
+  g.arc(pad + icon / 2, h / 2, icon / 2, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = 'rgba(58, 30, 82, 1)';
+  g.font = `800 34px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('美科博'[level] ?? '博', pad + icon / 2, h / 2 + 2);
+  g.fillStyle = '#ffffff';
+  g.font = `700 44px ${FONT}`;
+  g.textAlign = 'left';
+  g.fillText(name, pad + icon + 14, h / 2 + 2);
+  return canvas;
+}
+
+/** 公園名の看板：緑の角丸に白文字、左に木のマーク */
+function drawParkSign(name: string): HTMLCanvasElement {
+  const h = 84;
+  const pad = 22;
+  const icon = 52;
+  const measure = document.createElement('canvas').getContext('2d')!;
+  measure.font = `700 44px ${FONT}`;
+  const w = Math.ceil(pad + icon + 14 + measure.measureText(name).width + pad);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = 'rgba(38, 92, 30, 0.86)';
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, h - 4, 18);
+  g.fill();
+  g.strokeStyle = 'rgba(200, 232, 120, 0.9)';
+  g.lineWidth = 4;
+  g.stroke();
+  // 木（丸い葉と幹）
+  const cx = pad + icon / 2;
+  g.fillStyle = '#8a5a2b';
+  g.fillRect(cx - 4, h / 2 + 6, 8, 18);
+  g.fillStyle = '#c8e878';
+  g.beginPath();
+  g.arc(cx, h / 2 - 4, 18, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#ffffff';
+  g.font = `700 44px ${FONT}`;
+  g.textBaseline = 'middle';
   g.fillText(name, pad + icon + 14, h / 2 + 2);
   return canvas;
 }

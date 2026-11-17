@@ -1,4 +1,4 @@
-import type { GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl';
+import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 // MapLibre の裏で働く処理（タイルの読み取り）。Vite に1つのファイルにまとめさせ、その URL を渡す
 // （MapLibre が自分で探す場所は、Vite の事前のまとめ・本番のビルドで変わって見つからなくなる）
@@ -250,8 +250,10 @@ export class Minimap {
     map.scrollZoom.disable();
     this.map = map;
     map.on('load', () => {
-      // 駅名より下に置く（重なったら駅名・JCT・IC・川の名前・学校名の順に残す）
+      // 駅名より下に置く（重なったら駅名・JCT・IC・川の名前・美術館など・公園名・学校名の順に残す）
       this.addSchools(map);
+      this.addParks(map);
+      this.addMuseums(map);
       this.addRivers(map);
       this.addJunctions(map);
       this.addStations(map);
@@ -334,6 +336,87 @@ export class Minimap {
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [lon, lat] },
             properties: { name, kind },
+          })),
+        });
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * 美術館・科学館・博物館の名前（scripts/fetch-museums.mjs が作る museums.json）。紫の文字で、数が少ないので学校より引いた所から出す。
+   * ファイルが無い地域では出さない
+   */
+  private addMuseums(map: MapLibreMap): void {
+    map.addSource('museums', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'museum-name',
+      type: 'symbol',
+      source: 'museums',
+      minzoom: 12.5,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 10, 16, 12],
+        'text-max-width': 8,
+        'text-padding': 2,
+      },
+      paint: { 'text-color': COLORS.museum, 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 },
+    });
+    fetch(regionUrl('museums.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { m: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        (map.getSource('museums') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: data.m.map(([name, lat, lon, kind]) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: { name, kind },
+          })),
+        });
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * 大きな公園の名前（scripts/fetch-park-names.mjs が作る park-names.json）。公園の色の文字で、広い公園ほど引いた所から出す
+   * （30ha 以上はズーム 11.5、10ha 以上は 13、ほか（3ha 以上）は 14 から）。ファイルが無い地域では出さない
+   */
+  private addParks(map: MapLibreMap): void {
+    map.addSource('parks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    const area: ExpressionSpecification = ['get', 'area'];
+    map.addLayer({
+      id: 'park-name',
+      type: 'symbol',
+      source: 'parks',
+      minzoom: 11.5,
+      filter: [
+        'any',
+        ['>=', area, 30],
+        ['all', ['>=', area, 10], ['>=', ['zoom'], 13]],
+        ['>=', ['zoom'], 14],
+      ],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 16, 12],
+        'text-max-width': 8,
+        'text-padding': 2,
+        // 広い公園を先に置く
+        'symbol-sort-key': ['-', 0, area],
+      },
+      paint: { 'text-color': COLORS.park, 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 },
+    });
+    fetch(regionUrl('park-names.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { p: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        (map.getSource('parks') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: data.p.map(([name, lat, lon, area]) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: { name, area },
           })),
         });
       })

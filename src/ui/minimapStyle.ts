@@ -31,6 +31,8 @@ export const COLORS = {
   junction: '#a0661a',
   /** 学校名（深緑） */
   school: '#2f7a46',
+  /** 美術館・科学館・博物館の名前（紫） */
+  museum: '#7a4fa8',
 };
 
 /** 高速道路（有料の自動車専用道路を含む） */
@@ -135,7 +137,8 @@ function roadLayers(): StyleSpecification['layers'] {
  * 引いた時ほど大きな地名だけにする（都府県 → 都市 → 区・町村 → 町名）
  */
 const ANNO_TOWN = [210, 220];
-const ANNO_PARK = [531, 532, 533, 534];
+// 公園（534）は出さない（大きな公園の名前は scripts/fetch-park-names.mjs のデータで書く。二重にならないように）。史跡・名勝・古墳などは出す
+const ANNO_PARK = [531, 532, 533];
 const ANNO_WATER = [321, 322, 345];
 const ANNO_MOUNTAIN = [311, 312, 314, 315, 316];
 const code: ExpressionSpecification = ['get', 'vt_code'];
