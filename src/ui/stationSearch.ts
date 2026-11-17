@@ -15,8 +15,11 @@ export interface StationSearchOptions<S extends Station> {
   note?: (station: S) => string;
 }
 
+/** 大学の候補か（大学は名前に「駅」を付けず、「大学」の印を付ける） */
+const isUniversity = (s: Station): boolean => (s as { kind?: string }).kind === 'university';
+
 /**
- * 画面右上の駅検索。駅名を入力すると候補を下に出し、選ぶと onSelect を呼ぶ。
+ * 画面右上の駅検索。駅名（と大学名）を入力すると候補を下に出し、選ぶと onSelect を呼ぶ。
  * 候補はクリック、または ↑↓ と Enter で選べる。Esc で閉じる。
  */
 export class StationSearch<S extends Station = Station> {
@@ -40,7 +43,7 @@ export class StationSearch<S extends Station = Station> {
     this.root = document.createElement('div');
     this.root.className = options.className ?? 'search';
     this.root.innerHTML = `
-      <input type="search" placeholder="${options.placeholder ?? `駅名で検索（例：${REGION.searchExample}）`}" autocomplete="off" spellcheck="false" />
+      <input type="search" placeholder="${options.placeholder ?? `駅名・大学名で検索（例：${REGION.searchExample}）`}" autocomplete="off" spellcheck="false" />
       <ul class="search-results" role="listbox"></ul>
     `;
     this.input = this.root.querySelector('input')!;
@@ -121,7 +124,13 @@ export class StationSearch<S extends Station = Station> {
       li.setAttribute('role', 'option');
       const name = document.createElement('span');
       name.className = 'search-name';
-      name.textContent = `${s.name}駅`;
+      name.textContent = isUniversity(s) ? s.name : `${s.name}駅`;
+      if (isUniversity(s)) {
+        const badge = document.createElement('span');
+        badge.className = 'search-badge';
+        badge.textContent = '大学';
+        name.prepend(badge);
+      }
       li.appendChild(name);
       const note = this.options.note
         ? this.options.note(s)

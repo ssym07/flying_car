@@ -14,7 +14,9 @@ import { REGION } from '../core/region';
 import { addPin, allPins, onPinsChange, pinHex, type Pin } from '../data/pins';
 import { PinPanel } from '../ui/pinPanel';
 import { Pins } from '../world/Pins';
-import { describeStation, nearestStation } from '../world/places';
+import { describeStation, nearestStation, type Station } from '../world/places';
+import { loadUniversities } from '../data/universities';
+import { STATIONS } from '../data/regionData';
 import { forwardOf, step, speed, type ControlInput } from '../vehicle/physics';
 import { Vehicle } from '../vehicle/Vehicle';
 import { Collision } from '../world/Collision';
@@ -79,10 +81,21 @@ export class FlightScene implements GameScene {
       // 高さは分からないので、地形を読んだら地面に立てる。名前は地名を仮に入れ、一覧で入れ直してもらう
       onSave: (lat, lon, name) => this.pinPanel.edit(addPin({ region: REGION.id, name, lat, lon, elevation: null })),
     });
+    // 駅と大学（大学の一覧は入力欄を使い始めた時に読む）
+    let places: Station[] = STATIONS;
     this.search = new StationSearch(
       this.ctx.overlay,
       (station) => this.jumpTo(station.lat, station.lon),
       () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
+      {
+        stations: () => places,
+        onFirstFocus: () => {
+          void loadUniversities(REGION.id).then((list) => {
+            places = [...STATIONS, ...list];
+            this.search.refresh();
+          });
+        },
+      },
     );
     this.routeMap = new RouteMap(
       this.ctx.overlay,

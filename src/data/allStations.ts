@@ -1,5 +1,6 @@
 import { REGION, REGIONS, type Region } from '../core/region';
 import type { Station } from '../world/places';
+import { loadUniversities } from './universities';
 
 /** どの地域の駅か付きの駅（ホームの駅検索） */
 export interface RegionStation extends Station {
@@ -26,4 +27,14 @@ export function loadAllStations(): Promise<RegionStation[]> {
       .map(async (region) => (await loaders[region]()).default.map((s) => ({ ...s, region }))),
   ).then((lists) => lists.flat());
   return all;
+}
+
+/** 全部の地域の駅と大学（ホームの検索）。大学は駅のあとに並べる */
+export function loadAllPlaces(): Promise<RegionStation[]> {
+  return Promise.all([
+    loadAllStations(),
+    ...(Object.keys(REGIONS) as Region['id'][]).map(async (region) =>
+      (await loadUniversities(region)).map((u) => ({ ...u, region })),
+    ),
+  ]).then((lists) => lists.flat());
 }

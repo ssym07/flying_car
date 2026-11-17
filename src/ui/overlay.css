@@ -502,6 +502,18 @@ body {
   background: rgba(102, 204, 255, 0.22);
 }
 
+.search-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #2f7a46;
+  color: #fff;
+  font-size: 11px;
+  line-height: 17px;
+  vertical-align: 1px;
+}
+
 .search-distance {
   color: var(--fg-dim);
   font-size: 12px;

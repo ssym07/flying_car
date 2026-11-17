@@ -3,7 +3,7 @@ import { mountScreen, type GameContext } from '../core/context';
 import { REGION, REGIONS, type Region, switchRegion } from '../core/region';
 import type { GameScene } from '../core/SceneManager';
 import { setStartAt } from '../core/startAt';
-import { loadAllStations, type RegionStation } from '../data/allStations';
+import { loadAllPlaces, type RegionStation } from '../data/allStations';
 import japan from '../data/japanDots.json';
 import { StationSearch } from '../ui/stationSearch';
 
@@ -49,10 +49,10 @@ export class TitleScene implements GameScene {
       () => null,
       {
         className: 'search title-search',
-        placeholder: '駅名で探して、その駅から始める（例：博多・栄・梅田）',
+        placeholder: '駅名・大学名で探して、そこから始める（例：博多・栄・梅田）',
         stations: () => stations,
         onFirstFocus: () => {
-          void loadAllStations().then((list) => {
+          void loadAllPlaces().then((list) => {
             stations = list;
             this.search?.refresh();
           });
