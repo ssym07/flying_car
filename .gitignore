@@ -1,5 +1,8 @@
 node_modules
 dist
+# Mac アプリ用のビルド（electron/main.cjs）と、作った SKY DRIVE.app の置き場
+dist-app
+build-app
 *.local
 .DS_Store
 data/cache

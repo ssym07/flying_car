@@ -54,7 +54,7 @@ requestAnimationFrame
 
 ### シーン（画面）遷移
 ```
-TitleScene ──▶ LoadingScene ──▶ FlightScene ⇄ PauseScene
+TitleScene ──▶ EntranceScene ──▶ LoadingScene ──▶ FlightScene ⇄ PauseScene
                                      │
                                      ▼
                                （将来）ResultScene
@@ -232,7 +232,22 @@ npm install
 npm run dev      # 開発サーバー
 npm run build    # 本番ビルド
 npm run preview  # ビルド結果の確認
+npm run app      # Mac アプリ /Applications/SKY DRIVE.app を作る
 ```
+
+### Mac アプリ（SKY DRIVE.app）
+
+`npm run app` で Electron のアプリを作る（`scripts/build-mac-app.mjs`。アイコンは `electron/icon.svg`）。
+アプリにはゲームの中身もデータも入れず、このフォルダから読む（プログラムは `dist-app`、データは `public`）。そのため、このフォルダがあるこの Mac 専用。
+
+| 変えたもの | すること |
+|---|---|
+| データ（`public` の下） | 何もしない（次に開いた時から新しくなる） |
+| プログラム（`src` の下） | 何もしない（アプリを開いた時に、`src` がビルドより新しければ自動でビルドし直す。十数秒） |
+| アプリ（`electron/main.cjs`・アイコン）、このフォルダの場所 | `npm run app` で作り直す |
+
+- Electron の本体は `npm install` の後処理で落ちてくる。止められて殻だけになった時は `node node_modules/electron/install.js`
+- アプリの中で `127.0.0.1:47321` にサーバーを立てて開く。ピンは開発サーバー（localhost:5173）とは別に保存される
 
 ## 6. 操作方法（MVP）
 

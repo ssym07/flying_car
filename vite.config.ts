@@ -4,14 +4,15 @@ import { defineConfig, loadEnv } from 'vite';
 /**
  * 公開版のビルド（VITE_DATA_URL を渡した時）は、データ（public の下のタイル・建物、約 20GB）を dist にコピーしない。
  * データは Cloudflare R2 に別に上げる（scripts/upload-data.sh）。dist にはプログラムと Draco のデコーダーだけを入れる。
- * VITE_DATA_URL が無い時は今までどおり（public を丸ごとコピー）
+ * VITE_DATA_URL が無い時は今までどおり（public を丸ごとコピー）。
+ * Mac アプリ用のビルド（--mode app、electron/main.cjs が dist-app に作る）もコピーしない（アプリが public を直接読む）
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   const remoteData = Boolean(env.VITE_DATA_URL);
   return {
     build: {
-      copyPublicDir: !remoteData,
+      copyPublicDir: !remoteData && mode !== 'app',
     },
     // ミニマップの MapLibre の worker（?worker&url）を ES モジュールのまま出す（MapLibre は .mjs の worker を module として起動する）
     worker: { format: 'es' as const },

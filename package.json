@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "app": "node scripts/build-mac-app.mjs"
   },
   "dependencies": {
     "3d-tiles-renderer": "^0.5.3",
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/three": "^0.186.0",
     "draco3dgltf": "1.5.7",
+    "electron": "39.2.3",
     "three-bvh-csg": "0.0.18",
     "typescript": "~5.9",
     "vite": "^8.3.5",
