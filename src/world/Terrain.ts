@@ -20,6 +20,8 @@ interface Chunk {
   trees: THREE.Group | null;
   /** 標高（ジオイド基準, m）。256×256、データなしは埋め済み */
   heights: Float32Array | null;
+  /** 水域（国土地理院の地図の水の色・水域の面。size×size、上の行から、1 = 水）。水が無いチャンクは null */
+  water: { mask: Uint8Array; size: number } | null;
   /** 読込中に範囲外になったら true（読み終わったら捨てる） */
   dead: boolean;
 }
@@ -240,6 +242,21 @@ export class Terrain {
   }
 
   /**
+   * (緯度, 経度) が水域（川・海・池）か。地形がまだ読めていなければ null。
+   * 標高では決めない（大阪・東京の低地は陸でも水面とほとんど同じ高さなので）
+   */
+  isWaterAt(latDeg: number, lonDeg: number): boolean | null {
+    const t = lonLatToTile(lonDeg, latDeg, TERRAIN.demZoom);
+    const chunk = this.chunks.get(`${Math.floor(t.x)}/${Math.floor(t.y)}`);
+    if (!chunk?.heights) return null;
+    if (!chunk.water) return false;
+    const { mask, size } = chunk.water;
+    const px = Math.min(size - 1, Math.floor((t.x - chunk.x) * size));
+    const py = Math.min(size - 1, Math.floor((t.y - chunk.y) * size));
+    return mask[py * size + px] > 0;
+  }
+
+  /**
    * 画面に描いている地形の面の標高（ジオイド基準, m）。heightAt は5mメッシュの標高そのものだが、
    * 地形のメッシュはそれより粗い三角形なので、線路や道路をその上に置く時はこちらを使う
    * （heightAt に置くと、掘割や斜面でメッシュの面に埋もれる）。読込前なら null。
@@ -381,7 +398,7 @@ export class Terrain {
     const center = new THREE.Vector3();
     WGS84_ELLIPSOID.getCartographicToPosition(lat, lon, TERRAIN.geoidHeight, center);
     center.applyMatrix4(this.ecefToLocal!);
-    return { x, y, center, mesh: null, trees: null, heights: null, dead: false };
+    return { x, y, center, mesh: null, trees: null, heights: null, water: null, dead: false };
   }
 
   private async loadChunk(chunk: Chunk): Promise<void> {
@@ -423,6 +440,7 @@ export class Terrain {
       this.updateTrenchMask(chunk);
       geometry.computeBoundsTree();
       chunk.heights = heights;
+      chunk.water = waterData ? { mask: waterData.mask, size: waterData.size } : null;
       this.group.add(chunk.mesh);
       // 木と墓石（近くのチャンクだけ描く）
       const groundAt = (u: number, v: number) => {
@@ -483,6 +501,7 @@ export class Terrain {
     }
     chunk.mesh = null;
     chunk.heights = null;
+    chunk.water = null;
     this.chunks.delete(key(chunk));
     for (const l of this.listeners) l.onChunkRemoved(chunk.x, chunk.y);
   }

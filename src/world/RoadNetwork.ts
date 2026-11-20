@@ -491,13 +491,13 @@ export class RoadNetwork implements ChunkListener {
 
     // 名前のある長い橋：左右に鋼のアーチと吊り材
     // 「〜橋」の名前の橋と、大きな橋に付ける（OSM では勝鬨橋の名前が「晴海通り」になっているなど、
-    // 橋の名前が入っていないことが多い）。陸の上の高架には付けないよう、橋の中央が水の上のものだけ
+    // 橋の名前が入っていないことが多い）。陸の上の高架（新御堂筋など）には付けないよう、橋の中央が水域のものだけ。
+    // 水かどうかは標高ではなく水域の画像で決める（大阪の低地は陸でも標高が水面とほとんど同じで、高架にアーチが並んでいた）
     const named = /(橋|ブリッジ)$/.test(name) && total >= BRIDGES.archMinLength;
     const large = total >= BRIDGES.archMinLengthUnnamed;
     if (!named && !large) return;
     const [aLat, aLon, bLat, bLon] = bridge;
-    const midHeight = this.terrain.heightAt((aLat + bLat) / 2e6, (aLon + bLon) / 2e6);
-    if (midHeight === null || midHeight > WATER.surfaceHeight + 0.5) return;
+    if (this.terrain.isWaterAt((aLat + bLat) / 2e6, (aLon + bLon) / 2e6) !== true) return;
     const archHeight = Math.min(BRIDGES.archMaxHeight, total * BRIDGES.archRatio);
     const archAt = (i: number) => archHeight * Math.sin(Math.PI * THREE.MathUtils.clamp((s[i] + offset) / total, 0, 1));
     for (const dir of [1, -1]) {
