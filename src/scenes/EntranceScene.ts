@@ -8,7 +8,7 @@ import { setStartAt } from '../core/startAt';
 interface MuniData {
   /** 名前 */
   n: string;
-  /** 都府県 */
+  /** 一覧の見出し（都府県。区ごとに選ぶ大阪市・京都市は市の名前） */
   p: string;
   /** 役所 [緯度, 経度] */
   h: [number, number];
@@ -37,7 +37,7 @@ const SPAN = { w: 140, h: 130 };
 
 /**
  * エントランス：ワールド（地域）の、建物を再現している市町村の地図。
- * 市町村を地図か一覧で選び、その市役所・町村役場の上空から飛び始める（東京23区は区ごと、政令市は市ごと）。
+ * 市町村を地図か一覧で選び、その市役所・町村役場の上空から飛び始める（東京23区・大阪市・京都市は区ごと、ほかの政令市は市ごと）。
  * 地図はホームと同じ暗い背景に、市町村の境を線で描く。ホイールで拡大、ドラッグで移動
  */
 export class EntranceScene implements GameScene {
@@ -223,7 +223,8 @@ export class EntranceScene implements GameScene {
     const card = this.el!.querySelector<HTMLElement>('.entrance-card')!;
     card.hidden = false;
     card.querySelector('b')!.textContent = m.n;
-    card.querySelector('span')!.textContent = `${m.p}・${m.hn}の上空から`;
+    // 区ごとに選ぶ政令市の区は「京都市中京区役所」と市の名前が入っているので、見出し（京都市）は付けない
+    card.querySelector('span')!.textContent = `${m.hn.startsWith(m.p) ? '' : `${m.p}・`}${m.hn}の上空から`;
     this.layoutLabels();
     if (go) this.go();
   }

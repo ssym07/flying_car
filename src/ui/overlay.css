@@ -902,6 +902,11 @@ body {
   pointer-events: auto;
 }
 
+/* エントランスのボタンは、ホームのボタン（幅 72px）の左 */
+.home-button.entrance-button {
+  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 3 + 8px);
+}
+
 .home-button:hover {
   background: rgba(102, 204, 255, 0.35);
 }

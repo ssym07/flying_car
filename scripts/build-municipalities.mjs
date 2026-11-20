@@ -3,11 +3,11 @@
 // 使い方: node scripts/build-municipalities.mjs（REGION= で地域）
 //
 // - 出す市町村は、建物を再現している市町村（src/data/wards.ts）のうち、役所がこの地域のデータの範囲（AREAS）にあるもの
-// - 政令市は区をつなげて1つの市にする（大阪市・横浜市など）。東京23区は区ごと
+// - 政令市は区をつなげて1つの市にする（横浜市・名古屋市など）。東京23区と、大阪市・京都市（SPLIT）は区ごと
 // - 形は国土数値情報の行政区域（N03、2024 年）。隣どうしの境が同じ線になるよう、境ごとに線を簡単にする
 // - 役所の位置は国土数値情報の市町村役場等（P34、2014 年）の本庁。そのあと移った役所は MOVED で直す
 //
-// 出力の形式: { "m": [{ "n": 名前, "p": 都府県, "h": [緯度, 経度], "hn": 役所の名前, "l": [名前を置く緯度, 経度], "r": [[経度, 緯度, 経度, 緯度, ...], ...] }] }
+// 出力の形式: { "m": [{ "n": 名前, "p": 一覧の見出し（都府県。区ごとにする政令市は市の名前）, "h": [緯度, 経度], "hn": 役所の名前, "l": [名前を置く緯度, 経度], "r": [[経度, 緯度, 経度, 緯度, ...], ...] }] }
 // 輪（r）は外周と穴の区別なし（evenodd で塗る）
 // データ: 国土数値情報（行政区域データ・市町村役場等及び公的集会施設データ）（国土交通省）を加工
 import { execFileSync } from 'node:child_process';
@@ -23,6 +23,10 @@ const WARDS = new URL('../src/data/wards.ts', import.meta.url);
 const PREFS = { kanto: [13, 11, 12, 14], kinki: [27, 26, 28, 29], chubu: [23, 21, 24], kyushu: [40, 41] }[REGION_ID];
 /** 線を簡単にする許し幅 (m)。エントランスの地図は 1px が 50〜100m ほど */
 const TOLERANCE = 40;
+/** 区ごとに選べるようにする政令市（東京23区はもともと区ごと） */
+const SPLIT = new Set(['大阪市', '京都市']);
+/** 2014 年のあとに市になった町（役所のデータは町の名前のまま） */
+const OLD_NAMES = { 那珂川市: '那珂川町' };
 /** 2014 年のあとに移った役所（国土地理院の住所検索で引いた新しい住所の位置） */
 const MOVED = {
   豊島区: { lat: 35.72537, lon: 139.71709 }, // 2015 年に南池袋二丁目へ
@@ -71,8 +75,21 @@ for (const p of PREFS) {
   for (const f of features) {
     const pr = f.properties;
     if (!pr.N03_004 || !f.geometry) continue;
-    const key = `${p}|${pr.N03_003 ?? ''}|${pr.N03_004}`;
-    if (!groups.has(key)) groups.set(key, { key, pref: p, prefName: pr.N03_001, name: pr.N03_004, polys: [], hasBuildings: false });
+    const split = SPLIT.has(pr.N03_004) && pr.N03_005;
+    const key = `${p}|${pr.N03_003 ?? ''}|${pr.N03_004}|${split ? pr.N03_005 : ''}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        pref: p,
+        prefName: pr.N03_001,
+        // 区ごとにする政令市は、名前は区の名前、一覧の見出しは市の名前
+        name: split ? pr.N03_005 : pr.N03_004,
+        head: split ? pr.N03_004 : pr.N03_001,
+        office: split ? `${pr.N03_004}${pr.N03_005}` : OLD_NAMES[pr.N03_004] ?? pr.N03_004,
+        polys: [],
+        hasBuildings: false,
+      });
+    }
     const g = groups.get(key);
     g.polys.push(...(f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates));
     if (wardCodes.has(pr.N03_007)) g.hasBuildings = true;
@@ -81,7 +98,7 @@ for (const p of PREFS) {
 
 const munis = [];
 for (const g of groups.values()) {
-  const hall = halls.find((h) => h.pref === g.pref && (h.name === `${g.name}役所` || h.name === `${g.name}役場`));
+  const hall = halls.find((h) => h.pref === g.pref && (h.name === `${g.office}役所` || h.name === `${g.office}役場`));
   // 政令市は wards.ts に市のコード（神戸市 28100）で入っていることがある（行政区域データは区のコードだけ）
   if (!g.hasBuildings && !(hall && wardCodes.has(hall.code))) continue;
   if (!hall) {
@@ -89,7 +106,10 @@ for (const g of groups.values()) {
     continue;
   }
   const at = MOVED[g.name] ?? hall;
-  if (!inArea(at.lat, at.lon)) continue;
+  if (!inArea(at.lat, at.lon)) {
+    console.warn(`役所が範囲の外: ${g.prefName}${g.office}`);
+    continue;
+  }
   munis.push({ ...g, hall: { name: hall.name, code: hall.code, lat: at.lat, lon: at.lon } });
 }
 
@@ -282,9 +302,9 @@ const out = munis.map((m) => {
   return {
     code: m.hall.code,
     n: m.name,
-    p: m.prefName,
+    p: m.head,
     h: [round(m.hall.lat), round(m.hall.lon)],
-    hn: m.hall.name,
+    hn: OLD_NAMES[m.name] ? `${m.name}役所` : m.hall.name,
     l: [round(lat), round(lon)],
     r: rings.map((r) => r.flatMap(([x, y]) => [round(x), round(y)])),
   };

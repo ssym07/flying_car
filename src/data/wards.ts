@@ -216,6 +216,8 @@ export const WARDS: Ward[] = [
   { code: '40223', name: '古賀市', kind: 'lod1', url: '' },
   { code: '40224', name: '福津市', kind: 'lod1', url: '' },
   { code: '40230', name: '糸島市', kind: 'lod1', url: '' },
+  // 那珂川市：PLATEAU が無いので国土地理院の建物の形から作る（北の市街地。南の山は範囲の外）
+  { code: '40231', name: '那珂川市', kind: 'lod1', url: '' },
   // 久留米市・鳥栖市（佐賀県）：PLATEAU の建物。範囲（平地・市街地）は scripts/lib/region.mjs で切る
   { code: '40203', name: '久留米市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/1d/a369a6-1be9-424b-b686-f2042ebcb1a8/40203_kurume-shi_city_2020_citygml_6_op_bldg_3dtiles_lod1/tileset.json' },
   { code: '41203', name: '鳥栖市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/31/df4ae2-f768-4dc2-b633-0f6074bebab9/41203_tosu-shi_city_2025_citygml_1_op_bldg_3dtiles_lod1/tileset.json' },

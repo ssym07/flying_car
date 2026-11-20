@@ -40,6 +40,8 @@ export class FlightScene implements GameScene {
   private unsubscribePins!: () => void;
   /** ホーム（行き先を選ぶタイトル）へ戻るボタン */
   private homeButton!: HTMLButtonElement;
+  /** このワールドのエントランス（市町村を選ぶ画面）へ戻るボタン */
+  private entranceButton!: HTMLButtonElement;
   /** 地形の読込を待っているジャンプ先 */
   private pendingJump: { lat: number; lon: number } | null = null;
   private readonly ahead = new THREE.Vector3();
@@ -128,6 +130,14 @@ export class FlightScene implements GameScene {
     this.homeButton.addEventListener('click', () => this.ctx.go.title());
     this.ctx.overlay.appendChild(this.homeButton);
 
+    this.entranceButton = document.createElement('button');
+    this.entranceButton.type = 'button';
+    this.entranceButton.className = 'home-button entrance-button';
+    this.entranceButton.textContent = 'エントランス';
+    this.entranceButton.title = 'このワールドの市町村を選ぶ画面へ戻る';
+    this.entranceButton.addEventListener('click', () => this.ctx.go.entrance());
+    this.ctx.overlay.appendChild(this.entranceButton);
+
     // ホームの駅検索で選んだ駅の上空から始める
     const at = takeStartAt();
     if (at) this.jumpTo(at.lat, at.lon);
@@ -152,6 +162,7 @@ export class FlightScene implements GameScene {
     this.ctx.world.scene.remove(this.pins.group);
     this.pins.dispose();
     this.homeButton.remove();
+    this.entranceButton.remove();
   }
 
   /**
