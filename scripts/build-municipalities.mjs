@@ -3,7 +3,7 @@
 // 使い方: node scripts/build-municipalities.mjs（REGION= で地域）
 //
 // - 出す市町村は、建物を再現している市町村（src/data/wards.ts）のうち、役所がこの地域のデータの範囲（AREAS）にあるもの
-// - 政令市は区をつなげて1つの市にする（横浜市・名古屋市など）。東京23区と、大阪市・京都市（SPLIT）は区ごと
+// - 政令市は区をつなげて1つの市にする（横浜市・名古屋市など）。東京23区と、大阪市・京都市・神戸市（SPLIT）は区ごと
 // - 形は国土数値情報の行政区域（N03、2024 年）。隣どうしの境が同じ線になるよう、境ごとに線を簡単にする
 // - 役所の位置は国土数値情報の市町村役場等（P34、2014 年）の本庁。そのあと移った役所は MOVED で直す
 //
@@ -24,7 +24,7 @@ const PREFS = { kanto: [13, 11, 12, 14], kinki: [27, 26, 28, 29], chubu: [23, 21
 /** 線を簡単にする許し幅 (m)。エントランスの地図は 1px が 50〜100m ほど */
 const TOLERANCE = 40;
 /** 区ごとに選べるようにする政令市（東京23区はもともと区ごと） */
-const SPLIT = new Set(['大阪市', '京都市']);
+const SPLIT = new Set(['大阪市', '京都市', '神戸市']);
 /** 2014 年のあとに市になった町（役所のデータは町の名前のまま） */
 const OLD_NAMES = { 那珂川市: '那珂川町' };
 /** 2014 年のあとに移った役所（国土地理院の住所検索で引いた新しい住所の位置） */
@@ -86,6 +86,7 @@ for (const p of PREFS) {
         name: split ? pr.N03_005 : pr.N03_004,
         head: split ? pr.N03_004 : pr.N03_001,
         office: split ? `${pr.N03_004}${pr.N03_005}` : OLD_NAMES[pr.N03_004] ?? pr.N03_004,
+        city: pr.N03_004,
         polys: [],
         hasBuildings: false,
       });
@@ -99,8 +100,9 @@ for (const p of PREFS) {
 const munis = [];
 for (const g of groups.values()) {
   const hall = halls.find((h) => h.pref === g.pref && (h.name === `${g.office}役所` || h.name === `${g.office}役場`));
-  // 政令市は wards.ts に市のコード（神戸市 28100）で入っていることがある（行政区域データは区のコードだけ）
-  if (!g.hasBuildings && !(hall && wardCodes.has(hall.code))) continue;
+  // 政令市は wards.ts に市のコード（神戸市 28100）で入っていることがある（行政区域データは区のコードだけ）。区ごとにする時は市役所のコードで見る
+  const cityHall = halls.find((h) => h.pref === g.pref && h.name === `${g.city}役所`);
+  if (!g.hasBuildings && !(hall && wardCodes.has(hall.code)) && !(cityHall && wardCodes.has(cityHall.code))) continue;
   if (!hall) {
     console.warn(`役所が見つからない: ${g.prefName}${g.name}`);
     continue;
