@@ -73,10 +73,10 @@ export class TitleScene implements GameScene {
     }
   }
 
-  /** 今の地域ならそのまま読込へ、違う地域ならその地域で読み込み直してから読込へ */
+  /** 今の地域ならそのままエントランス（市町村を選ぶ画面）へ、違う地域ならその地域で読み込み直してからエントランスへ */
   private start(id: Region['id']): void {
-    if (id === REGION.id) this.ctx.go.loading();
-    else switchRegion(id, true);
+    if (id === REGION.id) this.ctx.go.entrance();
+    else switchRegion(id, 'entrance');
   }
 
   exit(): void {
@@ -85,7 +85,7 @@ export class TitleScene implements GameScene {
   }
 
   update(): void {
-    if (this.ctx.input.consumePress(KEYS.start)) this.ctx.go.loading();
+    if (this.ctx.input.consumePress(KEYS.start)) this.ctx.go.entrance();
   }
 
   render(): void {

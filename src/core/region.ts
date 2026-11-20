@@ -105,15 +105,17 @@ export function regionUrl(file: string): string {
 }
 
 /**
- * 別の地域でページを読み込み直す（start なら、タイトルを飛ばして読込へ進む）。
+ * 別の地域でページを読み込み直す（start なら、タイトルを飛ばして読込へ進む。'entrance' なら市町村を選ぶ画面へ）。
  * at を渡すと、そこ（駅の上空）から飛び始める（core/startAt.ts）
  */
-export function switchRegion(id: Region['id'], start: boolean, at?: { lat: number; lon: number }): void {
+export function switchRegion(id: Region['id'], start: boolean | 'entrance', at?: { lat: number; lon: number }): void {
   const params = new URLSearchParams(location.search);
   if (id === 'kanto') params.delete('region');
   else params.set('region', id);
-  if (start) params.set('start', '1');
-  else params.delete('start');
+  params.delete('start');
+  params.delete('entrance');
+  if (start === 'entrance') params.set('entrance', '1');
+  else if (start) params.set('start', '1');
   if (at) params.set('at', `${at.lat.toFixed(6)},${at.lon.toFixed(6)}`);
   else params.delete('at');
   const q = params.toString();
@@ -122,9 +124,18 @@ export function switchRegion(id: Region['id'], start: boolean, at?: { lat: numbe
 
 /** 読み込み直した直後に、タイトルを飛ばして読込へ進むか（一度使ったら URL から消す） */
 export function takeAutoStart(): boolean {
+  return takeParam('start');
+}
+
+/** 読み込み直した直後に、タイトルを飛ばしてエントランス（市町村を選ぶ画面）へ進むか（一度使ったら URL から消す） */
+export function takeAutoEntrance(): boolean {
+  return takeParam('entrance');
+}
+
+function takeParam(name: string): boolean {
   const params = new URLSearchParams(location.search);
-  if (!params.has('start')) return false;
-  params.delete('start');
+  if (!params.has(name)) return false;
+  params.delete(name);
   const q = params.toString();
   history.replaceState(null, '', `${location.pathname}${q ? `?${q}` : ''}`);
   return true;

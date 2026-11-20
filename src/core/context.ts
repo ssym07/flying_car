@@ -12,6 +12,8 @@ export interface GameContext {
   /** シーン遷移（循環 import を避けるため main.ts で組み立てる） */
   go: {
     title(): void;
+    /** 市町村を選ぶ画面（その地域の地図） */
+    entrance(): void;
     loading(): void;
     flight(): void;
     pause(): void;
