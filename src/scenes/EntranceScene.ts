@@ -39,14 +39,13 @@ const START_SPAN = { w: 90, h: 85 };
 
 /**
  * エントランス：ワールド（地域）の、建物を再現している市町村の地図。
- * 市町村を地図か一覧で選び、その市役所・町村役場の上空から飛び始める（東京23区と大阪市・京都市・神戸市・名古屋市・福岡市は区ごと、ほかの政令市は市ごと）。
+ * 市町村を地図か一覧で押すと、すぐその市役所・町村役場の上空から飛び始める（東京23区と大阪市・京都市・神戸市・名古屋市・福岡市は区ごと、ほかの政令市は市ごと）。
  * 地図はホームと同じ暗い背景に、市町村の境を線で描く。ホイールで拡大、ドラッグで移動
  */
 export class EntranceScene implements GameScene {
   private el?: HTMLDivElement;
   private svg?: SVGSVGElement;
   private munis: Muni[] = [];
-  private selected: Muni | null = null;
   /** 地図の表示範囲（km。viewBox） */
   private view = { x: 0, y: 0, w: 1, h: 1 };
   private full = { x: 0, y: 0, w: 1, h: 1 };
@@ -75,15 +74,10 @@ export class EntranceScene implements GameScene {
         <ul class="entrance-list"><li class="entrance-loading">読み込み中…</li></ul>
       </div>
       <div class="entrance-credit">出典：国土数値情報（行政区域データ・市町村役場等及び公的集会施設データ）（国土交通省）を加工</div>
-      <div class="entrance-card" hidden>
-        <div class="entrance-card-text"><b></b><span></span></div>
-        <button type="button" data-go>ここから飛ぶ</button>
-      </div>
       `,
     );
     this.svg = this.el.querySelector<SVGSVGElement>('.entrance-map')!;
     this.el.querySelector('[data-back]')!.addEventListener('click', () => this.ctx.go.title());
-    this.el.querySelector('[data-go]')!.addEventListener('click', () => this.go());
     const filter = this.el.querySelector<HTMLInputElement>('.entrance-filter')!;
     filter.addEventListener('input', () => this.filter(filter.value.trim()));
     // 入力欄の Enter は、絞り込んだ結果が1つならそれで飛ぶ
@@ -91,7 +85,7 @@ export class EntranceScene implements GameScene {
       e.stopPropagation();
       if (e.key !== 'Enter') return;
       const shown = this.munis.filter((m) => !m.item.hidden);
-      if (shown.length === 1) this.select(shown[0], true);
+      if (shown.length === 1) this.go(shown[0]);
     });
     this.attachZoom(this.svg);
     window.addEventListener('resize', this.onResize);
@@ -205,41 +199,24 @@ export class EntranceScene implements GameScene {
         target.addEventListener('pointerenter', () => hover(true));
         target.addEventListener('pointerleave', () => hover(false));
       }
+      // 押したらすぐ、その役所の上空から飛ぶ（地図はドラッグで動かした時は飛ばない）
       path.addEventListener('click', () => {
-        if (!this.dragged) this.select(m, this.selected === m);
+        if (!this.dragged) this.go(m);
       });
-      path.addEventListener('dblclick', () => this.select(m, true));
-      item.addEventListener('click', () => this.select(m, this.selected === m));
+      item.addEventListener('click', () => this.go(m));
+      // 指した時に、どこから飛ぶかを出す（区ごとに選ぶ政令市の区は「京都市中京区役所」と市の名前が入っているので、見出しは付けない）
+      const tip = `${d.n}：${d.hn.startsWith(d.p) ? '' : `${d.p}・`}${d.hn}の上空から`;
+      item.title = tip;
+      const title = document.createElementNS(SVG, 'title');
+      title.textContent = tip;
+      path.appendChild(title);
     }
     this.applyView();
   }
 
-  /** 選ぶ（go なら、そのまま飛ぶ） */
-  private select(m: Muni, go = false): void {
-    if (this.selected) {
-      this.selected.path.classList.remove('selected');
-      this.selected.label.classList.remove('selected');
-      this.selected.item.classList.remove('selected');
-    }
-    this.selected = m;
-    m.path.classList.add('selected');
-    m.label.classList.add('selected');
-    m.item.classList.add('selected');
-    // 選んだ市町村を前に（境の線が隣の下に隠れないように）
-    m.path.parentNode!.appendChild(m.path);
-    m.item.scrollIntoView({ block: 'nearest' });
-    const card = this.el!.querySelector<HTMLElement>('.entrance-card')!;
-    card.hidden = false;
-    card.querySelector('b')!.textContent = m.n;
-    // 区ごとに選ぶ政令市の区は「京都市中京区役所」と市の名前が入っているので、見出し（京都市）は付けない
-    card.querySelector('span')!.textContent = `${m.hn.startsWith(m.p) ? '' : `${m.p}・`}${m.hn}の上空から`;
-    this.layoutLabels();
-    if (go) this.go();
-  }
-
-  private go(): void {
-    if (!this.selected) return;
-    setStartAt({ lat: this.selected.h[0], lon: this.selected.h[1] });
+  /** その市町村の役所の上空から飛ぶ */
+  private go(m: Muni): void {
+    setStartAt({ lat: m.h[0], lon: m.h[1] });
     this.ctx.go.loading();
   }
 
@@ -334,7 +311,7 @@ export class EntranceScene implements GameScene {
     this.layoutLabels();
   }
 
-  /** 名前の大きさを画面で同じ px にし、市町村に収まらない名前・ほかと重なる名前は出さない（選んだ・指した市町村は出す） */
+  /** 名前の大きさを画面で同じ px にし、市町村に収まらない名前・ほかと重なる名前は出さない（指した市町村は出す） */
   private layoutLabels(): void {
     if (!this.svg || this.munis.length === 0) return;
     const s = this.scale();
@@ -343,13 +320,13 @@ export class EntranceScene implements GameScene {
     this.svg.style.setProperty('--hall', `${3 / s}px`);
     const placed: [number, number, number, number][] = [];
     // 広い市町村から置く
-    const order = [...this.munis].sort((a, b) => Number(b === this.selected) - Number(a === this.selected) || b.w * b.h2 - a.w * a.h2);
+    const order = [...this.munis].sort((a, b) => b.w * b.h2 - a.w * a.h2);
     for (const m of order) {
       const tw = m.n.length * font;
       const x = +m.label.getAttribute('x')!;
       const y = +m.label.getAttribute('y')!;
       const box: [number, number, number, number] = [x - tw / 2, y - font * 0.6, x + tw / 2, y + font * 0.6];
-      const fits = m === this.selected || (tw < m.w * 0.9 && font * 1.2 < m.h2 * 0.8);
+      const fits = tw < m.w * 0.9 && font * 1.2 < m.h2 * 0.8;
       const free = !placed.some((b) => b[0] < box[2] && box[0] < b[2] && b[1] < box[3] && box[1] < b[3]);
       const show = fits && free;
       m.label.classList.toggle('hidden', !show);
@@ -366,7 +343,6 @@ export class EntranceScene implements GameScene {
 
   update(): void {
     if (this.ctx.input.consumePress(KEYS.pause)) this.ctx.go.title();
-    else if (this.ctx.input.consumePress(KEYS.start)) this.go();
   }
 
   render(): void {
