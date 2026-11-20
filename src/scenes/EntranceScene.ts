@@ -32,6 +32,11 @@ interface Muni extends MuniData {
 const SVG = 'http://www.w3.org/2000/svg';
 /** 名前の文字の大きさ (px) */
 const FONT = 12;
+/**
+ * 役所からどれだけ手前 (m) で飛び始めるか。車は北向き（VEHICLE.startYaw）で始まるので、役所の南に置いて正面に役所と看板が見えるようにする
+ * （真上だと役所は車の下に隠れ、看板も近すぎて薄くなる）
+ */
+const START_BACK = 300;
 /** 地図の枠 (km)。全部のワールドで同じにして縮尺をそろえる */
 const SPAN = { w: 140, h: 130 };
 /** 開いた時に見せる枠 (km)。東京・福岡は全体が入り、大阪・愛知は端がはみ出す（ドラッグで動かすか、引いて SPAN まで見られる） */
@@ -214,9 +219,9 @@ export class EntranceScene implements GameScene {
     this.applyView();
   }
 
-  /** その市町村の役所の上空から飛ぶ */
+  /** その市町村の役所の手前（南）の上空から、役所の方を向いて飛ぶ */
   private go(m: Muni): void {
-    setStartAt({ lat: m.h[0], lon: m.h[1] });
+    setStartAt({ lat: m.h[0] - START_BACK / 110950, lon: m.h[1] });
     this.ctx.go.loading();
   }
 
