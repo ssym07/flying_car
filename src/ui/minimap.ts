@@ -254,6 +254,7 @@ export class Minimap {
       this.addSchools(map);
       this.addParks(map);
       this.addMuseums(map);
+      this.addOffices(map);
       this.addRivers(map);
       this.addJunctions(map);
       this.addStations(map);
@@ -333,6 +334,44 @@ export class Minimap {
         (map.getSource('schools') as GeoJSONSource | undefined)?.setData({
           type: 'FeatureCollection',
           features: data.s.map(([name, lat, lon, kind]) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: { name, kind },
+          })),
+        });
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * 都府県庁・市役所・町村役場・区役所の名前（scripts/build-municipalities.mjs が作る offices.json）。赤茶の文字で、
+   * 都府県庁・市役所は引いた所から、政令市の区役所は少し寄ってから出す。重なったら都府県庁 → 市役所 → 区役所の順に残す
+   */
+  private addOffices(map: MapLibreMap): void {
+    map.addSource('offices', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'office-name',
+      type: 'symbol',
+      source: 'offices',
+      minzoom: 11.5,
+      filter: ['any', ['<', ['get', 'kind'], 2], ['>=', ['zoom'], 12.5]],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, ['case', ['==', ['get', 'kind'], 0], 11.5, 10], 16, 12.5],
+        'text-max-width': 8,
+        'text-padding': 2,
+        'symbol-sort-key': ['get', 'kind'],
+      },
+      paint: { 'text-color': COLORS.office, 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 },
+    });
+    fetch(regionUrl('offices.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { o: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        (map.getSource('offices') as GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: data.o.map(([name, lat, lon, kind]) => ({
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [lon, lat] },
             properties: { name, kind },

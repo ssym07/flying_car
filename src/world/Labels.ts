@@ -5,11 +5,11 @@ import { regionUrl } from '../core/region';
 import { ROAD_LABELS as roadLabels, STATIONS as stations } from '../data/regionData';
 
 interface Place {
-  kind: 'station' | 'road' | 'school' | 'park' | 'museum';
+  kind: 'station' | 'road' | 'school' | 'park' | 'museum' | 'office';
   name: string;
   /** ローカル座標（高さは地面が分かるまで未定） */
   position: THREE.Vector3;
-  /** 学校の種類（0 小学校・1 中学校・2 高校・3 大学など）、美術館などの種類（0 美術館・1 科学館・2 博物館）。ほかは 0 */
+  /** 学校の種類（0 小学校・1 中学校・2 高校・3 大学など）、美術館などの種類（0 美術館・1 科学館・2 博物館）、役所の種類（0 都府県庁・1 市役所など・2 区役所）。ほかは 0 */
   level?: number;
   /** 通りの向き（ローカル座標の水平な単位ベクトル）。駅は null */
   direction: THREE.Vector3 | null;
@@ -23,6 +23,7 @@ interface Place {
  * - 学校名：駅名より小さく低い看板（scripts/fetch-schools.mjs が作る schools.json。読み込めたら足す）
  * - 公園名：大きな公園だけ、学校と同じ形の看板（scripts/fetch-park-names.mjs が作る park-names.json）
  * - 美術館・科学館・博物館：学校と同じ形の紫の看板（scripts/fetch-museums.mjs が作る museums.json）
+ * - 都府県庁・市役所・町村役場・区役所：赤茶の看板（scripts/build-municipalities.mjs が作る offices.json）
  * カメラの近くだけ作り、離れたら捨てる。地面の高さは地形が読めてから決める
  */
 export class Labels {
@@ -88,6 +89,17 @@ export class Labels {
       })
       .catch(() => {});
 
+    // 都府県庁・市役所・区役所（ファイルが無い地域では出さない）
+    fetch(regionUrl('offices.json'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { o: [string, number, number, number][] } | null) => {
+        if (!data) return;
+        for (const [name, lat, lon, level] of data.o) {
+          this.places.push({ kind: 'office', name, level, position: toLocal(lat, lon), direction: null, object: null });
+        }
+      })
+      .catch(() => {});
+
     // 公園名（広い公園だけ。ファイルが無い地域では出さない）
     fetch(regionUrl('park-names.json'))
       .then((res) => (res.ok ? res.json() : null))
@@ -122,7 +134,7 @@ export class Labels {
     const distanceTo = (p: Place) => Math.hypot(p.position.x - cameraPosition.x, p.position.z - cameraPosition.z);
 
     // 駅・学校は近い順に maxCount 件だけ
-    const nearest = (kind: 'station' | 'school' | 'park' | 'museum', limit?: number) => {
+    const nearest = (kind: 'station' | 'school' | 'park' | 'museum' | 'office', limit?: number) => {
       const { radius } = LABELS[kind];
       const maxCount = limit ?? LABELS[kind].maxCount;
       return this.places
@@ -131,7 +143,7 @@ export class Labels {
         .slice(0, maxCount);
     };
     // 学校・公園は、選んだ看板どうしが近すぎるもの（同じ敷地の中学校・高校、隣り合う大学など）を飛ばす（看板が重なって読めないので）
-    const spaced = (kind: 'school' | 'park' | 'museum') => {
+    const spaced = (kind: 'school' | 'park' | 'museum' | 'office') => {
       const chosen: Place[] = [];
       for (const p of nearest(kind, Infinity)) {
         if (chosen.length >= LABELS[kind].maxCount) break;
@@ -142,7 +154,13 @@ export class Labels {
       }
       return chosen;
     };
-    const near = new Set([...nearest('station'), ...spaced('school'), ...spaced('park'), ...spaced('museum')]);
+    const near = new Set([
+      ...nearest('station'),
+      ...spaced('school'),
+      ...spaced('park'),
+      ...spaced('museum'),
+      ...spaced('office'),
+    ]);
     for (const place of this.places) {
       if (place.kind !== 'road') {
         if (place.object && !near.has(place)) this.remove(place);
@@ -275,7 +293,9 @@ export class Labels {
               ? drawParkSign(place.name)
               : place.kind === 'museum'
                 ? drawMuseumSign(place.name, place.level ?? 0)
-                : drawRoadName(place.name);
+                : place.kind === 'office'
+                  ? drawOfficeSign(place.name, place.level ?? 1)
+                  : drawRoadName(place.name);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
@@ -402,6 +422,48 @@ function drawMuseumSign(name: string, level: number): HTMLCanvasElement {
   g.fillText('美科博'[level] ?? '博', pad + icon / 2, h / 2 + 2);
   g.fillStyle = '#ffffff';
   g.font = `700 44px ${FONT}`;
+  g.textAlign = 'left';
+  g.fillText(name, pad + icon + 14, h / 2 + 2);
+  return canvas;
+}
+
+/**
+ * 役所の看板：赤茶の角丸に白文字、左に印（都府県庁は「庁」、ほかは名前の役所・役場の前の字：市・区・町・村）。
+ * 都府県庁は少し大きく
+ */
+function drawOfficeSign(name: string, level: number): HTMLCanvasElement {
+  const big = level === 0;
+  const h = big ? 96 : 84;
+  const pad = 22;
+  const icon = big ? 60 : 52;
+  const font = big ? 50 : 44;
+  const measure = document.createElement('canvas').getContext('2d')!;
+  measure.font = `700 ${font}px ${FONT}`;
+  const w = Math.ceil(pad + icon + 14 + measure.measureText(name).width + pad);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = 'rgba(92, 32, 22, 0.88)';
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, h - 4, 18);
+  g.fill();
+  g.strokeStyle = big ? 'rgba(255, 214, 140, 0.95)' : 'rgba(240, 168, 140, 0.9)';
+  g.lineWidth = 4;
+  g.stroke();
+  // 四角い印（庁舎）
+  g.fillStyle = big ? '#ffd68c' : '#f0a88c';
+  g.beginPath();
+  g.roundRect(pad, (h - icon) / 2, icon, icon, 10);
+  g.fill();
+  g.fillStyle = 'rgba(92, 32, 22, 1)';
+  g.font = `800 ${Math.round(icon * 0.66)}px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const mark = big ? '庁' : name.replace(/(役所|役場)$/, '').slice(-1);
+  g.fillText(mark, pad + icon / 2, h / 2 + 2);
+  g.fillStyle = '#ffffff';
+  g.font = `700 ${font}px ${FONT}`;
   g.textAlign = 'left';
   g.fillText(name, pad + icon + 14, h / 2 + 2);
   return canvas;

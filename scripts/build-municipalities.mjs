@@ -7,6 +7,10 @@
 // - 形は国土数値情報の行政区域（N03、2024 年）。隣どうしの境が同じ線になるよう、境ごとに線を簡単にする
 // - 役所の位置は国土数値情報の市町村役場等（P34、2014 年）の本庁。そのあと移った役所は MOVED で直す
 //
+// あわせて、地図（ミニマップ）と 3D の空の上に出す役所（public/offices.json）も書き出す：
+// 範囲の中の市役所・町村役場・区役所（P34 の本庁）と都府県庁（PREF_OFFICES）。建物を再現していない市町村の役所も出す
+// 形式: { "o": [[名前, 緯度, 経度, 種類（0 都府県庁・1 市役所・町村役場・東京23区の区役所・2 政令市の区役所）], ...] }
+//
 // 出力の形式: { "m": [{ "n": 名前, "p": 一覧の見出し（都府県。区ごとにする政令市は市の名前）, "h": [緯度, 経度], "hn": 役所の名前, "l": [名前を置く緯度, 経度], "r": [[経度, 緯度, 経度, 緯度, ...], ...] }] }
 // 輪（r）は外周と穴の区別なし（evenodd で塗る）
 // データ: 国土数値情報（行政区域データ・市町村役場等及び公的集会施設データ）（国土交通省）を加工
@@ -17,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { AREAS, REGION_ID, regionPath } from './lib/region.mjs';
 
 const OUT = regionPath('public/municipalities.json');
+const OFFICES_OUT = regionPath('public/offices.json');
 const CACHE = fileURLToPath(new URL('../data/cache/ksj/', import.meta.url));
 const WARDS = new URL('../src/data/wards.ts', import.meta.url);
 /** 地域ごとの都府県コード（エントランスの一覧に並べる順。ワールドの中心の都府県から） */
@@ -31,7 +36,26 @@ const OLD_NAMES = { 那珂川市: '那珂川町' };
 const MOVED = {
   豊島区: { lat: 35.72537, lon: 139.71709 }, // 2015 年に南池袋二丁目へ
   岐阜市: { lat: 35.42699, lon: 136.76019 }, // 2021 年に司町へ
+  横浜市: { lat: 35.4502, lon: 139.6349 }, // 2020 年に港町から本町六丁目へ
+  神戸市長田区: { lat: 34.65777, lon: 135.14621 }, // 2019 年に北町から若松町三丁目へ
 };
+
+/** 都府県庁（市町村役場のデータに無いので、国土地理院の住所検索で引いた位置。範囲の外のものは出さない） */
+const PREF_OFFICES = [
+  ['東京都庁', 35.68963, 139.69177],
+  ['埼玉県庁', 35.85718, 139.65079],
+  ['千葉県庁', 35.60428, 140.12314],
+  ['神奈川県庁', 35.4477, 139.64259],
+  ['大阪府庁', 34.68701, 135.51932],
+  ['京都府庁', 35.02141, 135.75563],
+  ['兵庫県庁', 34.69118, 135.18326],
+  ['奈良県庁', 34.68506, 135.83281],
+  ['愛知県庁', 35.18083, 136.90657],
+  ['岐阜県庁', 35.39169, 136.72272],
+  ['三重県庁', 34.73057, 136.5089],
+  ['福岡県庁', 33.6062, 130.41801],
+  ['佐賀県庁', 33.24995, 130.29948],
+];
 
 /** 国土数値情報の zip を落として展開し、展開したフォルダを返す */
 async function ksj(dataset, file) {
@@ -65,6 +89,24 @@ for (const p of PREFS) {
   )) {
     halls.push({ pref: p, code: m[2], name: m[3], lat: pos[m[1]][0], lon: pos[m[1]][1] });
   }
+}
+
+// 地図と 3D に出す役所
+{
+  const offices = PREF_OFFICES.filter(([, lat, lon]) => inArea(lat, lon)).map(([name, lat, lon]) => [name, lat, lon, 0]);
+  for (const h of halls) {
+    const base = h.name.replace(/(役所|役場)$/, '');
+    const renamed = Object.entries(OLD_NAMES).find(([, old]) => old === base)?.[0];
+    const name = renamed ? `${renamed}役所` : h.name;
+    const at = MOVED[renamed ?? base] ?? h;
+    if (!inArea(at.lat, at.lon)) continue;
+    // 政令市の区役所（「大阪市北区役所」）。東京23区の区役所は市役所と同じ扱い
+    const ward = /^.+市.+区役所$/.test(name);
+    offices.push([name, +at.lat.toFixed(5), +at.lon.toFixed(5), ward ? 2 : 1]);
+  }
+  await writeFile(OFFICES_OUT, JSON.stringify({ o: offices }));
+  const n = (k) => offices.filter((o) => o[3] === k).length;
+  console.log(`役所 ${offices.length}（都府県庁 ${n(0)}・市役所・町村役場 ${n(1)}・区役所 ${n(2)}） → ${OFFICES_OUT}`);
 }
 
 // 市町村の形（政令市は区をまとめる）。建物のある区を1つでも含む市町村だけ
@@ -107,7 +149,7 @@ for (const g of groups.values()) {
     console.warn(`役所が見つからない: ${g.prefName}${g.name}`);
     continue;
   }
-  const at = MOVED[g.name] ?? hall;
+  const at = MOVED[g.office] ?? hall;
   if (!inArea(at.lat, at.lon)) {
     console.warn(`役所が範囲の外: ${g.prefName}${g.office}`);
     continue;

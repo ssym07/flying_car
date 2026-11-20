@@ -466,6 +466,18 @@ export const LABELS = {
     screenSize: { near: 0.03, far: 0.018 },
     fadeNear: 150,
   },
+  office: {
+    /** この距離 (m) 以内の都府県庁・市役所・区役所に看板を出す（数が少ないので遠くから） */
+    radius: 3000,
+    /** 看板の地面からの高さ (m)（学校・公園より少し高く） */
+    height: 55,
+    /** 同時に出す看板の数（近い順） */
+    maxCount: 3,
+    /** 看板どうしをこの距離 (m) より近くに出さない（都庁と新宿区役所など） */
+    spacing: 300,
+    screenSize: { near: 0.032, far: 0.02 },
+    fadeNear: 150,
+  },
   road: {
     /** この距離 (m) 以内の通りに名前を描く */
     radius: 1200,
