@@ -34,6 +34,8 @@ const SVG = 'http://www.w3.org/2000/svg';
 const FONT = 12;
 /** 地図の枠 (km)。全部のワールドで同じにして縮尺をそろえる */
 const SPAN = { w: 140, h: 130 };
+/** 開いた時に見せる枠 (km)。東京・福岡は全体が入り、大阪・愛知は端がはみ出す（ドラッグで動かすか、引いて SPAN まで見られる） */
+const START_SPAN = { w: 90, h: 85 };
 
 /**
  * エントランス：ワールド（地域）の、建物を再現している市町村の地図。
@@ -128,7 +130,13 @@ export class EntranceScene implements GameScene {
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     this.full = { x: cx - SPAN.w / 2, y: cy - SPAN.h / 2, w: SPAN.w, h: SPAN.h };
-    this.view = { ...this.full };
+    // 開いた時の中心はワールドの中心（梅田・名古屋など）。全体が枠に入る向きは全体のまん中、入らない向きは全体の外を見せすぎない
+    const [ox, oy] = this.project(REGION.origin.lonDeg, REGION.origin.latDeg);
+    const center = (o: number, a: number, b: number, span: number): number =>
+      b - a <= span ? (a + b) / 2 : Math.min(Math.max(o, a + span / 2), b - span / 2);
+    const sx = center(ox, x0, x1, START_SPAN.w);
+    const sy = center(oy, y0, y1, START_SPAN.h);
+    this.view = { x: sx - START_SPAN.w / 2, y: sy - START_SPAN.h / 2, w: START_SPAN.w, h: START_SPAN.h };
 
     const gMunis = this.svg.querySelector('.munis')!;
     const gHalls = this.svg.querySelector('.halls')!;
