@@ -15,7 +15,9 @@ export class TitleScene implements GameScene {
 
   enter(): void {
     this.ctx.input.clearPresses();
+    // 東から西の順（北海道・東京・愛知・大阪・福岡）
     const buttons = Object.values(REGIONS)
+      .sort((a, b) => b.origin.lonDeg - a.origin.lonDeg)
       .map(
         (r) => `
         <button type="button" class="region${r.id === REGION.id ? ' current' : ''}" data-region="${r.id}">
