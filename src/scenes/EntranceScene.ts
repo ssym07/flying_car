@@ -39,7 +39,7 @@ const FONT = 12;
 const START_BACK = 300;
 /** 地図の枠 (km)。全部のワールドで同じにして縮尺をそろえる */
 const SPAN = { w: 140, h: 130 };
-/** 開いた時に見せる枠 (km)。東京・福岡は全体が入り、大阪・愛知は端がはみ出す（ドラッグで動かすか、引いて SPAN まで見られる） */
+/** 開いた時に見せる枠 (km)。これより引けない。東京・福岡・北海道は全体が入り、大阪・愛知は端がはみ出す（ドラッグで動かして見る） */
 const START_SPAN = { w: 90, h: 85 };
 
 /**
@@ -300,8 +300,8 @@ export class EntranceScene implements GameScene {
   }
 
   private zoomAt(px: number, py: number, k: number): void {
-    // 全体より引かない・幅 2km より寄らない
-    const w = Math.min(this.full.w, Math.max(2, this.view.w * k));
+    // 開いた時の縮尺（START_SPAN）より引かない・幅 2km より寄らない
+    const w = Math.min(START_SPAN.w, Math.max(2, this.view.w * k));
     const kk = w / this.view.w;
     this.view = { x: px - (px - this.view.x) * kk, y: py - (py - this.view.y) * kk, w, h: this.view.h * kk };
     this.applyView();
