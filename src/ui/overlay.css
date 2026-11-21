@@ -91,6 +91,18 @@ body {
   fill: rgba(255, 255, 255, 0.2);
 }
 
+/* 再現している範囲：市区町村の形をぼかした白で光らせ、中の点を白くする（TitleScene の showCoverage） */
+.japan-map .coverage path {
+  fill: rgba(255, 255, 255, 0.95);
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: 0.5;
+  fill-rule: evenodd;
+}
+
+.japan-map .dots circle.lit {
+  fill: #ffffff;
+}
+
 .japan-map .pin {
   cursor: pointer;
 }

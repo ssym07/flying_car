@@ -1,6 +1,6 @@
 import { KEYS } from '../core/config';
 import { mountScreen, type GameContext } from '../core/context';
-import { REGION, REGIONS, type Region, switchRegion } from '../core/region';
+import { dataUrl, REGION, REGIONS, type Region, switchRegion } from '../core/region';
 import type { GameScene } from '../core/SceneManager';
 import { setStartAt } from '../core/startAt';
 import { loadAllPlaces, type RegionStation } from '../data/allStations';
@@ -15,9 +15,9 @@ export class TitleScene implements GameScene {
 
   enter(): void {
     this.ctx.input.clearPresses();
-    // 東から西の順（北海道・東京・愛知・大阪・福岡）
+    // 西から東の順（福岡・大阪・愛知・東京・北海道）
     const buttons = Object.values(REGIONS)
-      .sort((a, b) => b.origin.lonDeg - a.origin.lonDeg)
+      .sort((a, b) => a.origin.lonDeg - b.origin.lonDeg)
       .map(
         (r) => `
         <button type="button" class="region${r.id === REGION.id ? ' current' : ''}" data-region="${r.id}">
@@ -38,6 +38,7 @@ export class TitleScene implements GameScene {
       <div class="sub start-hint">Enter / Space で ${REGION.name} へ</div>
       `,
     );
+    void showCoverage(this.el.querySelector<SVGSVGElement>('.japan-map')!);
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-region]')) {
       b.addEventListener('click', () => this.start(b.dataset.region as Region['id']));
     }
@@ -111,6 +112,58 @@ function japanMap(): string {
     })
     .join('');
   return `<svg class="japan-map" viewBox="0 0 ${japan.cols} ${japan.rows}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-    <g class="dots">${dots}</g>${pins}
+    <defs><filter id="coverage-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="0.7"/></filter></defs>
+    <g class="coverage" filter="url(#coverage-glow)"></g><g class="dots">${dots}</g>${pins}
   </svg>`;
+}
+
+/**
+ * 再現している範囲（各ワールドのエントランスの地図 municipalities.json の市区町村の形）を、点の日本列島の上で光らせる。
+ * 形をぼかした白で塗り、形の中の点を白くする。読めなかった地域は光らせない
+ */
+async function showCoverage(svg: SVGSVGElement): Promise<void> {
+  // 経度・緯度 → 点の格子の座標
+  const gx = (lon: number) => (lon - japan.w) / japan.lonStep;
+  const gy = (lat: number) => (japan.n - lat) / japan.step;
+  const rings: Array<Array<[number, number]>> = [];
+  await Promise.all(
+    Object.values(REGIONS).map(async (r) => {
+      try {
+        const res = await fetch(dataUrl(`${r.dataDir}municipalities.json`));
+        if (!res.ok) return;
+        const data = (await res.json()) as { m: Array<{ r: number[][] }> };
+        for (const m of data.m) {
+          for (const flat of m.r) {
+            const ring: Array<[number, number]> = [];
+            for (let i = 0; i < flat.length; i += 2) ring.push([gx(flat[i]), gy(flat[i + 1])]);
+            rings.push(ring);
+          }
+        }
+      } catch {
+        // この地域は光らせない
+      }
+    }),
+  );
+  if (!svg.isConnected || rings.length === 0) return;
+  const d = rings.map((ring) => `M${ring.map(([x, y]) => `${x.toFixed(3)} ${y.toFixed(3)}`).join('L')}Z`).join('');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', d);
+  svg.querySelector('.coverage')!.appendChild(path);
+
+  // 点の中心が形の中（輪をまたいだ回数が奇数）なら白くする
+  const inside = (x: number, y: number) => {
+    let hit = false;
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+      }
+    }
+    return hit;
+  };
+  const circles = svg.querySelectorAll('.dots circle');
+  japan.dots.forEach(([c, row], i) => {
+    if (inside(c + 0.5, row + 0.5)) circles[i]?.classList.add('lit');
+  });
 }
