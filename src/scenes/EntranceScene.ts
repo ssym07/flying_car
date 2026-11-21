@@ -290,21 +290,36 @@ export class EntranceScene implements GameScene {
   private readonly onMove = (e: PointerEvent): void => this.onMoveImpl(e);
   private readonly onUp = (): void => this.onUpImpl();
 
-  /** 縮尺の定規：1・2・5 × 10 の累乗 km のうち、画面で SCALE_BAR_PX px 以下でいちばん長いもの */
+  /** 縮尺の定規：1・2・5 × 10 の累乗 km のうち、画面で SCALE_BAR_PX px 以下でいちばん長いもの。間に目盛りを入れる */
   private updateScaleBar(): void {
     const el = this.el?.querySelector<HTMLElement>('.entrance-scale');
     if (!el || !this.svg || this.munis.length === 0) return;
     const pxPerKm = this.scale();
     if (!(pxPerKm > 0)) return;
     let km = 0.1;
+    let parts = 5;
     for (const exp of [-1, 0, 1, 2, 3]) {
       for (const m of [1, 2, 5]) {
         const v = m * 10 ** exp;
-        if (v * pxPerKm <= SCALE_BAR_PX) km = v;
+        if (v * pxPerKm <= SCALE_BAR_PX) {
+          km = v;
+          // 目盛り：1・5 は 5 つ（10km なら 2km ごと）、2 は 4 つ（2km なら 500m ごと）に分ける
+          parts = m === 2 ? 4 : 5;
+        }
       }
     }
     el.hidden = false;
-    el.querySelector<HTMLElement>('.entrance-scale-bar')!.style.width = `${(km * pxPerKm).toFixed(1)}px`;
+    const bar = el.querySelector<HTMLElement>('.entrance-scale-bar')!;
+    bar.style.width = `${(km * pxPerKm).toFixed(1)}px`;
+    // 間の目盛り（真ん中は長く）
+    bar.replaceChildren(
+      ...Array.from({ length: parts - 1 }, (_, i) => {
+        const tick = document.createElement('i');
+        tick.style.left = `${((i + 1) / parts) * 100}%`;
+        if ((i + 1) * 2 === parts) tick.className = 'mid';
+        return tick;
+      }),
+    );
     el.querySelector('span')!.textContent = km >= 1 ? `${km} km` : `${Math.round(km * 1000)} m`;
   }
 

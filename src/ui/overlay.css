@@ -328,9 +328,24 @@ body {
 }
 
 .entrance-scale-bar {
-  height: 6px;
+  position: relative;
+  height: 9px;
   border: 2px solid rgba(255, 255, 255, 0.85);
   border-top: none;
+}
+
+/* 間の目盛り（下の線から立てる。真ん中は少し長く） */
+.entrance-scale-bar i {
+  position: absolute;
+  bottom: 0;
+  width: 1.5px;
+  height: 4px;
+  margin-left: -0.75px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.entrance-scale-bar i.mid {
+  height: 6px;
 }
 
 .entrance-credit {
