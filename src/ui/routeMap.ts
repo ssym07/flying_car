@@ -41,10 +41,16 @@ const DOTS_FULL = 34;
 const THREE_CLAMP = (v: number) => Math.min(1, Math.max(0, v));
 /** これより動いたらクリックではなくドラッグ (px) */
 const DRAG_THRESHOLD = 5;
+/** 路線図の窓の大きさ（見る人ごとの好み。ブラウザに覚えておく）。左下の角をドラッグで変える */
+const SIZE_KEY = 'sky-drive.route-map';
+/** 窓の大きさの下限・上限 (px)。上限の高さは画面に収まる高さまで */
+const MIN_SIZE = { width: 240, height: 320 };
+const MAX_WIDTH = 960;
 
 /**
  * 画面右の路線図（スマホくらいの大きさ）。路線を色の線、駅を白い丸、乗換駅を黒い縁の丸で描く。
  * ドラッグで動かし、ホイール（ピンチ）で拡大・縮小する。駅を押すと onSelect を呼ぶ（その駅へ移る）。
+ * 窓の大きさは左下の角をドラッグで変えられる（ミニマップと同じ。ブラウザに覚えておく）。
  * 右上の駅検索の左の「路線図」ボタンで開け閉めする
  */
 export class RouteMap {
@@ -99,6 +105,7 @@ export class RouteMap {
     this.panel.innerHTML = `
       <div class="route-map-body"><canvas></canvas><div class="route-map-tip" hidden></div>
         <div class="route-map-zoom"><button type="button" data-zoom="1" aria-label="拡大">＋</button><button type="button" data-zoom="-1" aria-label="縮小">−</button><button type="button" data-here aria-label="現在地">◎</button></div>
+        <div class="route-map-resize" title="ドラッグで大きさを変える"></div>
       </div>`;
     this.canvas = this.panel.querySelector('canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
@@ -111,6 +118,8 @@ export class RouteMap {
     });
     parent.append(this.button, this.panel);
     this.bindPointer();
+    this.bindResize(this.panel.querySelector<HTMLElement>('.route-map-resize')!);
+    this.restoreSize();
 
     fetch(regionUrl('route-map.json'))
       .then((res) => (res.ok ? (res.json() as Promise<RouteMapData>) : null))
@@ -179,6 +188,56 @@ export class RouteMap {
 
   close(): void {
     if (this.opened) this.toggle(false);
+  }
+
+  /** 窓の大きさを変える（右上は動かさない）。覚えていない間は CSS の大きさのまま */
+  private setSize(width: number, height: number): void {
+    const top = this.panel.offsetTop || 132;
+    const maxHeight = Math.max(MIN_SIZE.height, window.innerHeight - top - 16);
+    const maxWidth = Math.max(MIN_SIZE.width, Math.min(MAX_WIDTH, window.innerWidth - 32));
+    this.panel.style.width = `${Math.round(Math.min(maxWidth, Math.max(MIN_SIZE.width, width)))}px`;
+    this.panel.style.height = `${Math.round(Math.min(maxHeight, Math.max(MIN_SIZE.height, height)))}px`;
+    this.dirty = true;
+  }
+
+  private restoreSize(): void {
+    try {
+      const v = JSON.parse(localStorage.getItem(SIZE_KEY) ?? 'null') as { width?: number; height?: number } | null;
+      if (v && Number.isFinite(v.width) && Number.isFinite(v.height)) this.setSize(v.width!, v.height!);
+    } catch {
+      // 覚えていなければ CSS の大きさ
+    }
+  }
+
+  /** 左下の角をドラッグして大きさを変える（右上は動かさない：左へ引くと広く、下へ引くと高く） */
+  private bindResize(grip: HTMLElement): void {
+    let start: { id: number; x: number; y: number; w: number; h: number } | null = null;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const r = this.panel.getBoundingClientRect();
+      start = { id: e.pointerId, x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+      grip.setPointerCapture(e.pointerId);
+      this.panel.classList.add('resizing');
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!start || start.id !== e.pointerId) return;
+      this.setSize(start.w - (e.clientX - start.x), start.h + (e.clientY - start.y));
+    });
+    const end = (e: PointerEvent) => {
+      if (!start || start.id !== e.pointerId) return;
+      start = null;
+      this.panel.classList.remove('resizing');
+      try {
+        const r = this.panel.getBoundingClientRect();
+        localStorage.setItem(SIZE_KEY, JSON.stringify({ width: Math.round(r.width), height: Math.round(r.height) }));
+      } catch {
+        // 覚えておけなくても使える
+      }
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('lostpointercapture', end);
   }
 
   private setData(data: RouteMapData): void {
