@@ -12,6 +12,7 @@ const loaders: Record<Region['id'], () => Promise<{ default: Station[] }>> = {
   kinki: () => import('./kinki/stations.json'),
   kyushu: () => import('./kyushu/stations.json'),
   chubu: () => import('./chubu/stations.json'),
+  hokkaido: () => import('./hokkaido/stations.json'),
 };
 
 let all: Promise<RegionStation[]> | null = null;

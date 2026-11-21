@@ -22,6 +22,7 @@ const loaders = {
   kinki: () => Promise.all([import('./kinki/stations.json'), import('./kinki/roadLabels.json')]),
   kyushu: () => Promise.all([import('./kyushu/stations.json'), import('./kyushu/roadLabels.json')]),
   chubu: () => Promise.all([import('./chubu/stations.json'), import('./chubu/roadLabels.json')]),
+  hokkaido: () => Promise.all([import('./hokkaido/stations.json'), import('./hokkaido/roadLabels.json')]),
 };
 const [stationsModule, roadLabelsModule] = await loaders[REGION.id]();
 export const STATIONS: StationEntry[] = stationsModule.default;

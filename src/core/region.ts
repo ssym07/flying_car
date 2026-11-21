@@ -1,15 +1,15 @@
 /**
- * 遊ぶ地域（ワールド）。URL の ?region=kinki・?region=kyushu・?region=chubu で選ぶ（無ければ関東）。
- * 地域の名前（id）は 関東 kanto・近畿 kinki・九州 kyushu・中部 chubu。ホームに出す名前（name）は 東京・大阪・福岡・愛知 のまま。
+ * 遊ぶ地域（ワールド）。URL の ?region=kinki・?region=kyushu・?region=chubu・?region=hokkaido で選ぶ（無ければ関東）。
+ * 地域の名前（id）は 関東 kanto・近畿 kinki・九州 kyushu・中部 chubu・北海道 hokkaido。ホームに出す名前（name）は 東京・大阪・福岡・愛知・北海道。
  * 前の名前（?region=osaka・fukuoka・nagoya、保存したピンの tokyo・osaka・fukuoka・nagoya）も読める（OLD_IDS）
  * 地域を変える時はページを読み込み直すので、ここは起動時に一度だけ決まる。
  *
  * 地域で作るデータ（道路・線路・地面の種類などのタイル、路線図・空路・駅の形）は、地域ごとに dataDir の下に置く
- * （関東は public の直下、近畿は public/kinki、九州は public/kyushu、中部は public/chubu）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
+ * （関東は public の直下、近畿は public/kinki、九州は public/kyushu、中部は public/chubu、北海道は public/hokkaido）。データを作るスクリプトは出力先を丸ごと作り直すことがあるので、
  * 地域で分けておかないと、片方を作り直した時にもう片方が消える。建物（public/plateau）は区ごとなので共通
  */
 export interface Region {
-  id: 'kanto' | 'kinki' | 'kyushu' | 'chubu';
+  id: 'kanto' | 'kinki' | 'kyushu' | 'chubu' | 'hokkaido';
   name: string;
   /** 飛行開始地点。ここがローカル原点になる */
   origin: { latDeg: number; lonDeg: number; ellipsoidHeight: number };
@@ -64,6 +64,17 @@ export const REGIONS: Record<Region['id'], Region> = {
     dataDir: 'chubu/',
     prefectures: ['23', '21', '24'],
     searchExample: '栄',
+  },
+  hokkaido: {
+    id: 'hokkaido',
+    // 札幌市と石狩市・小樽市・北広島市・恵庭市・千歳市（新千歳空港）・苫小牧市の平野・市街地
+    name: '北海道',
+    // 札幌駅
+    origin: { latDeg: 43.0687, lonDeg: 141.3508, ellipsoidHeight: 50 },
+    geoidHeight: 32.2,
+    dataDir: 'hokkaido/',
+    prefectures: ['01'],
+    searchExample: '大通',
   },
 };
 

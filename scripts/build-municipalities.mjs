@@ -3,7 +3,7 @@
 // 使い方: node scripts/build-municipalities.mjs（REGION= で地域）
 //
 // - 出す市町村は、建物を再現している市町村（src/data/wards.ts）のうち、役所がこの地域のデータの範囲（AREAS）にあるもの
-// - 政令市は区をつなげて1つの市にする（横浜市・名古屋市など）。東京23区と、大阪市・京都市・神戸市・名古屋市・福岡市（SPLIT）は区ごと
+// - 政令市は区をつなげて1つの市にする（横浜市・名古屋市など）。東京23区と、大阪市・京都市・神戸市・名古屋市・福岡市・札幌市（SPLIT）は区ごと
 // - 形は国土数値情報の行政区域（N03、2024 年）。隣どうしの境が同じ線になるよう、境ごとに線を簡単にする
 // - 役所の位置は国土数値情報の市町村役場等（P34、2014 年）の本庁。そのあと移った役所は MOVED で直す
 //
@@ -25,11 +25,13 @@ const OFFICES_OUT = regionPath('public/offices.json');
 const CACHE = fileURLToPath(new URL('../data/cache/ksj/', import.meta.url));
 const WARDS = new URL('../src/data/wards.ts', import.meta.url);
 /** 地域ごとの都府県コード（エントランスの一覧に並べる順。ワールドの中心の都府県から） */
-const PREFS = { kanto: [13, 11, 12, 14], kinki: [27, 26, 28, 29], chubu: [23, 21, 24], kyushu: [40, 41] }[REGION_ID];
+const PREFS = { kanto: [13, 11, 12, 14], kinki: [27, 26, 28, 29], chubu: [23, 21, 24], kyushu: [40, 41], hokkaido: [1] }[REGION_ID];
+/** ファイル名の都道府県コード（北海道は 01） */
+const pc = (p) => String(p).padStart(2, '0');
 /** 線を簡単にする許し幅 (m)。エントランスの地図は 1px が 50〜100m ほど */
 const TOLERANCE = 40;
 /** 区ごとに選べるようにする政令市（東京23区はもともと区ごと） */
-const SPLIT = new Set(['大阪市', '京都市', '神戸市', '名古屋市', '福岡市']);
+const SPLIT = new Set(['大阪市', '京都市', '神戸市', '名古屋市', '福岡市', '札幌市']);
 /** 2014 年のあとに市になった町（役所のデータは町の名前のまま） */
 const OLD_NAMES = { 那珂川市: '那珂川町' };
 /** 2014 年のあとに移った役所（国土地理院の住所検索で引いた新しい住所の位置） */
@@ -42,6 +44,7 @@ const MOVED = {
 
 /** 都府県庁（市町村役場のデータに無いので、国土地理院の住所検索で引いた位置。範囲の外のものは出さない） */
 const PREF_OFFICES = [
+  ['北海道庁', 43.06444, 141.34706],
   ['東京都庁', 35.68963, 139.69177],
   ['埼玉県庁', 35.85718, 139.65079],
   ['千葉県庁', 35.60428, 140.12314],
@@ -80,8 +83,8 @@ const wardCodes = new Set([...(await readFile(WARDS, 'utf8')).matchAll(/code: '(
 // 役所（本庁）
 const halls = [];
 for (const p of PREFS) {
-  const dir = await ksj('P34/P34-14', `P34-14_${p}_GML`);
-  const xml = await readFile(`${dir}/P34-14_${p}.xml`, 'utf8');
+  const dir = await ksj('P34/P34-14', `P34-14_${pc(p)}_GML`);
+  const xml = await readFile(`${dir}/P34-14_${pc(p)}.xml`, 'utf8');
   const pos = {};
   for (const m of xml.matchAll(/gml:id="(p\d+)">\s*<gml:pos>([\d.]+) ([\d.]+)/g)) pos[m[1]] = [+m[2], +m[3]];
   for (const m of xml.matchAll(
@@ -112,8 +115,8 @@ for (const p of PREFS) {
 // 市町村の形（政令市は区をまとめる）。建物のある区を1つでも含む市町村だけ
 const groups = new Map();
 for (const p of PREFS) {
-  const dir = await ksj('N03/N03-2024', `N03-20240101_${p}_GML`);
-  const { features } = JSON.parse(await readFile(`${dir}/N03-20240101_${p}.geojson`, 'utf8'));
+  const dir = await ksj('N03/N03-2024', `N03-20240101_${pc(p)}_GML`);
+  const { features } = JSON.parse(await readFile(`${dir}/N03-20240101_${pc(p)}.geojson`, 'utf8'));
   for (const f of features) {
     const pr = f.properties;
     if (!pr.N03_004 || !f.geometry) continue;

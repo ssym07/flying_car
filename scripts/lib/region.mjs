@@ -1,5 +1,5 @@
 /**
- * データを作る地域。環境変数 REGION=kinki で近畿（大阪）、REGION=chubu で中部（愛知）、REGION=kyushu で九州（福岡）（無ければ関東）。src/core/region.ts と同じ分け方。
+ * データを作る地域。環境変数 REGION=kinki で近畿（大阪）、REGION=chubu で中部（愛知）、REGION=kyushu で九州（福岡）、REGION=hokkaido で北海道（札幌）（無ければ関東）。src/core/region.ts と同じ分け方。
  *
  * 地域で作るデータは地域ごとの置き場所に書く：東京は今までどおり public・data・src/data の直下、
  * 近畿は public/kinki・data/kinki・src/data/kinki の下。出力先を丸ごと作り直すスクリプトがあるので、
@@ -11,7 +11,7 @@ const ROOT = new URL('../../', import.meta.url);
 // 前の名前（osaka・fukuoka・nagoya・tokyo）も受け付ける
 const OLD_IDS = { tokyo: 'kanto', osaka: 'kinki', fukuoka: 'kyushu', nagoya: 'chubu' };
 const requested = OLD_IDS[process.env.REGION] ?? process.env.REGION;
-export const REGION_ID = ['kinki', 'kyushu', 'chubu'].includes(requested) ? requested : 'kanto';
+export const REGION_ID = ['kinki', 'kyushu', 'chubu', 'hokkaido'].includes(requested) ? requested : 'kanto';
 
 /**
  * データを取る範囲：[南, 西, 北, 東] の長方形のならび。
@@ -120,6 +120,22 @@ const REGION_AREAS = {
     // 18番目は四日市と鈴鹿の範囲のすき間（海ぞいの箕田・長太ノ浦のあたり）
     [34.83, 136.62, 34.88, 136.64],
   ],
+  // 北海道（2026-11-21）：札幌市・石狩市・小樽市・北広島市・恵庭市・千歳市・苫小牧市の平野と市街地だけ
+  // （札幌の南区の奥・定山渓、小樽の山、支笏湖の方、石狩市の北の厚田・浜益は入れない）
+  hokkaido: [
+    // 1つ目は札幌の中心（中央区・北区と東区の南・白石区・豊平区・西区・厚別区・清田区、南区の北の真駒内・澄川・藤野の手前まで）
+    [42.97, 141.24, 43.15, 141.5],
+    // 2つ目は札幌の北（北区の屯田・篠路・あいの里、東区の北・丘珠空港）と石狩市の花川・樽川・石狩湾新港
+    [43.15, 141.24, 43.25, 141.45],
+    // 3つ目は手稲区と小樽市の銭函
+    [43.06, 141.13, 43.15, 141.24],
+    // 4つ目は小樽市の市街地（朝里・小樽・南小樽・小樽築港・塩谷の手前）
+    [43.15, 140.95, 43.22, 141.13],
+    // 5つ目は北広島市・恵庭市・千歳市の市街地と新千歳空港（西の支笏湖の山は入れない）
+    [42.76, 141.5, 43.02, 141.74],
+    // 6つ目は苫小牧市の市街地と港（錦岡〜沼ノ端）
+    [42.59, 141.4, 42.7, 141.78],
+  ],
 };
 export const AREAS = REGION_AREAS[REGION_ID];
 
@@ -182,6 +198,17 @@ const REGION_SETTINGS = {
       { name: '伊勢鉄道', operator: '伊勢鉄道', colour: '#0091d7', stops: ['河原田', '鈴鹿', '玉垣', '鈴鹿サーキット稲生', '徳田', '中瀬古', '伊勢上野', '河芸', '東一身田', '津'] },
       { name: 'JR紀勢本線', operator: '東海旅客鉄道', colour: '#f08300', stops: ['下庄', '一身田', '津', '阿漕', '高茶屋'] },
     ],
+  },
+  hokkaido: {
+    center: [43.0687, 141.3508],
+    lat0: 42.9,
+    geoid: 32.2,
+    hubs: ['札幌', '大通', 'すすきの', '新札幌', '琴似', '麻生', '真駒内', '福住', '宮の沢', '栄町', '手稲', '小樽', '南小樽', '北広島', '恵庭', '千歳', '南千歳', '新千歳空港', '苫小牧'],
+    // 環状線は無い（市電の環状は短いので円にしない）
+    ringLine: /^$/,
+    cutLoops: true,
+    keepSides: true,
+    prefectures: ['01'],
   },
 };
 export const SETTINGS = REGION_SETTINGS[REGION_ID];

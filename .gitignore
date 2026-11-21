@@ -10,6 +10,7 @@ public/plateau
 data/kinki/cache
 data/kyushu/cache
 data/chubu/cache
+data/hokkaido/cache
 
 # 作業の進み具合のログ（一時フォルダへのリンク）
 logs

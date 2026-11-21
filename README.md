@@ -197,6 +197,41 @@ src/
 
 MVP は **PLATEAU の1区画**で進める。
 
+### ワールドを足す・広げる手順
+
+データを作るスクリプトは `scripts/` にあり、どれも環境変数 `REGION=`（kanto・kinki・kyushu・chubu・hokkaido。無ければ kanto）で地域を選ぶ。
+出力は地域ごとの置き場所（`public/<地域>/`・`data/<地域>/`・`src/data/<地域>/`。関東だけ直下）。建物（`public/plateau/<市区町村コード>/`）は地域に関係なく共通。
+取得（Overpass）は混んでいると何時間もかかるので、`caffeinate -i` を付けて裏で流し、区切りごとにデータのフォルダだけコミットする（例：北海道を足した時の `scripts/region-pipeline.sh`）。
+
+**1. 設定を足す（新しいワールドの時）**
+- `src/core/region.ts`：`REGIONS` に地域（名前・開始地点の駅・ジオイド高（国土地理院のジオイド計算で開始地点を引く）・`dataDir`・都道府県コード・検索欄の例）
+- `scripts/lib/region.mjs`：`REGION_ID` の候補、`REGION_AREAS`（取る範囲の長方形 [南, 西, 北, 東]。平野・市街地だけにする）、`REGION_SETTINGS`（開始地点・空路の拠点駅（`fetch-stations` で取った駅の名前と同じにする。無いと空路が NaN になる）・路線図の環状線など）
+- `src/data/regionData.ts`・`src/data/allStations.ts` の読み込み先、`.gitignore` の `data/<地域>/cache`
+- `scripts/build-municipalities.mjs` の `PREFS`（都道府県コード）、都府県庁（`PREF_OFFICES`）、区ごとに選ぶ政令市（`SPLIT`）
+- `src/data/wards.ts`：建物を作る市区町村。PLATEAU があれば配信 URL（データカタログ API `https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets` の bldg・LOD1）、無ければ `url: ''`（国土地理院の建物の形から作る）
+- フォルダを作る：`mkdir -p public/<地域> data/<地域>/{osm,stations,airports,cache} src/data/<地域>`
+
+**2. データを作る（この順に。範囲を足す時は、足した長方形だけ取り足す）**
+
+| 順 | スクリプト | 中身 |
+|---|---|---|
+| 1 | `fetch-stations` → `fetch-roads` | 駅・通りの名前 |
+| 2 | `fetch-road-network - 分割数`、2つ目からの長方形は `fetch-road-network 南,西,北,東 分割数` | 道路網。**引数なし（`-`）は 1つ目の長方形だけを丸ごと作り直し、ほかの長方形のタイルを消す**ので、範囲を足す時は必ず長方形を渡す |
+| 3 | `fetch-railways` → `fetch-expressways` → `fetch-station-roofs` | 鉄道・高速道路・駅の屋根 |
+| 4 | `build-rail-heights` → `build-station-footprints` → `build-platforms` → `build-expressways` | 線路の高さ・ホーム・高速道路の形 |
+| 5 | `build-local-buildings 市区町村コード... --clip`（PLATEAU）／`build-gsi-buildings コード 名前 都道府県`（国土地理院。線路の上の建物を除くので 4 の後） → `build-building-pads`（引数なしでその地域の全部を作り直す） | 建物と敷地 |
+| 6 | `fetch-airports` →（PLATEAU の空港なら `build-airport-fixed-links 区コード`）→ `build-station-cutouts` → `build-sky-lanes` → `fetch-route-map` → `build-route-map-sea` | 空港・駅の切り抜き（5 の後）・空路・路線図 |
+| 7 | `fetch-landuse`・`fetch-parks`（2 と同じく長方形ごと）→ `add-beaches` → `fetch-airports` | 地面の種類・公園・砂浜・空港の地面 |
+| 8 | `fetch-station-english` → `build-expressway-signs` → `fetch-expressway-junctions` → `fetch-river-names` | 方面看板・地図の JCT／IC と川の名前 |
+| 9 | `fetch-schools` → `fetch-park-names` → `fetch-museums` → `build-municipalities` | 学校・公園・ミュージアムの名前、エントランスの地図と役所 |
+
+**3. 範囲を広げた時に消すキャッシュ**（消さないと前の範囲のまま）
+- `data/<地域>/cache/route-map.json`（路線図）、`data/cache/airports-<地域>.json`（空港）
+- `data/cache/junctions-<地域>.json`・`data/cache/junctions-gsi-<地域>.json`（JCT・IC）、`data/cache/rivers-<地域>.json`（川）
+- 学校・公園・ミュージアムの名前は長方形ごとにキャッシュするので、そのままでよい
+
+**4. 確かめる**：`public/<地域>/` の各フォルダのファイル数を前と比べる（減っていたら、引数なしで流して消した疑い）。ゲームで開始地点・エントランスから飛んで画面を見る。
+
 ### 現在使っているデータ（東京23区）
 | レイヤー | 出典 | 備考 |
 |---|---|---|

@@ -297,4 +297,22 @@ export const WARDS: Ward[] = [
   { code: '24344', name: '川越町', kind: 'lod1', url: '' },
   { code: '24207', name: '鈴鹿市', kind: 'lod1', url: '' },
   { code: '24201', name: '津市', kind: 'lod1', url: '' },
+  // 北海道（2026-11-21）：札幌市の10区は PLATEAU（2020 年）。範囲（平野・市街地）は scripts/lib/region.mjs で切る
+  { code: '01101', name: '札幌市中央区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a6/031403-b4dc-4d5d-8c2f-50361fedc764/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01101_chuo-ku_lod1/tileset.json' },
+  { code: '01102', name: '札幌市北区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/b6/2fe16c-44c8-4a42-8138-82c971cd0e2c/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01102_kita-ku_lod1/tileset.json' },
+  { code: '01103', name: '札幌市東区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/98/2f5131-ad3c-4551-943a-3607ed6afa3c/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01103_higashi-ku_lod1/tileset.json' },
+  { code: '01104', name: '札幌市白石区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/a2/2d4d91-f50a-4fd8-a055-771bf1495095/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01104_shiroishi-ku_lod1/tileset.json' },
+  { code: '01105', name: '札幌市豊平区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/02/d7a24f-76db-4295-844e-c667831fea43/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01105_toyohira-ku_lod1/tileset.json' },
+  { code: '01106', name: '札幌市南区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/aa/5f71a5-4442-4dcb-80bb-a022adbe409c/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01106_minami-ku_lod1/tileset.json' },
+  { code: '01107', name: '札幌市西区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/e1/e6b234-82bd-4311-b72b-5920b6dfc569/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01107_nishi-ku_lod1/tileset.json' },
+  { code: '01108', name: '札幌市厚別区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/26/96d6b5-1c35-40e3-bb79-c5b53f15405a/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01108_atsubetsu-ku_lod1/tileset.json' },
+  { code: '01109', name: '札幌市手稲区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/70/811042-e748-47a7-9f3e-420003f445b9/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01109_teine-ku_lod1/tileset.json' },
+  { code: '01110', name: '札幌市清田区', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/1d/c2a380-16cd-4a40-b860-0889727d752c/01100_sapporo-shi_city_2020_citygml_7_op_bldg_3dtiles_01110_kiyota-ku_lod1/tileset.json' },
+  // 石狩市・小樽市・北広島市・恵庭市・千歳市・苫小牧市：PLATEAU が無いので国土地理院の建物の形から作る（平野・市街地だけ）
+  { code: '01235', name: '石狩市', kind: 'lod1', url: '' },
+  { code: '01203', name: '小樽市', kind: 'lod1', url: '' },
+  { code: '01234', name: '北広島市', kind: 'lod1', url: '' },
+  { code: '01231', name: '恵庭市', kind: 'lod1', url: '' },
+  { code: '01224', name: '千歳市', kind: 'lod1', url: '' },
+  { code: '01213', name: '苫小牧市', kind: 'lod1', url: '' },
 ];
