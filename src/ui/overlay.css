@@ -91,10 +91,10 @@ body {
   fill: rgba(255, 255, 255, 0.2);
 }
 
-/* 再現している範囲：ワールドの色で、市区町村の形をまとめた面を半透明で塗り、縁を線で囲み、中の点をその色にする（TitleScene の showCoverage） */
+/* 再現している範囲：ワールドの色で、市区町村の形をまとめた面を半透明で塗り、縁を線で囲む。中の点は消す（TitleScene の showCoverage） */
 .japan-map .coverage .fill {
   fill: var(--c);
-  fill-opacity: 0.4;
+  fill-opacity: 0.55;
   fill-rule: nonzero;
 }
 
@@ -106,7 +106,7 @@ body {
 }
 
 .japan-map .dots circle.lit {
-  fill: var(--c);
+  display: none;
 }
 
 .japan-map .pin {

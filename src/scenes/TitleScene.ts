@@ -127,7 +127,7 @@ const WORLD_COLORS: Record<Region['id'], string> = {
 
 /**
  * 再現している範囲（各ワールドのエントランスの地図 municipalities.json の市区町村の形）を、点の日本列島の上にワールドの色で描く。
- * 市区町村の形をまとめて 1 つの面として半透明で塗り、縁を線で囲み、中の点をその色にする。読めなかった地域は描かない
+ * 市区町村の形をまとめて 1 つの面として半透明で塗り、縁を線で囲み、中の点は消す。読めなかった地域は描かない
  */
 async function showCoverage(svg: SVGSVGElement): Promise<void> {
   // 経度・緯度 → 点の格子の座標
@@ -194,7 +194,7 @@ async function showCoverage(svg: SVGSVGElement): Promise<void> {
     outline.style.setProperty('--c', color);
     group.appendChild(outline);
 
-    // 点の中心が形の中（輪をまたいだ回数が奇数）ならその色にする
+    // 点の中心が形の中（輪をまたいだ回数が奇数）なら消す（面だけを見せる）
     const inside = (x: number, y: number) => {
       let hit = false;
       for (const ring of rings) {
@@ -207,10 +207,7 @@ async function showCoverage(svg: SVGSVGElement): Promise<void> {
       return hit;
     };
     japan.dots.forEach(([c, row], i) => {
-      if (inside(c + 0.5, row + 0.5) && circles[i]) {
-        circles[i].classList.add('lit');
-        circles[i].style.setProperty('--c', color);
-      }
+      if (inside(c + 0.5, row + 0.5)) circles[i]?.classList.add('lit');
     });
   }
 }
