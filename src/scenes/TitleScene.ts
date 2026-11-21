@@ -20,7 +20,7 @@ export class TitleScene implements GameScene {
       .sort((a, b) => a.origin.lonDeg - b.origin.lonDeg)
       .map(
         (r) => `
-        <button type="button" class="region${r.id === REGION.id ? ' current' : ''}" data-region="${r.id}">
+        <button type="button" class="region${r.id === REGION.id ? ' current' : ''}" data-region="${r.id}" style="--c: ${WORLD_COLORS[r.id]}">
           <span class="name">${r.name}</span>
         </button>`,
       )
@@ -105,65 +105,112 @@ function japanMap(): string {
       const x = (g.origin.lonDeg - japan.w) / japan.lonStep;
       const y = (japan.n - g.origin.latDeg) / japan.step;
       return `
-      <g class="pin${g.id === REGION.id ? ' current' : ''}" data-region="${g.id}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})">
+      <g class="pin${g.id === REGION.id ? ' current' : ''}" data-region="${g.id}" style="--c: ${WORLD_COLORS[g.id]}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})">
         <circle class="pulse" r="1.2"/><circle class="dot" r="0.9"/>
         <text x="1.8" y="0.6">${g.name}</text>
       </g>`;
     })
     .join('');
   return `<svg class="japan-map" viewBox="0 0 ${japan.cols} ${japan.rows}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-    <defs><filter id="coverage-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="0.7"/></filter></defs>
-    <g class="coverage" filter="url(#coverage-glow)"></g><g class="dots">${dots}</g>${pins}
+    <g class="coverage"></g><g class="dots">${dots}</g>${pins}
   </svg>`;
 }
 
+/** ワールドごとの色（ホームの範囲・印・ボタンの縁）。暗い背景で見分けやすい 5 色 */
+const WORLD_COLORS: Record<Region['id'], string> = {
+  kyushu: '#ff7d93',
+  kinki: '#ffa94d',
+  chubu: '#f2dd55',
+  kanto: '#66ccff',
+  hokkaido: '#7fe08a',
+};
+
 /**
- * 再現している範囲（各ワールドのエントランスの地図 municipalities.json の市区町村の形）を、点の日本列島の上で光らせる。
- * 形をぼかした白で塗り、形の中の点を白くする。読めなかった地域は光らせない
+ * 再現している範囲（各ワールドのエントランスの地図 municipalities.json の市区町村の形）を、点の日本列島の上にワールドの色で描く。
+ * 市区町村の形をまとめて 1 つの面として半透明で塗り、縁を線で囲み、中の点をその色にする。読めなかった地域は描かない
  */
 async function showCoverage(svg: SVGSVGElement): Promise<void> {
   // 経度・緯度 → 点の格子の座標
   const gx = (lon: number) => (lon - japan.w) / japan.lonStep;
   const gy = (lat: number) => (japan.n - lat) / japan.step;
-  const rings: Array<Array<[number, number]>> = [];
-  await Promise.all(
+  const worlds = await Promise.all(
     Object.values(REGIONS).map(async (r) => {
+      const rings: Array<Array<[number, number]>> = [];
       try {
         const res = await fetch(dataUrl(`${r.dataDir}municipalities.json`));
-        if (!res.ok) return;
-        const data = (await res.json()) as { m: Array<{ r: number[][] }> };
-        for (const m of data.m) {
-          for (const flat of m.r) {
-            const ring: Array<[number, number]> = [];
-            for (let i = 0; i < flat.length; i += 2) ring.push([gx(flat[i]), gy(flat[i + 1])]);
-            rings.push(ring);
+        if (res.ok) {
+          const data = (await res.json()) as { m: Array<{ r: number[][] }> };
+          for (const m of data.m) {
+            for (const flat of m.r) {
+              const ring: Array<[number, number]> = [];
+              for (let i = 0; i < flat.length; i += 2) ring.push([gx(flat[i]), gy(flat[i + 1])]);
+              rings.push(ring);
+            }
           }
         }
       } catch {
-        // この地域は光らせない
+        // この地域は描かない
       }
+      return { id: r.id, rings };
     }),
   );
-  if (!svg.isConnected || rings.length === 0) return;
-  const d = rings.map((ring) => `M${ring.map(([x, y]) => `${x.toFixed(3)} ${y.toFixed(3)}`).join('L')}Z`).join('');
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', d);
-  svg.querySelector('.coverage')!.appendChild(path);
-
-  // 点の中心が形の中（輪をまたいだ回数が奇数）なら白くする
-  const inside = (x: number, y: number) => {
-    let hit = false;
+  if (!svg.isConnected) return;
+  const group = svg.querySelector('.coverage')!;
+  const circles = svg.querySelectorAll<SVGCircleElement>('.dots circle');
+  for (const { id, rings } of worlds) {
+    if (rings.length === 0) continue;
+    const color = WORLD_COLORS[id];
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const fill = document.createElementNS(svgNs, 'path');
+    fill.setAttribute('class', 'fill');
+    fill.setAttribute('d', rings.map((ring) => `M${ring.map(([x, y]) => `${x.toFixed(3)} ${y.toFixed(3)}`).join('L')}Z`).join(''));
+    fill.style.setProperty('--c', color);
+    group.appendChild(fill);
+    // 縁：隣の市区町村と共有する辺（2 回出てくる辺）を消し、外側の辺だけを線にする（市区町村の境は描かない）
+    const key = ([x, y]: [number, number]) => `${x.toFixed(4)},${y.toFixed(4)}`;
+    const count = new Map<string, number>();
+    const edges: Array<[[number, number], [number, number], string]> = [];
     for (const ring of rings) {
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [xi, yi] = ring[i];
-        const [xj, yj] = ring[j];
-        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        const ka = key(a);
+        const kb = key(b);
+        if (ka === kb) continue;
+        const k = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+        count.set(k, (count.get(k) ?? 0) + 1);
+        edges.push([a, b, k]);
       }
     }
-    return hit;
-  };
-  const circles = svg.querySelectorAll('.dots circle');
-  japan.dots.forEach(([c, row], i) => {
-    if (inside(c + 0.5, row + 0.5)) circles[i]?.classList.add('lit');
-  });
+    const outline = document.createElementNS(svgNs, 'path');
+    outline.setAttribute('class', 'edge');
+    outline.setAttribute(
+      'd',
+      edges
+        .filter(([, , k]) => count.get(k) === 1)
+        .map(([a, b]) => `M${a[0].toFixed(3)} ${a[1].toFixed(3)}L${b[0].toFixed(3)} ${b[1].toFixed(3)}`)
+        .join(''),
+    );
+    outline.style.setProperty('--c', color);
+    group.appendChild(outline);
+
+    // 点の中心が形の中（輪をまたいだ回数が奇数）ならその色にする
+    const inside = (x: number, y: number) => {
+      let hit = false;
+      for (const ring of rings) {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [xi, yi] = ring[i];
+          const [xj, yj] = ring[j];
+          if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+        }
+      }
+      return hit;
+    };
+    japan.dots.forEach(([c, row], i) => {
+      if (inside(c + 0.5, row + 0.5) && circles[i]) {
+        circles[i].classList.add('lit');
+        circles[i].style.setProperty('--c', color);
+      }
+    });
+  }
 }

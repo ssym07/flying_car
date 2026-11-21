@@ -91,16 +91,22 @@ body {
   fill: rgba(255, 255, 255, 0.2);
 }
 
-/* 再現している範囲：市区町村の形をぼかした白で光らせ、中の点を白くする（TitleScene の showCoverage） */
-.japan-map .coverage path {
-  fill: rgba(255, 255, 255, 0.95);
-  stroke: rgba(255, 255, 255, 0.95);
-  stroke-width: 0.5;
-  fill-rule: evenodd;
+/* 再現している範囲：ワールドの色で、市区町村の形をまとめた面を半透明で塗り、縁を線で囲み、中の点をその色にする（TitleScene の showCoverage） */
+.japan-map .coverage .fill {
+  fill: var(--c);
+  fill-opacity: 0.4;
+  fill-rule: nonzero;
+}
+
+.japan-map .coverage .edge {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 0.14;
+  stroke-linecap: round;
 }
 
 .japan-map .dots circle.lit {
-  fill: #ffffff;
+  fill: var(--c);
 }
 
 .japan-map .pin {
@@ -108,13 +114,13 @@ body {
 }
 
 .japan-map .pin .dot {
-  fill: var(--accent);
+  fill: var(--c, var(--accent));
   stroke: #fff;
   stroke-width: 0.25;
 }
 
 .japan-map .pin .pulse {
-  fill: var(--accent);
+  fill: var(--c, var(--accent));
   opacity: 0.5;
   transform-box: fill-box;
   transform-origin: center;
@@ -135,7 +141,7 @@ body {
 }
 
 .japan-map .pin:hover text {
-  fill: var(--accent);
+  fill: var(--c, var(--accent));
 }
 
 /* エントランス：ワールドの市町村の地図（ホームと同じ暗い背景）。境は細い線、選べる市町村は薄く塗る */
@@ -409,6 +415,10 @@ body {
 .screen button.region .name {
   font-size: 26px;
   letter-spacing: 0.1em;
+}
+
+.screen button.region {
+  border-color: var(--c, var(--accent));
 }
 
 .screen button.region.current {
