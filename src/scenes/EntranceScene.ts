@@ -41,6 +41,8 @@ const START_BACK = 300;
 const SPAN = { w: 140, h: 130 };
 /** 開いた時に見せる枠 (km)。これより引けない。東京・福岡・北海道は全体が入り、大阪・愛知は端がはみ出す（ドラッグで動かして見る） */
 const START_SPAN = { w: 90, h: 85 };
+/** 縮尺の定規のいちばん長い長さ (px) */
+const SCALE_BAR_PX = 160;
 
 /**
  * エントランス：ワールド（地域）の、建物を再現している市町村の地図。
@@ -56,7 +58,10 @@ export class EntranceScene implements GameScene {
   private full = { x: 0, y: 0, w: 1, h: 1 };
   private lat0 = 0;
   private lon0 = 0;
-  private readonly onResize = (): void => this.layoutLabels();
+  private readonly onResize = (): void => {
+    this.layoutLabels();
+    this.updateScaleBar();
+  };
 
   constructor(private readonly ctx: GameContext) {}
 
@@ -78,6 +83,7 @@ export class EntranceScene implements GameScene {
         <input type="search" class="entrance-filter" placeholder="市区町村名で絞り込む" autocomplete="off" />
         <ul class="entrance-list"><li class="entrance-loading">読み込み中…</li></ul>
       </div>
+      <div class="entrance-scale" hidden><div class="entrance-scale-bar"></div><span></span></div>
       <div class="entrance-credit">出典：国土数値情報（行政区域データ・市町村役場等及び公的集会施設データ）（国土交通省）を加工</div>
       `,
     );
@@ -284,6 +290,24 @@ export class EntranceScene implements GameScene {
   private readonly onMove = (e: PointerEvent): void => this.onMoveImpl(e);
   private readonly onUp = (): void => this.onUpImpl();
 
+  /** 縮尺の定規：1・2・5 × 10 の累乗 km のうち、画面で SCALE_BAR_PX px 以下でいちばん長いもの */
+  private updateScaleBar(): void {
+    const el = this.el?.querySelector<HTMLElement>('.entrance-scale');
+    if (!el || !this.svg || this.munis.length === 0) return;
+    const pxPerKm = this.scale();
+    if (!(pxPerKm > 0)) return;
+    let km = 0.1;
+    for (const exp of [-1, 0, 1, 2, 3]) {
+      for (const m of [1, 2, 5]) {
+        const v = m * 10 ** exp;
+        if (v * pxPerKm <= SCALE_BAR_PX) km = v;
+      }
+    }
+    el.hidden = false;
+    el.querySelector<HTMLElement>('.entrance-scale-bar')!.style.width = `${(km * pxPerKm).toFixed(1)}px`;
+    el.querySelector('span')!.textContent = km >= 1 ? `${km} km` : `${Math.round(km * 1000)} m`;
+  }
+
   /** 画面の 1km が何 px か */
   private scale(): number {
     const r = this.svg!.getBoundingClientRect();
@@ -313,6 +337,7 @@ export class EntranceScene implements GameScene {
     v.x = Math.min(Math.max(v.x, this.full.x - v.w * 0.3), this.full.x + this.full.w - v.w * 0.7);
     v.y = Math.min(Math.max(v.y, this.full.y - v.h * 0.3), this.full.y + this.full.h - v.h * 0.7);
     this.svg!.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+    this.updateScaleBar();
     this.layoutLabels();
   }
 
