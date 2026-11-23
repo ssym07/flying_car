@@ -316,3 +316,18 @@ export const WARDS: Ward[] = [
   { code: '01224', name: '千歳市', kind: 'lod1', url: '' },
   { code: '01213', name: '苫小牧市', kind: 'lod1', url: '' },
 ];
+  // 苫小牧から函館まで（2026-11-23）：室蘭市は PLATEAU（2022 年）、ほかは国土地理院の建物の形から作る（町ごとの市街地の範囲だけ）
+  { code: '01205', name: '室蘭市', kind: 'lod1', url: 'https://assets.cms.plateau.reearth.io/assets/d5/dd9319-0a87-4a5f-a36c-12118c1cd79a/01205_muroran-shi_city_2022_citygml_4_op_bldg_3dtiles_lod1/tileset.json' },
+  { code: '01578', name: '白老町', kind: 'lod1', url: '' },
+  { code: '01230', name: '登別市', kind: 'lod1', url: '' },
+  { code: '01233', name: '伊達市', kind: 'lod1', url: '' },
+  { code: '01584', name: '洞爺湖町', kind: 'lod1', url: '' },
+  { code: '01571', name: '豊浦町', kind: 'lod1', url: '' },
+  { code: '01393', name: '黒松内町', kind: 'lod1', url: '' },
+  { code: '01347', name: '長万部町', kind: 'lod1', url: '' },
+  { code: '01346', name: '八雲町', kind: 'lod1', url: '' },
+  { code: '01345', name: '森町', kind: 'lod1', url: '' },
+  { code: '01343', name: '鹿部町', kind: 'lod1', url: '' },
+  { code: '01337', name: '七飯町', kind: 'lod1', url: '' },
+  { code: '01236', name: '北斗市', kind: 'lod1', url: '' },
+  { code: '01202', name: '函館市', kind: 'lod1', url: '' },

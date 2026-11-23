@@ -147,13 +147,21 @@ for (const rel of relations.values()) {
 // OpenStreetMap のリレーションに駅が抜けている・リレーションが無い路線は、設定の駅の並び（SETTINGS.extraLines）で置き換える・足す
 // （愛知の近鉄名古屋線は烏森の次が佐古木に飛んでいる、JR関西本線は旅客のリレーションが無い）。範囲の外の駅は後で切る
 for (const { name, operator, colour, stops: names } of SETTINGS.extraLines ?? []) {
-  const stops = names
+  // 同じ名前の駅が2つ以上ある時（札幌の JR と地下鉄の白石など）は、並びの前後の駅にいちばん近いものを使う
+  const candidates = names
     .map((n) => {
-      const i = stations.findIndex((s) => s.name === n);
-      if (i < 0) console.warn(`extraLines の駅が見つかりません（飛ばします）: ${n}`);
-      return i;
+      const list = stations.flatMap((s, i) => (s.name === n ? [i] : []));
+      if (list.length === 0) console.warn(`extraLines の駅が見つかりません（飛ばします）: ${n}`);
+      return list;
     })
-    .filter((i) => i >= 0);
+    .filter((list) => list.length > 0);
+  const dist = (a, b) => Math.hypot(stations[a].lat - stations[b].lat, (stations[a].lon - stations[b].lon) * 0.75);
+  const stops = candidates.map((list, k) => {
+    if (list.length === 1) return list[0];
+    const near = [candidates[k - 1], candidates[k + 1]].filter((c) => c?.length === 1).map((c) => c[0]);
+    if (near.length === 0) return list[0];
+    return list.reduce((best, i) => (Math.min(...near.map((j) => dist(i, j))) < Math.min(...near.map((j) => dist(best, j))) ? i : best));
+  });
   for (const [key, line] of byLine) if (line.name.replace(/\s*(各駅停車|普通|各停)$/, '') === name) byLine.delete(key);
   byLine.set(`${operator}|${name}`, { name, operator, colour, stops });
 }
@@ -242,7 +250,8 @@ for (const { name, colour, stops } of kept) {
   };
   for (const i of stops) {
     if (!inArea(i)) {
-      flush();
+      // 範囲が飛び飛びの地域（北海道：苫小牧〜函館の町ごとの範囲）は、範囲の外の駅を飛ばして線をつなげたままにする（SETTINGS.bridgeGaps）
+      if (!SETTINGS.bridgeGaps) flush();
       continue;
     }
     if (!used.has(i)) {
