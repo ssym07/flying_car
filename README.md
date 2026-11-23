@@ -216,7 +216,7 @@ MVP は **PLATEAU の1区画**で進める。
 | 順 | スクリプト | 中身 |
 |---|---|---|
 | 1 | `fetch-stations` → `fetch-roads` | 駅・通りの名前 |
-| 2 | `fetch-road-network - 分割数`、2つ目からの長方形は `fetch-road-network 南,西,北,東 分割数` | 道路網。**引数なし（`-`）は 1つ目の長方形だけを丸ごと作り直し、ほかの長方形のタイルを消す**ので、範囲を足す時は必ず長方形を渡す |
+| 2 | `fetch-road-network - 分割数`、2つ目からの長方形は `fetch-road-network 南,西,北,東 分割数` | 道路網。**引数なし（`-`）は 1つ目の長方形だけを丸ごと作り直し、ほかの長方形のタイルを消す**ので、範囲を足す時は必ず長方形を渡す。AREAS の外の山あいで道路だけ描きたい所は、設定の `roadOnlyAreas`（福岡の背振山地など）に書いて同じように長方形を渡して取る（そのあと 4 の `build-rail-heights` から流し直す） |
 | 3 | `fetch-railways` → `fetch-expressways` → `fetch-station-roofs` | 鉄道・高速道路・駅の屋根 |
 | 4 | `build-rail-heights` → `build-station-footprints` → `build-platforms` → `build-expressways` | 線路の高さ・ホーム・高速道路の形 |
 | 5 | `build-local-buildings 市区町村コード... --clip`（PLATEAU）／`build-gsi-buildings コード 名前 都道府県`（国土地理院。線路の上の建物を除くので 4 の後） → `build-building-pads`（引数なしでその地域の全部を作り直す） | 建物と敷地 |
