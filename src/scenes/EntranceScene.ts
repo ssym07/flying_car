@@ -56,6 +56,8 @@ export class EntranceScene implements GameScene {
   /** 地図の表示範囲（km。viewBox） */
   private view = { x: 0, y: 0, w: 1, h: 1 };
   private full = { x: 0, y: 0, w: 1, h: 1 };
+  /** いちばん引いた時の幅（km）。ふつうは開いた時の幅、枠より広いワールド（北海道）は全体が入る幅 */
+  private maxW = START_SPAN.w;
   private lat0 = 0;
   private lon0 = 0;
   private readonly onResize = (): void => {
@@ -134,7 +136,11 @@ export class EntranceScene implements GameScene {
     // どのワールドも同じ縮尺（いちばん広い大阪の東西 132km・愛知の南北 122km が入る枠）。狭いワールドはまわりが空く
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
-    this.full = { x: cx - SPAN.w / 2, y: cy - SPAN.h / 2, w: SPAN.w, h: SPAN.h };
+    // 枠より広いワールド（北海道：石狩〜函館の南北 170km）は、枠を全体＋まわり 10km に広げ、全体が見えるまで引けるようにする
+    const fw = Math.max(SPAN.w, x1 - x0 + 20);
+    const fh = Math.max(SPAN.h, y1 - y0 + 20);
+    this.full = { x: cx - fw / 2, y: cy - fh / 2, w: fw, h: fh };
+    this.maxW = Math.max(START_SPAN.w, x1 - x0 + 20, ((y1 - y0 + 20) * START_SPAN.w) / START_SPAN.h);
     // 開いた時の中心はワールドの中心（梅田・名古屋など）。全体が枠に入る向きは全体のまん中、入らない向きは全体の外を見せすぎない
     const [ox, oy] = this.project(REGION.origin.lonDeg, REGION.origin.latDeg);
     const center = (o: number, a: number, b: number, span: number): number =>
@@ -339,10 +345,15 @@ export class EntranceScene implements GameScene {
   }
 
   private zoomAt(px: number, py: number, k: number): void {
-    // 開いた時の縮尺（START_SPAN）より引かない・幅 2km より寄らない
-    const w = Math.min(START_SPAN.w, Math.max(2, this.view.w * k));
+    // 開いた時の縮尺（START_SPAN。全体が入らないワールドは全体が入る縮尺）より引かない・幅 2km より寄らない
+    const w = Math.min(this.maxW, Math.max(2, this.view.w * k));
     const kk = w / this.view.w;
     this.view = { x: px - (px - this.view.x) * kk, y: py - (py - this.view.y) * kk, w, h: this.view.h * kk };
+    // 全体が入る縮尺まで引いた時は、全体のまん中に寄せる（札幌を中心に開く北海道で、函館が下にはみ出さないように）
+    if (this.maxW > START_SPAN.w && w >= this.maxW) {
+      this.view.x = this.full.x + (this.full.w - this.view.w) / 2;
+      this.view.y = this.full.y + (this.full.h - this.view.h) / 2;
+    }
     this.applyView();
   }
 
