@@ -49,17 +49,23 @@ await mkdir(CACHE, { recursive: true });
 for (let x = tx0; x <= tx1; x++) {
   for (let y = ty0; y <= ty1; y++) {
     const file = new URL(`${ZOOM}-${x}-${y}.png`, CACHE);
-    let buf = await readFile(file).catch(() => null);
-    if (!buf) {
+    // 淡色地図が無いタイル（404）は沖の海（陸は全部タイルがある）。印のファイルを置いて、次からは取りに行かない
+    const none = new URL(`${ZOOM}-${x}-${y}.404`, CACHE);
+    let missing = await readFile(none).then(() => true, () => false);
+    let buf = missing ? null : await readFile(file).catch(() => null);
+    if (!buf && !missing) {
       for (let attempt = 0; attempt < 5 && !buf; attempt++) {
         const res = await fetch(`https://cyberjapandata.gsi.go.jp/xyz/pale/${ZOOM}/${x}/${y}.png`).catch(() => null);
         if (res?.ok) buf = Buffer.from(await res.arrayBuffer());
-        else if (res?.status === 404) break;
-        else await new Promise((r) => setTimeout(r, 2000));
+        else if (res?.status === 404) {
+          missing = true;
+          await writeFile(none, '');
+          break;
+        } else await new Promise((r) => setTimeout(r, 2000));
       }
       if (buf) await writeFile(file, buf);
     }
-    tiles.set(`${x}/${y}`, buf ? decodePng(buf) : null);
+    tiles.set(`${x}/${y}`, buf ? decodePng(buf) : missing ? 'sea' : null);
   }
 }
 // 淡色地図の水色（src/world/water.ts の isWaterColor と同じ）
@@ -69,6 +75,7 @@ const waterAt = (lat, lon) => {
   const fy = tileY(lat);
   const t = tiles.get(`${Math.floor(fx)}/${Math.floor(fy)}`);
   if (!t) return 0;
+  if (t === 'sea') return 1;
   const px = Math.min(255, Math.floor((fx % 1) * 256));
   const py = Math.min(255, Math.floor((fy % 1) * 256));
   const k = (py * 256 + px) * 3;

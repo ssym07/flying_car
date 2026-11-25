@@ -6,7 +6,7 @@
 // 出力: { rings: [[円で描く路線の番号, 中心 x, y, 半径], ...], stations: [[名前, 緯度, 経度, 模式図の x, y（km）], ...], lines: [[路線名, 色（#rrggbb）, [駅の番号, ...]], ...] }
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { AREAS } from './lib/tiles.mjs';
-import { regionPath, SETTINGS } from './lib/region.mjs';
+import { BOUNDS, regionPath, SETTINGS } from './lib/region.mjs';
 
 const OUT = regionPath('public/route-map.json');
 const CACHE = regionPath('data/cache/route-map.json');
@@ -168,7 +168,7 @@ for (const { name, operator, colour, stops: names } of SETTINGS.extraLines ?? []
 
 // まとめる：快速・急行・直通運転などの種別は除き、各駅に止まる路線だけにする。
 // 駅の多い路線から順に、まだ描いていない駅の間（隣どうしの駅の組）を半分以上持つものだけを残す
-const SERVICE = /快速|区快|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|^ソニック|^きらめき|^かもめ|^みどり|^ハウステンボス|^有明$|^はまかぜ$|ミュースカイ/;
+const SERVICE = /快速|区快|急行|準急|特急|特快|快特|通勤|直通|ライナー|シャトル|臨時|回送|列車$|エクスプレス$|S-Train|踊り子|こまち|しおさい|ちちぶ|のぞみ|ひかり|こだま|はやて|はやぶさ|あずさ|かいじ|えのしま|ふじさん|小江戸|きぬがわ|スペーシア|成田エクスプレス|ロマンスカー|さがみ|^とき$|たにがわ|あさま|かがやき|はくたか|^ゆふ|^ソニック|^きらめき|^かもめ|^みどり|^ハウステンボス|^有明$|^はまかぜ$|ミュースカイ|^(北斗|すずらん|カムイ|ライラック|おおぞら|とかち|宗谷|サロベツ|オホーツク|大雪|ニセコ)$/;
 // 載せる駅：データを取る範囲の中で、建物を作っている所（public/plateau のこの地域の区の、中身のある細かいタイルの範囲）にある駅だけ
 const builtBoxes = [];
 {
@@ -263,6 +263,192 @@ for (const { name, colour, stops } of kept) {
   }
   flush();
 }
+/**
+ * 駅の間を実際の線路の形に沿わせる（SETTINGS.geoLayout の地域）。線路（railway=rail、側線などを除く）をつないだ網で
+ * 隣の駅どうしの最短の道を探し、間引いて、路線の 4 つ目の要素 { k: [x, y, x, y, ...] }（ids[k-1] → ids[k] の間の点）にする。
+ * 点の位置は駅と同じ「中心から外へ広げる」形にし、両端の駅が模式図で動いた分を、道の長さの割合でなめらかに足す
+ */
+async function addTrackShapes(geo, pos, geoW) {
+  const RAILS = regionPath('data/cache/route-map-rails.json');
+  let rails = await readFile(RAILS, 'utf8').then(JSON.parse, () => null);
+  if (!rails) {
+    const [s, w, n, e] = BOUNDS;
+    rails = await overpass(`[out:json][timeout:250];
+      way["railway"="rail"][!"service"](${s - 0.15},${w - 0.15},${n + 0.15},${e + 0.15});
+      out body;
+      >;
+      out skel qt;`);
+    await mkdir(new URL('./', RAILS), { recursive: true });
+    await writeFile(RAILS, JSON.stringify(rails));
+  }
+  const lat0 = SETTINGS.lat0;
+  const cos0 = Math.cos(lat0 * K);
+  const C = [SETTINGS.center[1] * 111.32 * cos0, -SETTINGS.center[0] * 110.95];
+  const expand = (lat, lon) => {
+    const x = lon * 111.32 * cos0 - C[0];
+    const y = -lat * 110.95 - C[1];
+    const r = Math.hypot(x, y) || 1e-6;
+    const k = (6 * (r / 6) ** 0.7) / r;
+    return [x * k, y * k];
+  };
+  // 線路の網：点（地理の km）と隣の点
+  const pt = new Map();
+  for (const el of rails) if (el.type === 'node') pt.set(el.id, [el.lon * 111.32 * cos0, -el.lat * 110.95, el.lat, el.lon]);
+  const adj = new Map();
+  const link = (a, b) => {
+    const pa = pt.get(a);
+    const pb = pt.get(b);
+    if (!pa || !pb) return;
+    const d = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a).push([b, d]);
+    adj.get(b).push([a, d]);
+  };
+  for (const el of rails) if (el.type === 'way') for (let k = 1; k < el.nodes.length; k++) link(el.nodes[k - 1], el.nodes[k]);
+  // 駅にいちばん近い線路の点（SNAP_KM 以内）
+  const SNAP_KM = 0.8;
+  const cells = new Map();
+  for (const id of adj.keys()) {
+    const [x, y] = pt.get(id);
+    const key = `${Math.floor(x)},${Math.floor(y)}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(id);
+  }
+  const snap = ([, lat, lon]) => {
+    const x = lon * 111.32 * cos0;
+    const y = -lat * 110.95;
+    let best = null;
+    let bd = SNAP_KM;
+    for (let i = Math.floor(x) - 1; i <= Math.floor(x) + 1; i++) {
+      for (let j = Math.floor(y) - 1; j <= Math.floor(y) + 1; j++) {
+        for (const id of cells.get(`${i},${j}`) ?? []) {
+          const d = Math.hypot(pt.get(id)[0] - x, pt.get(id)[1] - y);
+          if (d < bd) ((bd = d), (best = id));
+        }
+      }
+    }
+    return best;
+  };
+  const snapped = outStations.map(snap);
+  /** 最短の道（ダイクストラ。limit km より長くなったらあきらめる） */
+  const path = (from, to, limit) => {
+    const dist = new Map([[from, 0]]);
+    const prev = new Map();
+    const heap = [[0, from]];
+    const push = (item) => {
+      heap.push(item);
+      for (let i = heap.length - 1; i > 0; ) {
+        const p = (i - 1) >> 1;
+        if (heap[p][0] <= heap[i][0]) break;
+        [heap[p], heap[i]] = [heap[i], heap[p]];
+        i = p;
+      }
+    };
+    const pop = () => {
+      const top = heap[0];
+      const last = heap.pop();
+      if (heap.length > 0) {
+        heap[0] = last;
+        for (let i = 0; ; ) {
+          const l = i * 2 + 1;
+          const r = l + 1;
+          let m = i;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === i) break;
+          [heap[m], heap[i]] = [heap[i], heap[m]];
+          i = m;
+        }
+      }
+      return top;
+    };
+    while (heap.length > 0) {
+      const [d, id] = pop();
+      if (d > (dist.get(id) ?? Infinity)) continue;
+      if (id === to) {
+        const out = [to];
+        while (out[out.length - 1] !== from) out.push(prev.get(out[out.length - 1]));
+        return out.reverse();
+      }
+      if (d > limit) return null;
+      for (const [nb, w] of adj.get(id) ?? []) {
+        const nd = d + w;
+        if (nd < (dist.get(nb) ?? Infinity)) {
+          dist.set(nb, nd);
+          prev.set(nb, id);
+          push([nd, nb]);
+        }
+      }
+    }
+    return null;
+  };
+  /** 間引き（ダグラス・ポイカー、広げた後の km） */
+  const simplify = (p, tol) => {
+    if (p.length <= 2) return p;
+    const [ax, ay] = p[0];
+    const [bx, by] = p[p.length - 1];
+    const L = Math.hypot(bx - ax, by - ay) || 1e-9;
+    let far = 0;
+    let at = 0;
+    for (let i = 1; i < p.length - 1; i++) {
+      const d = Math.abs((bx - ax) * (ay - p[i][1]) - (ax - p[i][0]) * (by - ay)) / L;
+      if (d > far) ((far = d), (at = i));
+    }
+    if (far <= tol) return [p[0], p[p.length - 1]];
+    return [...simplify(p.slice(0, at + 1), tol).slice(0, -1), ...simplify(p.slice(at), tol)];
+  };
+  const done = new Map();
+  let count = 0;
+  for (const line of lines) {
+    const ids = line[2];
+    const via = {};
+    for (let k = 1; k < ids.length; k++) {
+      const a = ids[k - 1];
+      const b = ids[k];
+      if (Math.max(geoW[a], geoW[b]) === 0 || snapped[a] == null || snapped[b] == null) continue;
+      const key = `${a}-${b}`;
+      if (!done.has(key)) {
+        const [, la, lo] = outStations[a];
+        const [, lb, lob] = outStations[b];
+        const straight = Math.hypot((lo - lob) * 111.32 * cos0, (la - lb) * 110.95);
+        const nodesOnPath = path(snapped[a], snapped[b], straight * 2 + 3);
+        let pts = null;
+        if (nodesOnPath && nodesOnPath.length > 2) {
+          // 道の長さの割合 t で、両端の駅の模式図でのずれを足す
+          const geoPts = nodesOnPath.map((id) => pt.get(id));
+          const acc = [0];
+          for (let i = 1; i < geoPts.length; i++) acc.push(acc[i - 1] + Math.hypot(geoPts[i][0] - geoPts[i - 1][0], geoPts[i][1] - geoPts[i - 1][1]));
+          const total = acc[acc.length - 1] || 1;
+          const da = [pos[a][0] - geo[a][0], pos[a][1] - geo[a][1]];
+          const db = [pos[b][0] - geo[b][0], pos[b][1] - geo[b][1]];
+          const ex = geoPts.map(([, , lat, lon], i) => {
+            const [x, y] = expand(lat, lon);
+            const t = acc[i] / total;
+            return [x + da[0] * (1 - t) + db[0] * t, y + da[1] * (1 - t) + db[1] * t];
+          });
+          // 両端は駅の位置にする（線路の点と駅は少しずれている）
+          ex[0] = pos[a].slice();
+          ex[ex.length - 1] = pos[b].slice();
+          const s = simplify(ex, 0.06);
+          if (s.length > 2) pts = s.slice(1, -1).flatMap(([x, y]) => [+x.toFixed(3), +y.toFixed(3)]);
+        }
+        done.set(key, pts);
+        done.set(`${b}-${a}`, pts && reversePairs(pts));
+      }
+      const pts = done.get(key);
+      if (pts) ((via[k] = pts), count++);
+    }
+    if (Object.keys(via).length > 0) line[3] = via;
+  }
+  console.log(`track shapes: ${count} segments, ${adj.size} rail nodes`);
+}
+const reversePairs = (pts) => {
+  const out = [];
+  for (let i = pts.length - 2; i >= 0; i -= 2) out.push(pts[i], pts[i + 1]);
+  return out;
+};
+
 /** 円で描く路線：[路線の番号, 円の中心 x, y, 半径] */
 const rings = [];
 // ---- 模式図の位置：路線がなるべくまっすぐ・0/45/90 度の線・同じ間隔になるよう、駅を少しずつ動かす ----
@@ -278,8 +464,15 @@ const rings = [];
     return [x * k, y * k];
   });
   const pos = geo.map((p) => p.slice());
+  // 地理の位置へ寄せる強さ（0〜1）：SETTINGS.geoLayout [内, 外] (km) の間で 0 → 1。1 の駅は動かさない
+  const geoW = outStations.map(([, lat, lon]) => {
+    if (!SETTINGS.geoLayout) return 0;
+    const [r0, r1] = SETTINGS.geoLayout;
+    const r = Math.hypot(lon * 111.32 * Math.cos(lat0 * K) - C[0], -lat * 110.95 - C[1]);
+    return Math.min(1, Math.max(0, (r - r0) / (r1 - r0)));
+  });
   // 環状の路線（山手線）：駅を等間隔で円の上に並べて動かさない。円の中心と半径は駅の地理の位置から
-  const fixed = new Set();
+  const fixed = new Set(geoW.flatMap((w, i) => (w >= 1 ? [i] : [])));
   for (const [index, [name, , ids]] of lines.entries()) {
     if (!SETTINGS.ringLine.test(name)) continue;
     const ring = [...new Set(ids)];
@@ -369,7 +562,7 @@ const rings = [];
       void d;
     }
     // 元の場所へ弱く
-    pos.forEach((p, i) => add(i, geo[i][0] - p[0], geo[i][1] - p[1], 0.03));
+    pos.forEach((p, i) => add(i, geo[i][0] - p[0], geo[i][1] - p[1], 0.03 + 50 * geoW[i]));
     // 近くを並んで走る別の路線の駅どうしは、実際と同じ向きの並びを保つ（福岡の JR と西鉄が雑餉隈のあたりで入れ替わるのを残す）
     for (const [i, j, ux, uy] of sides) {
       const dx = pos[i][0] - pos[j][0];
@@ -410,6 +603,7 @@ const rings = [];
     });
   }
   outStations.forEach((s, i) => s.push(+pos[i][0].toFixed(3), +pos[i][1].toFixed(3)));
+  if (SETTINGS.geoLayout) await addTrackShapes(geo, pos, geoW);
 }
 await writeFile(OUT, JSON.stringify({ stations: outStations, lines, rings }));
 console.log(`${relations.size} routes → ${kept.length} lines (${lines.length} pieces), ${outStations.length} stations`);

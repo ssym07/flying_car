@@ -20,12 +20,13 @@ export const CUT_RADIUS = 20;
 export const WATER_SURFACE = 0.8;
 export const WATER_CLEARANCE = 2.5;
 
-/** PNG（8bit の RGB・RGBA・パレット）を RGB の配列にする */
+/** PNG（8bit の RGB・RGBA、1〜8bit のパレット）を RGB の配列にする */
 export function decodePng(buf) {
   let pos = 8;
   let width = 0;
   let height = 0;
   let colorType = 0;
+  let depth = 8;
   let palette = null;
   const idat = [];
   while (pos < buf.length) {
@@ -35,6 +36,7 @@ export function decodePng(buf) {
     if (type === 'IHDR') {
       width = data.readUInt32BE(0);
       height = data.readUInt32BE(4);
+      depth = data[8];
       colorType = data[9];
     } else if (type === 'PLTE') palette = data;
     else if (type === 'IDAT') idat.push(data);
@@ -42,8 +44,9 @@ export function decodePng(buf) {
   }
   const bpp = colorType === 6 ? 4 : colorType === 2 ? 3 : 1;
   const raw = inflateSync(Buffer.concat(idat));
-  const stride = width * bpp;
-  const out = Buffer.alloc(width * height * bpp);
+  // パレットで 1 画素が 8bit より小さい時（淡色地図の海だけのタイルなど）は、1 行のバイト数が少ない
+  const stride = bpp === 1 ? Math.ceil((width * depth) / 8) : width * bpp;
+  const out = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)];
     const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
@@ -66,8 +69,15 @@ export function decodePng(buf) {
     }
   }
   const rgb = new Uint8Array(width * height * 3);
+  const perByte = 8 / depth;
+  const mask = (1 << depth) - 1;
   for (let k = 0; k < width * height; k++) {
-    if (bpp === 1) rgb.set(palette.subarray(out[k] * 3, out[k] * 3 + 3), k * 3);
+    if (bpp === 1) {
+      const x = k % width;
+      const byte = out[Math.floor(k / width) * stride + Math.floor(x / perByte)];
+      const index = (byte >> ((perByte - 1 - (x % perByte)) * depth)) & mask;
+      rgb.set(palette.subarray(index * 3, index * 3 + 3), k * 3);
+    }
     else rgb.set(out.subarray(k * bpp, k * bpp + 3), k * 3);
   }
   return rgb;

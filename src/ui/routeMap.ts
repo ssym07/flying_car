@@ -6,8 +6,8 @@ import { distanceMeters } from '../world/places';
 interface RouteMapData {
   /** [名前, 緯度, 経度, 模式図の x, y（km、路線がまっすぐになるよう動かした位置）] */
   stations: Array<[string, number, number, number, number]>;
-  /** [路線名, 色, 駅の番号の並び] */
-  lines: Array<[string, string, number[]]>;
+  /** [路線名, 色, 駅の番号の並び, 駅の間の線路の形（北海道など。{ k: [x, y, x, y, ...] } は ids[k-1] → ids[k] の間の点）] */
+  lines: Array<[string, string, number[], Record<string, number[]>?]>;
   /** 円で描く路線（山手線）：[路線の番号, 中心 x, y, 半径] */
   rings?: Array<[number, number, number, number]>;
 }
@@ -60,7 +60,13 @@ export class RouteMap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly tip: HTMLDivElement;
   private stops: Stop[] = [];
-  private lines: Array<{ name: string; color: string; ids: number[]; ring: [number, number, number] | null }> = [];
+  private lines: Array<{
+    name: string;
+    color: string;
+    ids: number[];
+    ring: [number, number, number] | null;
+    via: Record<string, number[]>;
+  }> = [];
   /** 表示：地図の中心（km）と拡大率 */
   private cx = 0;
   private cy = 0;
@@ -246,10 +252,10 @@ export class RouteMap {
       const g = this.project(lat, lon);
       return { name, lat, lon, x, y, gx: g.x, gy: g.y, lines: [] };
     });
-    this.lines = data.lines.map(([name, color, ids], i) => {
+    this.lines = data.lines.map(([name, color, ids, via], i) => {
       for (const id of ids) if (!this.stops[id].lines.includes(i)) this.stops[id].lines.push(i);
       const ring = data.rings?.find((r) => r[0] === i);
-      return { name, color, ids, ring: ring ? ([ring[1], ring[2], ring[3]] as [number, number, number]) : null };
+      return { name, color, ids, ring: ring ? ([ring[1], ring[2], ring[3]] as [number, number, number]) : null, via: via ?? {} };
     });
     this.dirty = true;
   }
@@ -532,7 +538,11 @@ export class RouteMap {
         line.ids.forEach((id, k) => {
           const bridge = k > 0 && this.bridges.has(`${this.stops[line.ids[k - 1]].name}|${this.stops[id].name}`);
           if (k === 0 || bridge) g.moveTo(this.stops[id].x, this.stops[id].y);
-          else g.lineTo(this.stops[id].x, this.stops[id].y);
+          else {
+            const via = line.via[k];
+            if (via) for (let i = 0; i < via.length; i += 2) g.lineTo(via[i], via[i + 1]);
+            g.lineTo(this.stops[id].x, this.stops[id].y);
+          }
         });
       }
       g.stroke();
@@ -574,6 +584,10 @@ export class RouteMap {
         continue;
       }
       line.ids.forEach((id, k) => {
+        const via = line.via[k];
+        if (k > 0 && via) {
+          for (let i = 0; i < via.length; i += 2) g.lineTo(...this.toScreen(via[i], via[i + 1]));
+        }
         const [x, y] = this.toScreen(this.stops[id].x, this.stops[id].y);
         if (k === 0) g.moveTo(x, y);
         else g.lineTo(x, y);

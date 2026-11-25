@@ -201,11 +201,11 @@ MVP は **PLATEAU の1区画**で進める。
 
 データを作るスクリプトは `scripts/` にあり、どれも環境変数 `REGION=`（kanto・kinki・kyushu・chubu・hokkaido。無ければ kanto）で地域を選ぶ。
 出力は地域ごとの置き場所（`public/<地域>/`・`data/<地域>/`・`src/data/<地域>/`。関東だけ直下）。建物（`public/plateau/<市区町村コード>/`）は地域に関係なく共通。
-取得（Overpass）は混んでいると何時間もかかるので、`caffeinate -i` を付けて裏で流し、区切りごとにデータのフォルダだけコミットする（例：北海道を足した時の `scripts/region-pipeline.sh`）。
+取得（Overpass）は混んでいると何時間もかかるので、`caffeinate -i` を付けて裏で流し、区切りごとにデータのフォルダだけコミットする（新しいワールドは `scripts/region-pipeline.sh`、今あるワールドに長方形を足した時は `scripts/region-extend.sh`。使い方は各スクリプトの先頭）。
 
 **1. 設定を足す（新しいワールドの時）**
 - `src/core/region.ts`：`REGIONS` に地域（名前・開始地点の駅・ジオイド高（国土地理院のジオイド計算で開始地点を引く）・`dataDir`・都道府県コード・検索欄の例）
-- `scripts/lib/region.mjs`：`REGION_ID` の候補、`REGION_AREAS`（取る範囲の長方形 [南, 西, 北, 東]。平野・市街地だけにする）、`REGION_SETTINGS`（開始地点・空路の拠点駅（`fetch-stations` で取った駅の名前と同じにする。無いと空路が NaN になる）・路線図の環状線など）
+- `scripts/lib/region.mjs`：`REGION_ID` の候補、`REGION_AREAS`（取る範囲の長方形 [南, 西, 北, 東]。平野・市街地だけにする）、`REGION_SETTINGS`（開始地点・空路の拠点駅（`fetch-stations` で取った駅の名前と同じにする。無いと空路が NaN になる）・路線図の環状線など。町ごとに飛び飛びの範囲の地域は、路線図の `bridgeGaps`（範囲の外の駅を飛ばして線をつなぐ）と `geoLayout`（中心から離れた所は駅を地理の位置のままにし、駅の間を実際の線路の形に沿わせる。海の上を通らないように））
 - `src/data/regionData.ts`・`src/data/allStations.ts` の読み込み先、`.gitignore` の `data/<地域>/cache`
 - `scripts/build-municipalities.mjs` の `PREFS`（都道府県コード）、都府県庁（`PREF_OFFICES`）、区ごとに選ぶ政令市（`SPLIT`）
 - `src/data/wards.ts`：建物を作る市区町村。PLATEAU があれば配信 URL（データカタログ API `https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets` の bldg・LOD1）、無ければ `url: ''`（国土地理院の建物の形から作る）
