@@ -895,8 +895,8 @@ body {
 .home-button {
   position: absolute;
   top: 16px;
-  /* 路線図・ピンのボタン（幅 72px）の左 */
-  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 2 + 8px);
+  /* 路線図・ダイヤ・ピンのボタン（幅 72px）の左 */
+  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 3 + 8px);
   height: 38px;
   padding: 0 14px;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -912,7 +912,7 @@ body {
 
 /* エントランスのボタンは、ホームのボタン（幅 72px）の左 */
 .home-button.entrance-button {
-  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 3 + 8px);
+  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 4 + 8px);
 }
 
 .home-button:hover {
@@ -1025,7 +1025,7 @@ body {
 .pin-toggle {
   position: absolute;
   top: 16px;
-  right: calc(16px + min(280px, calc(100vw - 32px)) + 8px + 72px + 8px);
+  right: calc(16px + min(280px, calc(100vw - 32px)) + (72px + 8px) * 2 + 8px);
   width: 72px;
   height: 38px;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -1440,4 +1440,108 @@ body {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+/* ダイヤ：路線図のボタンの左のボタンで開く、電車のダイヤグラムと運行状況（路線図と同じ場所に出す） */
+.route-map-toggle.diagram-toggle {
+  right: calc(16px + min(280px, calc(100vw - 32px)) + 72px + 8px + 8px);
+  min-width: 72px;
+}
+
+.diagram {
+  position: absolute;
+  top: 132px;
+  right: 16px;
+  width: min(460px, calc(100vw - 32px));
+  height: min(640px, calc(100vh - 148px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  background: #20252c;
+  color: var(--fg);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.diagram[hidden] {
+  display: none;
+}
+
+.diagram-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 10px 6px;
+}
+
+.diagram-head select {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(10, 20, 35, 0.8);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.diagram-span {
+  display: flex;
+  gap: 4px;
+}
+
+.diagram-span button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.diagram-body {
+  position: relative;
+  flex: 1;
+  min-height: 160px;
+}
+
+.diagram-body canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.diagram-status,
+.diagram-departures {
+  padding: 6px 12px;
+  line-height: 1.6;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.diagram-departures {
+  padding-bottom: 10px;
+}
+
+.diagram-status b,
+.diagram-departures b {
+  color: #ffd27a;
+  font-weight: 700;
+}
+
+.diagram-station {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.diagram-hint,
+.diagram-closed {
+  color: var(--fg-dim);
 }

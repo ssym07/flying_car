@@ -25,13 +25,17 @@ type Kind = (typeof TRAINS.kinds)[string];
  * 駅の間は加速・最高速度・減速で走り、駅に dwell 秒（大きな駅は majorDwell 秒）止まる。始発・終電も型で決まる。
  * 時刻は「運行日の 0 時からの秒」（4 時より前は前の日の 24 時台として数える）
  */
-class Route {
+export class Route {
   readonly color: THREE.Color;
   readonly kind: Kind;
   readonly loop: boolean;
   readonly name: string;
   /** 向き（0 = 路線図の駅の並びの順、1 = 逆） */
   readonly direction: 0 | 1;
+  /** 同じ名前の路線が何本かに分かれている時の、何本目か（行きと帰りは同じ番号） */
+  piece = 0;
+  /** 環状の路線の向き：上から見て時計回りなら「外回り」、反時計回りなら「内回り」 */
+  loopName = '';
   /** 始発の駅を出る時刻（運行日の 0 時からの秒、早い順） */
   readonly departures: number[] = [];
   /** 駅の名前と、始発の駅を出てから着く・出るまでの秒 */
@@ -91,6 +95,15 @@ class Route {
       lon += data.p[i + 1];
       this.lat.push(lat / 1e6);
       this.lon.push(lon / 1e6);
+    }
+    if (this.loop) {
+      // 囲む面積の符号（経度を横、緯度を縦にして、反時計回りが正）
+      let area = 0;
+      for (let i = 0; i < this.lat.length; i++) {
+        const j = (i + 1) % this.lat.length;
+        area += this.lon[i] * this.lat[j] - this.lon[j] * this.lat[i];
+      }
+      this.loopName = area < 0 ? '外回り' : '内回り';
     }
   }
 
@@ -226,6 +239,8 @@ export class Trains {
   private readonly up = new THREE.Vector3();
   private readonly matrix = new THREE.Matrix4();
   private readonly color = new THREE.Color();
+  /** 今のフレームに置いた車両（格子 → [中心 x, y, z, 向き x, z, 長さの半分]）。重なりを調べる */
+  private readonly occupancy = new Map<string, number[]>();
 
   constructor(
     private readonly terrain: Terrain,
@@ -292,9 +307,45 @@ export class Trains {
     fetch(regionUrl('train-routes.json'))
       .then((res) => (res.ok && res.headers.get('content-type')?.includes('json') ? res.json() : null))
       .then((data: { lines: RouteData[] } | null) => {
-        if (data) this.routes = data.lines.map((d) => new Route(d, TRAINS.kinds));
+        if (!data) return;
+        this.routes = data.lines.map((d) => new Route(d, TRAINS.kinds));
+        // 同じ名前の路線の何本目か（行きと帰りの組ごとに数える）
+        const seen = new Map<string, number>();
+        for (const r of this.routes) {
+          if (r.direction !== 0) continue;
+          const n = seen.get(r.name) ?? 0;
+          seen.set(r.name, n + 1);
+          r.piece = n;
+        }
+        for (let i = 1; i < this.routes.length; i++) if (this.routes[i].direction === 1) this.routes[i].piece = this.routes[i - 1].piece;
       })
       .catch((e) => console.warn('[Trains] 読込に失敗しました', e));
+  }
+
+  /** 時刻表の今の時刻（運行日の 0 時からの秒） */
+  now(): number {
+    return serviceTime(this.clock);
+  }
+
+  /** ダイヤの板に出す路線（同じ名前・同じ本の行きと帰りの組）。時刻表を作ってから返す */
+  lines(): Array<{ key: string; name: string; color: string; loop: boolean; routes: Route[] }> {
+    const out = new Map<string, { key: string; name: string; color: string; loop: boolean; routes: Route[] }>();
+    for (const r of this.routes) {
+      r.prepare(this.terrain);
+      if (r.journey <= 0) continue;
+      const key = `${r.name}#${r.piece}`;
+      let line = out.get(key);
+      if (!line) out.set(key, (line = { key, name: r.name, color: `#${r.color.getHexString()}`, loop: r.loop, routes: [] }));
+      line.routes.push(r);
+    }
+    // 同じ名前が何本かある路線は、両端の駅の名前を付けて見分ける
+    const count = new Map<string, number>();
+    for (const l of out.values()) count.set(l.name, (count.get(l.name) ?? 0) + 1);
+    for (const l of out.values()) {
+      const r = l.routes.find((x) => x.direction === 0) ?? l.routes[0];
+      if ((count.get(l.name) ?? 0) > 1 && r.stops.length > 1) l.name = `${l.name}（${r.stops[0].name}〜${r.stops[r.stops.length - 1].name}）`;
+    }
+    return [...out.values()];
   }
 
   /**
@@ -309,6 +360,7 @@ export class Trains {
     this.rearMaterial.emissiveIntensity = lamp * 0.8;
     this.glowMaterial.opacity = TRAINS.glow * night;
     const c = this.counts;
+    this.occupancy.clear();
     c.car = 0;
     c.band.fill(0);
     c.front = 0;
@@ -338,9 +390,19 @@ export class Trains {
           if (dx * dx + dz * dz > range2) continue;
           // 車両：列車の真ん中を駅に止める。先頭は s の大きい方
           const head = center + trainLength / 2;
-          for (let n = 0; n < K.cars && c.car < this.bodies.instanceMatrix.count; n++) {
+          // まず全部の車両の位置を出し、もう置いた別の列車と同じ線路の上で重なるなら、この列車は描かない
+          // （同じ線路を走る別の路線・行きと帰りが同じ線路を通る所では、時刻表が別々なので重なることがある）
+          const poses: CarPose[] = [];
+          for (let n = 0; n < K.cars; n++) {
             const f = head - n * (K.length + TRAINS.gap);
-            this.placeCar(route, f, f - K.length, n === 0, n === K.cars - 1);
+            const pose = this.carPose(route, f, f - K.length, n);
+            if (pose) poses.push(pose);
+          }
+          if (poses.length === 0 || poses.some((p) => this.occupied(p, K.length))) continue;
+          for (const p of poses) this.occupy(p, K.length);
+          // 前面は先頭の車両、後面は最後尾の車両が見えている時だけ（トンネルから出てくる途中の車両には付けない）
+          for (const p of poses) {
+            if (c.car < this.bodies.instanceMatrix.count) this.placeCar(route, p, p.index === 0, p.index === K.cars - 1);
           }
         }
       }
@@ -359,14 +421,60 @@ export class Trains {
     finish(this.glows, night > 0.01 ? c.front : 0);
   }
 
-  /** 車両を 1 両置く（前の端 sFront・後ろの端 sRear。先頭車なら前面、最後尾なら後面も） */
-  private placeCar(route: Route, sFront: number, sRear: number, isHead: boolean, isTail: boolean): void {
-    if (!route.pointAt(sFront, this.front) || !route.pointAt(sRear, this.rear)) return;
-    const yf = this.rails.trackHeightAt(this.front.x, this.front.z);
-    const yr = this.rails.trackHeightAt(this.rear.x, this.rear.z);
-    if (yf === null || yr === null) return;
-    this.front.y = yf;
-    this.rear.y = yr;
+  /** 車両の前の端 sFront・後ろの端 sRear の位置（線路の高さ付き）。置けない所（トンネル・道の外）なら null */
+  private carPose(route: Route, sFront: number, sRear: number, index: number): CarPose | null {
+    const front = new THREE.Vector3();
+    const rear = new THREE.Vector3();
+    if (!route.pointAt(sFront, front) || !route.pointAt(sRear, rear)) return null;
+    const yf = this.rails.trackHeightAt(front.x, front.z);
+    const yr = this.rails.trackHeightAt(rear.x, rear.z);
+    if (yf === null || yr === null) return null;
+    front.y = yf;
+    rear.y = yr;
+    return { front, rear, index };
+  }
+
+  /** この車両が、もう置いた車両と同じ線路の上で重なるか（横のずれ 2m 未満・前後に車両の長さの分より近い） */
+  private occupied(p: CarPose, length: number): boolean {
+    const cx = (p.front.x + p.rear.x) / 2;
+    const cy = (p.front.y + p.rear.y) / 2;
+    const cz = (p.front.z + p.rear.z) / 2;
+    const gx = Math.floor(cx / OCC_CELL);
+    const gz = Math.floor(cz / OCC_CELL);
+    for (let i = gx - 1; i <= gx + 1; i++) {
+      for (let j = gz - 1; j <= gz + 1; j++) {
+        const list = this.occupancy.get(`${i},${j}`);
+        if (!list) continue;
+        for (let k = 0; k < list.length; k += 6) {
+          const dx = cx - list[k];
+          const dy = cy - list[k + 1];
+          const dz = cz - list[k + 2];
+          if (Math.abs(dy) > 3) continue;
+          const along = Math.abs(dx * list[k + 3] + dz * list[k + 4]);
+          const lateral = Math.abs(dx * list[k + 4] - dz * list[k + 3]);
+          if (lateral < 2 && along < list[k + 5] + length / 2) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private occupy(p: CarPose, length: number): void {
+    const cx = (p.front.x + p.rear.x) / 2;
+    const cz = (p.front.z + p.rear.z) / 2;
+    const fx = p.front.x - p.rear.x;
+    const fz = p.front.z - p.rear.z;
+    const l = Math.hypot(fx, fz) || 1;
+    const key = `${Math.floor(cx / OCC_CELL)},${Math.floor(cz / OCC_CELL)}`;
+    let list = this.occupancy.get(key);
+    if (!list) this.occupancy.set(key, (list = []));
+    list.push(cx, (p.front.y + p.rear.y) / 2, cz, fx / l, fz / l, length / 2);
+  }
+
+  /** 車両を 1 両置く（先頭車なら前面、最後尾なら後面も） */
+  private placeCar(route: Route, pose: CarPose, isHead: boolean, isTail: boolean): void {
+    this.front.copy(pose.front);
+    this.rear.copy(pose.rear);
     const K = route.kind;
     this.fwd.subVectors(this.front, this.rear).normalize();
     this.side.crossVectors(this.fwd, UP).normalize();
@@ -428,6 +536,15 @@ export class Trains {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+/** 重なりを調べる格子の大きさ (m) */
+const OCC_CELL = 25;
+
+interface CarPose {
+  front: THREE.Vector3;
+  rear: THREE.Vector3;
+  /** 編成の何両目か（0 が先頭） */
+  index: number;
+}
 
 /** 日本時間の 0 時からの秒 → 運行日の秒（4 時より前は前の日の 24 時台） */
 export function serviceTime(seconds: number): number {

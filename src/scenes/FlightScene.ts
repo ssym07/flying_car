@@ -10,6 +10,7 @@ import { Instruments } from '../ui/instruments';
 import { LocationLabel } from '../ui/locationLabel';
 import { Minimap } from '../ui/minimap';
 import { RouteMap } from '../ui/routeMap';
+import { DiagramPanel } from '../ui/diagramPanel';
 import { StationSearch } from '../ui/stationSearch';
 import { takeStartAt } from '../core/startAt';
 import { REGION } from '../core/region';
@@ -38,6 +39,7 @@ export class FlightScene implements GameScene {
   private minimap!: Minimap;
   private search!: StationSearch;
   private routeMap!: RouteMap;
+  private diagram!: DiagramPanel;
   private pinPanel!: PinPanel;
   private pins!: Pins;
   private unsubscribePins!: () => void;
@@ -107,14 +109,24 @@ export class FlightScene implements GameScene {
       this.ctx.overlay,
       (station) => this.jumpTo(station.lat, station.lon),
       () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
-      () => this.pinPanel.close(),
+      () => {
+        this.pinPanel.close();
+        this.diagram.close();
+      },
     );
+    this.diagram = new DiagramPanel(this.ctx.overlay, world.trains, () => {
+      this.routeMap.close();
+      this.pinPanel.close();
+    });
     this.pinPanel = new PinPanel(
       this.ctx.overlay,
       () => this.placePin(),
       (pin) => this.jumpTo(pin.lat, pin.lon),
       () => this.ctx.world.toLatLon(this.vehicle.mesh.position),
-      () => this.routeMap.close(),
+      () => {
+        this.routeMap.close();
+        this.diagram.close();
+      },
     );
     this.pins = new Pins(world.terrain);
     world.scene.add(this.pins.group);
@@ -162,6 +174,7 @@ export class FlightScene implements GameScene {
     this.minimap.dispose();
     this.search.dispose();
     this.routeMap.dispose();
+    this.diagram.dispose();
     this.pinPanel.dispose();
     this.unsubscribePins();
     this.ctx.world.scene.remove(this.pins.group);
@@ -279,6 +292,7 @@ export class FlightScene implements GameScene {
     }
 
     this.routeMap.update();
+    this.diagram.update(frameDt);
     this.pins.update(world.camera);
     world.render(frameDt);
   }
