@@ -338,7 +338,7 @@ export class Trains {
 
   /**
    * ダイヤの板に出す路線。同じ名前の路線（範囲の都合で何本かに分かれたもの）は 1 つにまとめ、本（piece）ごとの行きと帰りを持つ。
-   * 駅が 2 つだけの短い支線は出さない。group は一覧の見出し（JR・地下鉄・私鉄・モノレールなど）。時刻表を作ってから返す
+   * 短い路線（駅が TRAINS.diagramMinStations より少ない）は出さない。group は一覧の見出し（JR・地下鉄・私鉄・モノレールなど）。時刻表を作ってから返す
    */
   lines(): DiagramLine[] {
     const out = new Map<string, DiagramLine & { pieceOf: Map<string, { go: Route; back: Route | null }> }>();
@@ -362,10 +362,10 @@ export class Trains {
       if (r.direction === 0) piece.go = r;
       else piece.back = r;
     }
-    // 駅が 2 つだけの短い支線（まとめなかったもの）は出さない
+    // 短い路線（範囲の中の駅が TRAINS.diagramMinStations より少ないもの）は出さない
     return [...out.values()]
       .map(({ pieceOf: _, ...l }) => l)
-      .filter((l) => l.pieces.reduce((a, p) => a + p.go.stops.length, 0) >= 3);
+      .filter((l) => l.pieces.reduce((a, p) => a + p.go.stops.length, 0) >= TRAINS.diagramMinStations);
   }
 
   /**
