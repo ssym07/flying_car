@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WGS84_ELLIPSOID } from '3d-tiles-renderer';
-import { WORLD } from '../core/config';
+import { NIGHT_LIGHTS, WORLD } from '../core/config';
 import { isInStation } from './stationFootprints';
 
 /**
@@ -10,6 +10,8 @@ import { isInStation } from './stationFootprints';
  * - 建物ごとに高さを測り、高さに合うテンプレートを選ぶ（高層＝ガラス、低層＝住宅 など）
  * - 窓の段が地面から揃うよう、頂点ごとに「建物の底からの高さ」を持たせる
  * - 横方向は壁に沿ったワールド座標、屋上は真上から見たワールド座標で貼る（UV が無いデータでも貼れる）
+ * - 夜は窓が光る：テンプレートと同じ並びの「窓のマスク」（R = 窓、G = 1段の中で左から何番目の窓か）を一緒に描き、
+ *   建物・階・窓ごとの乱数で、時刻の割合（NIGHT_LIGHTS.litByHour）だけ点ける
  */
 
 /** 1段の大きさ (m) */
@@ -18,7 +20,9 @@ const FLOOR_HEIGHT_M = 3.5;
 const CELL_W = 256;
 const CELL_H = 112;
 
-type Painter = (g: CanvasRenderingContext2D, rand: () => number) => void;
+/** 窓のマスクに窓を描く（x, y, 幅, 高さは px。i は 1段の中で左から何番目の窓か 0..7） */
+type WindowMask = (x: number, y: number, w: number, h: number, i: number) => void;
+type Painter = (g: CanvasRenderingContext2D, rand: () => number, win: WindowMask) => void;
 
 /**
  * 外壁テンプレート。高さの区分ごとに候補を持つ。
@@ -60,40 +64,88 @@ const ROOF_OFFSET = WALL_LIST.length;
 const TOWER_MIN = 45;
 const MID_MIN = 12;
 
-let atlas: THREE.Texture | null = null;
+let atlas: { map: THREE.Texture; mask: THREE.Texture } | null = null;
 
-function getAtlas(): THREE.Texture {
+function getAtlas(): { map: THREE.Texture; mask: THREE.Texture } {
   if (atlas) return atlas;
   const canvas = document.createElement('canvas');
   canvas.width = CELL_W;
   canvas.height = CELL_H * ROWS;
   const g = canvas.getContext('2d')!;
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = CELL_W;
+  maskCanvas.height = CELL_H * ROWS;
+  const m = maskCanvas.getContext('2d')!;
+  m.fillStyle = '#000';
+  m.fillRect(0, 0, CELL_W, CELL_H * ROWS);
+  const win: WindowMask = (x, y, w, h, i) => {
+    m.fillStyle = `rgb(255,${Math.min(7, i) * 32 + 16},0)`;
+    m.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  };
   // 再現性のある乱数（毎回同じ見た目にする）
   let seed = 12345;
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   // 行 r は下から r 番目（テクスチャ座標の v は下が 0）
   [...WALL_LIST, ...ROOFS].forEach((paint, r) => {
-    g.save();
-    g.translate(0, (ROWS - 1 - r) * CELL_H);
-    g.beginPath();
-    g.rect(0, 0, CELL_W, CELL_H);
-    g.clip();
-    paint(g, rand);
+    for (const c of [g, m]) {
+      c.save();
+      c.translate(0, (ROWS - 1 - r) * CELL_H);
+      c.beginPath();
+      c.rect(0, 0, CELL_W, CELL_H);
+      c.clip();
+    }
+    paint(g, rand, win);
     g.restore();
+    m.restore();
   });
-  atlas = new THREE.CanvasTexture(canvas);
-  atlas.colorSpace = THREE.SRGBColorSpace;
-  atlas.wrapS = THREE.RepeatWrapping;
-  atlas.anisotropy = 8;
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.anisotropy = 8;
+  // マスクは色ではなく値なので、色空間の変換はしない。窓の番号（G）が混ざらないよう、近い画素をそのまま使う
+  const mask = new THREE.CanvasTexture(maskCanvas);
+  mask.wrapS = THREE.RepeatWrapping;
+  mask.magFilter = THREE.NearestFilter;
+  mask.minFilter = THREE.NearestMipmapLinearFilter;
+  atlas = { map, mask };
   return atlas;
+}
+
+/** 夜の窓の灯り（全部の外壁のマテリアルで同じ値を使う） */
+const night = {
+  facadeNight: { value: 0 },
+  facadeLitRatio: { value: 0.5 },
+  facadeWarm: { value: new THREE.Color(NIGHT_LIGHTS.warm).multiplyScalar(NIGHT_LIGHTS.glow) },
+  facadeCool: { value: new THREE.Color(NIGHT_LIGHTS.cool).multiplyScalar(NIGHT_LIGHTS.glow) },
+};
+
+/**
+ * 夜の度合い（0..1、Atmosphere の night）と時刻（日本時間の 0 時からの分）から、窓の灯りを決める。毎フレーム呼ぶ
+ */
+export function setFacadeNight(nightAmount: number, minutes: number): void {
+  night.facadeNight.value = nightAmount;
+  const table = NIGHT_LIGHTS.litByHour;
+  const h = minutes / 60;
+  let ratio = table[table.length - 1][1];
+  for (let i = 1; i < table.length; i++) {
+    const [h1, r1] = table[i];
+    const [h0, r0] = table[i - 1];
+    if (h <= h1) {
+      ratio = r0 + ((r1 - r0) * (h - h0)) / (h1 - h0);
+      break;
+    }
+  }
+  night.facadeLitRatio.value = ratio;
 }
 
 /** 外壁テンプレートを貼るマテリアル。各メッシュに assignFacadeAttributes で属性を付けておく */
 export function createFacadeMaterial(): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 });
-  const map = getAtlas();
+  const { map, mask } = getAtlas();
   material.onBeforeCompile = (shader) => {
     shader.uniforms.facadeMap = { value: map };
+    shader.uniforms.facadeMask = { value: mask };
+    Object.assign(shader.uniforms, night);
     shader.uniforms.facadeBrightness = { value: WORLD.buildings.facadeBrightness };
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -116,14 +168,25 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
         '#include <common>',
         `#include <common>
         uniform sampler2D facadeMap;
+        uniform sampler2D facadeMask;
         uniform float facadeBrightness;
+        uniform float facadeNight;
+        uniform float facadeLitRatio;
+        uniform vec3 facadeWarm;
+        uniform vec3 facadeCool;
+        float facadeHash(vec3 p) {
+          p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+          p += dot(p, p.yxz + 33.33);
+          return fract((p.x + p.y) * p.z);
+        }
         varying vec3 vFacade;
         varying vec3 vFacadeWorldPos;
         varying vec3 vFacadeWorldNormal;`,
       )
       .replace(
         '#include <map_fragment>',
-        `{
+        `vec3 facadeGlow = vec3(0.0);
+        {
           const float ROWS = ${ROWS.toFixed(1)};
           const float PAD = ${(1.5 / CELL_H).toFixed(5)};
           vec3 n = normalize(vFacadeWorldNormal);
@@ -146,7 +209,30 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
           vec2 g = vec2(1.0, 1.0 / ROWS);
           vec4 facadeColor = textureGrad(facadeMap, vec2(cont.x, v), dFdx(cont) * g, dFdy(cont) * g);
           diffuseColor.rgb *= facadeColor.rgb * abs(vFacade.z) * facadeBrightness;
+          // 夜の窓：屋上は光らない。窓ごとに、建物（明るさのゆらぎ）・段の位置・窓の番号から乱数を作り、割合だけ点ける
+          if (facadeNight > 0.001 && abs(n.y) <= 0.6) {
+            vec4 win = textureGrad(facadeMask, vec2(cont.x, v), dFdx(cont) * g, dFdy(cont) * g);
+            if (win.r > 0.01) {
+              float building = abs(vFacade.z) * 1000.0;
+              float index = floor(win.g * 8.0);
+              vec3 cell = vec3(floor(cont.x) * 8.0 + index, floor(cont.y), building);
+              // 建物ごとの点き方のばらつき（0.2〜1.5 倍）
+              float busy = 0.2 + 1.3 * facadeHash(vec3(building, 3.7, 1.3));
+              float on = step(facadeHash(cell), facadeLitRatio * busy);
+              // 低い建物（テンプレートの行が大きい）ほど暖色が多い
+              float warmShare = mix(0.35, 0.8, clamp(vFacade.x / ${(WALL_LIST.length - 1).toFixed(1)}, 0.0, 1.0));
+              vec3 tone = facadeHash(cell + 17.0) < warmShare ? facadeWarm : facadeCool;
+              // 窓ごとに明るさを少し変える
+              tone *= 0.6 + 0.6 * facadeHash(cell + 41.0);
+              facadeGlow = tone * on * win.r * facadeNight;
+            }
+          }
         }`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance += facadeGlow;`,
       );
   };
   // onBeforeCompile を使う他のマテリアルとプログラムを共有しないように
@@ -295,7 +381,7 @@ function grime(g: CanvasRenderingContext2D, rand: () => number, alpha: number): 
 
 /** 全面ガラスのカーテンウォール */
 function glassWall(glass: string, frame: string, mullionsPer8m: number): Painter {
-  return (g, rand) => {
+  return (g, rand, win) => {
     const grad = g.createLinearGradient(0, 0, CELL_W, CELL_H);
     grad.addColorStop(0, glass);
     grad.addColorStop(1, shade(glass, 0.75));
@@ -307,6 +393,7 @@ function glassWall(glass: string, frame: string, mullionsPer8m: number): Painter
     g.fillStyle = frame;
     const step = CELL_W / mullionsPer8m;
     for (let x = 0; x < CELL_W; x += step) g.fillRect(x, 0, 3, CELL_H);
+    for (let i = 0; i < mullionsPer8m; i++) win(i * step + 3, 0, step - 3, CELL_H - 12, i);
     // 床スラブ
     g.fillStyle = shade(glass, 0.55);
     g.fillRect(0, CELL_H - 12, CELL_W, 12);
@@ -316,20 +403,21 @@ function glassWall(glass: string, frame: string, mullionsPer8m: number): Painter
 
 /** 水平の帯（腰壁）と横長の窓が交互 */
 function stripeWall(band: string, glass: string): Painter {
-  return (g, rand) => {
+  return (g, rand, win) => {
     g.fillStyle = band;
     g.fillRect(0, 0, CELL_W, CELL_H);
     g.fillStyle = glass;
     g.fillRect(0, 14, CELL_W, CELL_H * 0.55);
     g.fillStyle = shade(band, 0.85);
     for (let x = 0; x < CELL_W; x += 64) g.fillRect(x, 14, 3, CELL_H * 0.55);
+    for (let i = 0; i < 4; i++) win(i * 64 + 3, 14, 61, CELL_H * 0.55, i);
     grime(g, rand, 0.12);
   };
 }
 
 /** 壁に窓が並ぶ（オフィス・れんが） */
 function punchedWall(wall: string, glass: string, windowsPer8m: number): Painter {
-  return (g, rand) => {
+  return (g, rand, win) => {
     g.fillStyle = wall;
     g.fillRect(0, 0, CELL_W, CELL_H);
     const step = CELL_W / windowsPer8m;
@@ -339,6 +427,7 @@ function punchedWall(wall: string, glass: string, windowsPer8m: number): Painter
       g.fillRect(x - 2, 22, step * 0.64 + 4, 60);
       g.fillStyle = glass;
       g.fillRect(x, 24, step * 0.64, 56);
+      win(x, 24, step * 0.64, 56, i);
       g.fillStyle = 'rgba(255,255,255,0.12)';
       g.fillRect(x, 24, step * 0.64, 14);
     }
@@ -348,13 +437,15 @@ function punchedWall(wall: string, glass: string, windowsPer8m: number): Painter
 
 /** マンション：窓＋ベランダの手すり */
 function apartmentWall(wall: string, glass: string): Painter {
-  return (g, rand) => {
+  return (g, rand, win) => {
     g.fillStyle = wall;
     g.fillRect(0, 0, CELL_W, CELL_H);
     for (let i = 0; i < 2; i++) {
       const x = i * 128 + 14;
       g.fillStyle = glass;
       g.fillRect(x, 12, 100, 70);
+      // ベランダの手すりの上に見える所だけ
+      win(x, 12, 100, 50, i);
       g.fillStyle = 'rgba(255,255,255,0.15)';
       g.fillRect(x, 12, 100, 16);
     }
@@ -372,7 +463,7 @@ function apartmentWall(wall: string, glass: string): Painter {
 
 /** 戸建て：小さめの窓 */
 function houseWall(wall: string, glass: string): Painter {
-  return (g, rand) => {
+  return (g, rand, win) => {
     g.fillStyle = wall;
     g.fillRect(0, 0, CELL_W, CELL_H);
     // サイディングの目地
@@ -383,6 +474,7 @@ function houseWall(wall: string, glass: string): Painter {
       g.fillRect(x - 3, 30, 52, 50);
       g.fillStyle = glass;
       g.fillRect(x, 33, 46, 44);
+      win(x, 33, 46, 44, x < 100 ? 0 : 1);
       g.fillStyle = '#f2f0ea';
       g.fillRect(x + 21, 33, 3, 44);
     }

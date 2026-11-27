@@ -28,6 +28,8 @@ export class AnimeSky extends THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMater
           sharpness: { value: clouds.sharpness },
           cloudScale: { value: clouds.scale },
           cloudSpeed: { value: clouds.speed },
+          starAmount: { value: 0.6 },
+          moonDirection: { value: sunDirection.clone().negate().normalize() },
         },
         vertexShader: /* glsl */ `
           varying vec3 vWorldPosition;
@@ -43,6 +45,8 @@ export class AnimeSky extends THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMater
           uniform vec3 zenithColor, upperColor, horizonColor, glowColor;
           uniform vec3 cloudShadow, cloudMid, cloudLit, cloudRim;
           uniform float coverage, sharpness, cloudScale, cloudSpeed;
+          uniform float starAmount;
+          uniform vec3 moonDirection;
           varying vec3 vWorldPosition;
 
           float hash(vec2 p) {
@@ -88,11 +92,22 @@ export class AnimeSky extends THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMater
             float sunAmount = max(dot(dir, sun), 0.0);
             col += glowColor * (pow(sunAmount, 12.0) * 0.6 + pow(sunAmount, 400.0) * 1.5);
 
-            // 天頂付近にまばらな星
-            if (h > 0.35) {
+            // 星：夕方は天頂付近にまばらに、夜は地平線の近くまで多く（starAmount。夕焼けの空で 0.6）
+            float starLow = mix(0.35, 0.06, clamp(starAmount - 0.6, 0.0, 1.0));
+            if (starAmount > 0.0 && h > starLow) {
               vec2 sp = dir.xz / (h + 0.2) * 220.0;
-              float star = step(0.9975, hash(floor(sp)));
-              col += vec3(star) * 0.6 * smoothstep(0.35, 0.8, h);
+              float rnd = hash(floor(sp));
+              float star = step(mix(0.9975, 0.993, clamp(starAmount - 0.6, 0.0, 1.0)), rnd);
+              // 明るさにばらつき
+              star *= 0.5 + 0.5 * hash(floor(sp) + 7.1);
+              col += vec3(star) * starAmount * smoothstep(starLow, starLow + 0.3, h);
+            }
+            // 月（夜だけ）：白い円と、まわりのぼんやりした光
+            if (starAmount > 0.6 && moonDirection.y > -0.05) {
+              float m = max(dot(dir, normalize(moonDirection)), 0.0);
+              float moonLight = clamp(starAmount - 0.6, 0.0, 1.0);
+              col += vec3(0.95, 0.97, 1.0) * smoothstep(0.99955, 0.9997, m) * 1.4 * moonLight;
+              col += vec3(0.55, 0.62, 0.85) * pow(m, 60.0) * 0.25 * moonLight;
             }
 
             // 雲：空に投影したノイズ。地平線に近いほど引き伸ばされて遠くに見える
@@ -134,4 +149,27 @@ export class AnimeSky extends THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMater
   set time(value: number) {
     this.material.uniforms.time.value = value;
   }
+
+  /** 時間帯で変わる空の色・太陽・月・星（Atmosphere が毎フレーム呼ぶ） */
+  setLook(look: SkyLook): void {
+    const u = this.material.uniforms;
+    u.sunDirection.value.copy(look.sunDirection);
+    u.moonDirection.value.copy(look.moonDirection);
+    u.starAmount.value = look.stars;
+    u.zenithColor.value.copy(look.colors.zenith);
+    u.upperColor.value.copy(look.colors.upper);
+    u.horizonColor.value.copy(look.colors.horizon);
+    u.glowColor.value.copy(look.colors.glow);
+    u.cloudShadow.value.copy(look.colors.cloudShadow);
+    u.cloudMid.value.copy(look.colors.cloudMid);
+    u.cloudLit.value.copy(look.colors.cloudLit);
+    u.cloudRim.value.copy(look.colors.cloudRim);
+  }
+}
+
+export interface SkyLook {
+  sunDirection: THREE.Vector3;
+  moonDirection: THREE.Vector3;
+  stars: number;
+  colors: Record<'zenith' | 'upper' | 'horizon' | 'glow' | 'cloudShadow' | 'cloudMid' | 'cloudLit' | 'cloudRim', THREE.Color>;
 }

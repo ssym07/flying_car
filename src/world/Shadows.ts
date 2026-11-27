@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GRAPHICS } from '../core/config';
+import type { Atmosphere } from './Atmosphere';
 
 /**
  * 太陽の影。建物が通りや隣の建物に落とす影を、カメラのまわり（前の方へずらした四角の範囲）だけに落とす。
@@ -9,6 +10,8 @@ import { GRAPHICS } from '../core/config';
  * 同じ方角から少し高い角度（GRAPHICS.shadows.elevationDeg）で照らす光（影あり）を足す。
  * 今までは地面の明るさのほとんどが空からの環境光で、影の中と外の差が出ないので、環境光を ambientScale 倍に下げ、
  * その分を影ありの光（intensity）で補う（日なたの地面の明るさは今までに近いまま、影の中が暗くなる）。
+ *
+ * 時刻で太陽が動くと、影の光も同じ方位へ回る。夜は月の方位から、弱い影を落とす。
  *
  * 影を落とす範囲は、カメラが動いても影の縁がちらつかないよう、影の画素の大きさの格子に合わせて動かす。
  * 影を落とす・受けるの印は、シーンに足された物に一定の間隔で付ける（GRAPHICS.shadows.tagEvery フレームごと）。
@@ -24,30 +27,30 @@ export class Shadows {
   private readonly forward = new THREE.Vector3();
   private frame = 0;
 
+  private lastAzimuth = NaN;
+  private lastElevation = NaN;
+
   /**
-   * @param sun 今の太陽の光（影なしのまま。色を影ありの光に使う）
-   * @param hemisphere 空からの環境光（影がある時は弱める）
-   * @param azimuthDeg 太陽の方位（北から時計回り）
+   * @param atmosphere 空と光。影ありの光は、その光（太陽・夜は月）と同じ方位・同じ色にし、
+   *   強さは atmosphere.shadowStrength 倍にする。影がある時は空からの環境光を弱める
    */
   constructor(
     private readonly scene: THREE.Scene,
     renderer: THREE.WebGLRenderer,
-    sun: THREE.DirectionalLight,
-    hemisphere: THREE.HemisphereLight,
-    azimuthDeg: number,
+    private readonly atmosphere: Atmosphere,
     /** 影を落とす物の親（建物の各区・ランドマーク・駅の屋根・高架）。区のタイルは後から読まれるので、関数で受け取る */
     private readonly casters: () => THREE.Object3D[],
   ) {
     const param = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('shadows');
     const s = GRAPHICS.shadows;
     this.enabled = param === null ? s.enabled : param !== '0';
-    this.dir = sunDirection(s.elevationDeg, azimuthDeg);
-    this.light = new THREE.DirectionalLight(sun.color, s.intensity);
+    this.dir = new THREE.Vector3(0, 1, 0);
+    this.light = new THREE.DirectionalLight(atmosphere.sun.color, s.intensity);
     if (!this.enabled) {
       this.light.visible = false;
       return;
     }
-    hemisphere.intensity *= s.ambientScale;
+    atmosphere.setAmbientScale(s.ambientScale);
 
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -64,16 +67,34 @@ export class Shadows {
     cam.near = 1;
     cam.far = s.distance * 2;
     scene.add(l, l.target);
+    this.followLight();
+  }
 
+  /**
+   * 影を落とす光の向きを、今の光（太陽か月）の方位に合わせる。高さは影が長くなりすぎないよう、
+   * 低い時は GRAPHICS.shadows.elevationDeg まで上げ、高い時（夏の昼）は 70° まで
+   */
+  private followLight(): void {
+    const d = this.atmosphere.lightDirection;
+    const azimuth = Math.atan2(-d.x, d.z);
+    const elevation = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)), GRAPHICS.shadows.elevationDeg * THREE.MathUtils.DEG2RAD, 70 * THREE.MathUtils.DEG2RAD);
+    this.light.color.copy(this.atmosphere.sun.color);
+    this.light.intensity = GRAPHICS.shadows.intensity * this.atmosphere.shadowStrength;
+    if (Math.abs(azimuth - this.lastAzimuth) < 1e-4 && Math.abs(elevation - this.lastElevation) < 1e-4) return;
+    this.lastAzimuth = azimuth;
+    this.lastElevation = elevation;
+    this.dir.set(-Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
     // 光から見た横・縦の向き（影の範囲を、影の画素の格子に合わせて動かすため）
     this.right.crossVectors(this.dir, new THREE.Vector3(0, 1, 0)).normalize();
     this.up.crossVectors(this.right, this.dir).normalize();
+    this.light.shadow.needsUpdate = true;
   }
 
   /** 毎フレーム、描く前に呼ぶ */
   update(camera: THREE.PerspectiveCamera, groundY: number): void {
     if (!this.enabled) return;
     const s = GRAPHICS.shadows;
+    this.followLight();
     // 高く飛ぶほど遠くまで見えるので、範囲を広げる
     const altitude = Math.max(0, camera.position.y - groundY);
     const half = THREE.MathUtils.clamp(s.halfSize + altitude * s.growWithAltitude, s.halfSize, s.maxHalfSize);
@@ -139,11 +160,4 @@ function mark(mesh: THREE.Mesh, cast: boolean): void {
   const solid = materials.every((m) => m && !m.transparent && m.depthWrite !== false);
   mesh.receiveShadow = solid;
   mesh.castShadow = solid && cast;
-}
-
-/** 太陽の向き（ローカル座標、+x=西, +z=北, +y=上。Atmosphere.ts と同じ） */
-function sunDirection(elevationDeg: number, azimuthDeg: number): THREE.Vector3 {
-  const el = elevationDeg * THREE.MathUtils.DEG2RAD;
-  const az = azimuthDeg * THREE.MathUtils.DEG2RAD;
-  return new THREE.Vector3(-Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
 }

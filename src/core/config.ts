@@ -18,6 +18,9 @@ export const KEYS = {
   pause: ['Escape'],
   /** 自機の真下にピンを立てる */
   pin: ['KeyP'],
+  /** 時刻を 1 時間戻す・進める（, と .。JIS 配列でも同じキー） */
+  timeBack: ['Comma'],
+  timeForward: ['Period'],
   start: ['Enter', 'Space'],
 };
 
@@ -276,6 +279,30 @@ export const MINIMAP = {
   panMargin: 0.03,
 };
 
+/** 夜のビルの窓の灯り（src/world/facade.ts の外壁テンプレートを貼る建物） */
+export const NIGHT_LIGHTS = {
+  /** 窓の明るさ（光る色の強さ。トーンマッピングの前） */
+  glow: 0.55,
+  /** 住宅っぽい暖かい色と、オフィスっぽい白い色。低い建物ほど暖色が多い */
+  warm: 0xffb466,
+  cool: 0xdde8ff,
+  /**
+   * 時刻（時）ごとの、点いている窓の割合。間はまっすぐつなぐ。明るい間は空の明るさで消える（Atmosphere の night）。
+   * 建物ごとにも 0.2〜1.5 倍のばらつきを付ける（真っ暗な建物・よく点いている建物がある）
+   */
+  litByHour: [
+    [0, 0.14],
+    [3, 0.06],
+    [5, 0.08],
+    [7, 0.2],
+    [9, 0.25],
+    [17, 0.26],
+    [19, 0.32],
+    [22, 0.25],
+    [24, 0.14],
+  ] as Array<[number, number]>,
+};
+
 /** 空・太陽・雲・光。style で空の描き方を切り替える */
 export const ATMOSPHERE = {
   /** 'anime'：アニメ調の夕焼け空 / 'physical'：物理ベースの昼の空 */
@@ -325,6 +352,133 @@ export const ATMOSPHERE = {
     fogColor: 0xf2aac0,
     /** 霧のかかり始めと、完全に霞む距離 (m) */
     fog: { near: 500, far: 2600 },
+    /**
+     * 時間帯ごとの空・光の組（src/core/timeOfDay.ts の時刻で太陽が動く）。太陽の高さ（度）で隣の組となめらかに混ぜる。
+     * 朝と夕方は同じ組を使う。高さ 2° の組が上の夕焼けの色（colors など）。
+     * stars は星と月の明るさ、shadow は影を落とす光の強さの倍率（夜は月の弱い影）
+     */
+    times: [
+      {
+        // 夜
+        elevationDeg: -14,
+        colors: {
+          zenith: 0x060a1c,
+          upper: 0x0f1734,
+          horizon: 0x26305a,
+          glow: 0x34406e,
+          cloudShadow: 0x0c1024,
+          cloudMid: 0x1b2442,
+          cloudLit: 0x2e3a62,
+          cloudRim: 0x4a5886,
+        },
+        sunColor: 0x9db4e8,
+        sunIntensity: 0.45,
+        skyLight: 0x4a5c96,
+        groundLight: 0x1a1e30,
+        ambientIntensity: 1.1,
+        environmentIntensity: 0.15,
+        fogColor: 0x1c2444,
+        exposure: 1.05,
+        stars: 1.6,
+        shadow: 0.18,
+      },
+      {
+        // 日没後・夜明け前（空の青い時間）
+        elevationDeg: -6,
+        colors: {
+          zenith: 0x242a66,
+          upper: 0x463f8c,
+          horizon: 0xc27896,
+          glow: 0xe2866f,
+          cloudShadow: 0x3a346c,
+          cloudMid: 0x705a94,
+          cloudLit: 0xbd7896,
+          cloudRim: 0xe8a4ac,
+        },
+        sunColor: 0xd58aa0,
+        sunIntensity: 0.6,
+        skyLight: 0x8073c0,
+        groundLight: 0x3a3052,
+        ambientIntensity: 2.1,
+        environmentIntensity: 0.3,
+        fogColor: 0x8a6c9e,
+        exposure: 1.2,
+        stars: 0.9,
+        shadow: 0.25,
+      },
+      {
+        // 夕焼け・朝焼け（今までの空）
+        elevationDeg: 2,
+        colors: {
+          zenith: 0x5c58b0,
+          upper: 0xa28ad6,
+          horizon: 0xf2aac0,
+          glow: 0xffc59c,
+          cloudShadow: 0x8676bf,
+          cloudMid: 0xcfa2c9,
+          cloudLit: 0xffbfa6,
+          cloudRim: 0xfff0d8,
+        },
+        sunColor: 0xffa77a,
+        sunIntensity: 3.5,
+        skyLight: 0xc4b6ee,
+        groundLight: 0x7c6c90,
+        ambientIntensity: 3.2,
+        environmentIntensity: 0.5,
+        fogColor: 0xf2aac0,
+        exposure: 1.3,
+        stars: 0.6,
+        shadow: 1,
+      },
+      {
+        // 日が傾いた時間（金色）
+        elevationDeg: 10,
+        colors: {
+          zenith: 0x4f74c4,
+          upper: 0x93acde,
+          horizon: 0xf3d2bc,
+          glow: 0xffd6a0,
+          cloudShadow: 0x9590bd,
+          cloudMid: 0xe0c8d0,
+          cloudLit: 0xffe0bf,
+          cloudRim: 0xfff4e2,
+        },
+        sunColor: 0xffc690,
+        sunIntensity: 3.4,
+        skyLight: 0xcfcbec,
+        groundLight: 0x7a7080,
+        ambientIntensity: 3.0,
+        environmentIntensity: 0.55,
+        fogColor: 0xeed2cc,
+        exposure: 1.22,
+        stars: 0,
+        shadow: 1,
+      },
+      {
+        // 昼
+        elevationDeg: 28,
+        colors: {
+          zenith: 0x3a78d4,
+          upper: 0x76ade8,
+          horizon: 0xcfe2f2,
+          glow: 0xfff4dc,
+          cloudShadow: 0x9eaecb,
+          cloudMid: 0xe2e9f3,
+          cloudLit: 0xffffff,
+          cloudRim: 0xffffff,
+        },
+        sunColor: 0xfff3e0,
+        sunIntensity: 3.2,
+        skyLight: 0xd6e4f6,
+        groundLight: 0x6e6a62,
+        ambientIntensity: 2.7,
+        environmentIntensity: 0.6,
+        fogColor: 0xcfe0ee,
+        exposure: 1.12,
+        stars: 0,
+        shadow: 1,
+      },
+    ],
   },
 
   /** 物理ベースの昼の空（three.js の Sky） */

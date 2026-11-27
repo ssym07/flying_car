@@ -4,6 +4,8 @@ import { REGION, dataUrl } from '../core/region';
 import { WARDS } from '../data/wards';
 import { Airports } from './Airports';
 import { Atmosphere } from './Atmosphere';
+import { setFacadeNight } from './facade';
+import { timeOfDay } from '../core/timeOfDay';
 import { computeEcefToLocal } from './geoFrame';
 import { ExpresswayNetwork } from './ExpresswayNetwork';
 import { ExpresswaySigns } from './ExpresswaySigns';
@@ -70,7 +72,7 @@ export class World {
 
     this.atmosphere = new Atmosphere(this.scene, renderer);
     this.postFX = new PostFX(renderer);
-    this.shadows = new Shadows(this.scene, renderer, this.atmosphere.sun, this.atmosphere.hemisphere, this.atmosphere.sunAzimuthDeg, () => [
+    this.shadows = new Shadows(this.scene, renderer, this.atmosphere, () => [
       ...this.buildings.map((b) => b.group),
       this.landmarks.group,
       this.stationRoofs.group,
@@ -179,6 +181,7 @@ export class World {
     for (const layer of this.layers) layer.update(this.camera);
     this.terrain.update(this.camera.position);
     this.atmosphere.update(this.camera, dt);
+    setFacadeNight(this.atmosphere.night, timeOfDay.minutes);
     this.skyTraffic.update(this.camera.position, dt);
     this.labels.update(this.camera, dt);
     this.expresswaySigns.update(this.camera, dt);

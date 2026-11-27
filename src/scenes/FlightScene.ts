@@ -4,6 +4,8 @@ import type { GameContext } from '../core/context';
 import type { GameScene } from '../core/SceneManager';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { Hud } from '../ui/hud';
+import { TimePanel } from '../ui/timePanel';
+import { timeOfDay } from '../core/timeOfDay';
 import { Instruments } from '../ui/instruments';
 import { LocationLabel } from '../ui/locationLabel';
 import { Minimap } from '../ui/minimap';
@@ -26,6 +28,7 @@ export class FlightScene implements GameScene {
   private collision!: Collision;
   private chase!: ChaseCamera;
   private hud!: Hud;
+  private timePanel!: TimePanel;
   private instruments!: Instruments;
   /** 計器に出す機首の上下・傾き (rad)。急に動かないよう、なめらかに追わせる */
   private pitch = 0;
@@ -75,6 +78,8 @@ export class FlightScene implements GameScene {
 
     this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
     this.hud = new Hud(this.ctx.overlay);
+    this.timePanel = new TimePanel();
+    this.hud.addItem(this.timePanel.element);
     this.instruments = new Instruments(this.ctx.overlay);
     this.lastYaw = this.vehicle.state.yaw;
     this.location = new LocationLabel(this.ctx.overlay);
@@ -151,6 +156,7 @@ export class FlightScene implements GameScene {
     this.vehicle.mesh.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
+    this.timePanel.dispose();
     this.hud.dispose();
     this.instruments.dispose();
     this.location.dispose();
@@ -212,6 +218,8 @@ export class FlightScene implements GameScene {
       return;
     }
     if (input.consumePress(KEYS.pin)) this.pinPanel.place();
+    if (input.consumePress(KEYS.timeBack)) timeOfDay.set(timeOfDay.minutes - 60);
+    if (input.consumePress(KEYS.timeForward)) timeOfDay.set(timeOfDay.minutes + 60);
 
     if (this.pendingJump) {
       const { lat, lon } = this.pendingJump;

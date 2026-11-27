@@ -1353,3 +1353,86 @@ body {
 .map-menu button:hover {
   background: rgba(229, 57, 53, 0.3);
 }
+
+/* 時刻（速度・高度の並びの TIME の箱）。押すと上にスライダーが開く */
+.time-panel {
+  position: relative;
+  padding: 0;
+  pointer-events: auto;
+}
+
+.time-button {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.time-button .hud-value {
+  min-width: 4ch;
+}
+
+.time-panel:hover,
+.time-panel.open {
+  background: rgba(102, 204, 255, 0.35);
+}
+
+.time-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 300px;
+  padding: 12px 14px 8px;
+  border-radius: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+}
+
+.time-pop[hidden] {
+  display: none;
+}
+
+.time-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.time-pop-row input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.time-now {
+  flex: none;
+  white-space: nowrap;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.time-now:hover {
+  background: rgba(102, 204, 255, 0.35);
+}
+
+.time-pop-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 52px 0 2px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}

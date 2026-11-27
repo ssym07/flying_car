@@ -12,7 +12,7 @@ export class Hud {
       <div class="hud-item"><span class="hud-label">SPEED</span><span class="hud-value" data-speed>0</span><span class="hud-unit">km/h</span></div>
       <div class="hud-item"><span class="hud-label">ALT</span><span class="hud-value" data-alt>0</span><span class="hud-unit">m</span></div>
       <div class="hud-item"><span class="hud-label">AGL</span><span class="hud-value" data-agl>0</span><span class="hud-unit">m</span></div>
-      <div class="hud-help">WASD 移動・旋回 / Space 上昇 / Shift 下降 / ドラッグ 視点 / ホイール ズーム / P&nbsp;ピン / Esc ポーズ</div>
+      <div class="hud-help">WASD 移動・旋回 / Space 上昇 / Shift 下降 / ドラッグ 視点 / ホイール ズーム / P&nbsp;ピン / ,&nbsp;. 時刻 / Esc ポーズ</div>
     `;
     this.speedEl = this.root.querySelector('[data-speed]')!;
     this.altEl = this.root.querySelector('[data-alt]')!;
@@ -29,6 +29,11 @@ export class Hud {
     this.speedEl.textContent = Math.round(speedMs * 3.6).toString();
     this.altEl.textContent = Math.round(altitude).toString();
     this.aglEl.textContent = Math.round(agl).toString();
+  }
+
+  /** 数値の箱の並びの最後（操作の説明の前）に箱を足す */
+  addItem(element: HTMLElement): void {
+    this.root.insertBefore(element, this.root.querySelector('.hud-help'));
   }
 
   dispose(): void {
