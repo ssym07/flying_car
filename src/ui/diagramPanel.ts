@@ -1,5 +1,14 @@
 import type { DiagramLine as Line, Route, Trains } from '../world/Trains';
 
+/** 図の上の駅（画面の位置と緯度経度） */
+interface StationRow {
+  name: string;
+  x: number;
+  y: number;
+  lat: number;
+  lon: number;
+}
+
 /** 一覧の見出しの順 */
 const GROUPS = ['JR', '地下鉄', '私鉄', 'モノレール・新交通・路面電車'];
 
@@ -27,13 +36,15 @@ export class DiagramPanel {
   private opened = false;
   private wait = 0;
   /** 駅の画面の位置（押した駅を探すため） */
-  private rows: Array<{ name: string; x: number; y: number }> = [];
+  private rows: StationRow[] = [];
 
   constructor(
     parent: HTMLElement,
     private readonly trains: Trains,
     /** 開いた時（同じ場所に出る路線図・ピンの一覧を閉じる） */
     private readonly onOpen: () => void = () => {},
+    /** 駅を押した時（その駅の上空へ飛ぶ） */
+    private readonly onStation: (station: { name: string; lat: number; lon: number }) => void = () => {},
   ) {
     this.button = document.createElement('button');
     this.button.type = 'button';
@@ -66,14 +77,15 @@ export class DiagramPanel {
       const r = this.canvas.getBoundingClientRect();
       const x = e.clientX - r.left;
       const y = e.clientY - r.top;
-      let best: { name: string; d: number } | null = null;
+      let best: { row: StationRow; d: number } | null = null;
       for (const row of this.rows) {
         const d = Math.hypot(row.x - x, row.y - y);
-        if (!best || d < best.d) best = { name: row.name, d };
+        if (!best || d < best.d) best = { row, d };
       }
       if (best && best.d < 60) {
-        this.station = best.name;
+        this.station = best.row.name;
         this.draw();
+        this.onStation({ name: best.row.name, lat: best.row.lat, lon: best.row.lon });
       }
     });
     parent.append(this.button, this.panel);
@@ -170,11 +182,12 @@ export class DiagramPanel {
     });
     const pieceFrac = P.map((p, i) => p.go.stops.map((st) => ranges[i][0] + (st.arrive / totals[i]) * (ranges[i][1] - ranges[i][0])));
     const names = P.flatMap((p) => p.go.stops.map((st) => st.name));
+    const where = P.flatMap((p) => p.go.stops.map((_, k) => p.go.stopLatLon(k)));
     const frac = pieceFrac.flat();
     const n = frac.length;
     const go = P[0].go;
     const layout = line.loop ? loopLayout(go, frac, w, h) : straightLayout(frac, w, h, ranges);
-    this.rows = names.map((name, i) => ({ name, x: layout.station(i).x, y: layout.station(i).y }));
+    this.rows = names.map((name, i) => ({ name, x: layout.station(i).x, y: layout.station(i).y, lat: where[i][0], lon: where[i][1] }));
 
     // 路線（円か縦の線）
     g.strokeStyle = line.color;
@@ -300,7 +313,7 @@ export class DiagramPanel {
   /** 選んだ駅の次の発車（向きごとに 3 本） */
   private showDepartures(line: Line, now: number): void {
     if (!this.station) {
-      this.departures.innerHTML = '<span class="diagram-hint">駅を押すと、その駅の次の発車を出します</span>';
+      this.departures.innerHTML = '<span class="diagram-hint">駅を押すと、その駅の上空へ飛び、次の発車を出します</span>';
       return;
     }
     const name = this.station;

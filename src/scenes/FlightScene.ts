@@ -114,10 +114,16 @@ export class FlightScene implements GameScene {
         this.diagram.close();
       },
     );
-    this.diagram = new DiagramPanel(this.ctx.overlay, world.trains, () => {
-      this.routeMap.close();
-      this.pinPanel.close();
-    });
+    this.diagram = new DiagramPanel(
+      this.ctx.overlay,
+      world.trains,
+      () => {
+        this.routeMap.close();
+        this.pinPanel.close();
+      },
+      // 駅を押したら、その駅の上空へ飛ぶ
+      (station) => this.jumpTo(station.lat, station.lon),
+    );
     this.pinPanel = new PinPanel(
       this.ctx.overlay,
       () => this.placePin(),
