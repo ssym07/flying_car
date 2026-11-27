@@ -189,7 +189,7 @@ export class DiagramPanel {
       g.fillText(go.stops[i].name, label.x, label.y);
     }
 
-    // 走っている列車：行きは外側（縦の線なら右）、帰りは内側（左）に、進む向きの三角で
+    // 列車：行きは外側（縦の線なら右）、帰りは内側（左）。走っている列車はオレンジの三角（進む向き）、駅に止まっている列車は水色の丸
     const running = line.routes.map(() => 0);
     line.routes.forEach((r, ri) => {
       const ys = r.direction === 0 ? frac : r.stops.map((_, k) => frac[n - 1 - k] ?? 0);
@@ -198,21 +198,29 @@ export class DiagramPanel {
         const tau = now - d;
         if (tau < 0 || tau >= r.journey) continue;
         running[ri]++;
-        const f = positionY(r, tau, ys);
+        const { f, stopped } = positionY(r, tau, ys);
         const p = layout.at(f, side * 11);
+        g.strokeStyle = 'rgba(0,0,0,0.7)';
+        g.lineWidth = 1.2;
+        if (stopped) {
+          g.fillStyle = STOPPED;
+          g.beginPath();
+          g.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+          continue;
+        }
         // 進む向き：少し先の位置との差
         const q = layout.at(f + (r.direction === 0 ? 0.004 : -0.004), side * 11);
         const a = Math.atan2(q.y - p.y, q.x - p.x);
         g.save();
         g.translate(p.x, p.y);
         g.rotate(a);
-        g.fillStyle = r.direction === 0 ? '#ffffff' : '#ffd27a';
-        g.strokeStyle = 'rgba(0,0,0,0.6)';
-        g.lineWidth = 1;
+        g.fillStyle = MOVING;
         g.beginPath();
-        g.moveTo(6, 0);
-        g.lineTo(-4, -4.5);
-        g.lineTo(-4, 4.5);
+        g.moveTo(7, 0);
+        g.lineTo(-4.5, -5);
+        g.lineTo(-4.5, 5);
         g.closePath();
         g.fill();
         g.stroke();
@@ -225,18 +233,25 @@ export class DiagramPanel {
     g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    const legend = (y: number, color: string, text: string) => {
-      g.fillStyle = color;
-      g.beginPath();
-      g.moveTo(16, y + 6);
-      g.lineTo(8, y + 2);
-      g.lineTo(8, y + 10);
-      g.fill();
-      g.fillStyle = 'rgba(255,255,255,0.85)';
-      g.fillText(text, 20, y);
-    };
-    legend(8, '#ffffff', `${line.loop ? '外側' : '右'}：${directionLabel(line, go)}`);
-    if (back) legend(24, '#ffd27a', `${line.loop ? '内側' : '左'}：${directionLabel(line, back)}`);
+    // 色：走っている（三角）・止まっている（丸）
+    g.fillStyle = MOVING;
+    g.beginPath();
+    g.moveTo(17, 14);
+    g.lineTo(8, 9);
+    g.lineTo(8, 19);
+    g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.fillText('走っている', 22, 8);
+    g.fillStyle = STOPPED;
+    g.beginPath();
+    g.arc(92, 14, 4.5, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.fillText('駅に止まっている', 100, 8);
+    // 向き：外側・内側（右・左）
+    g.fillStyle = 'rgba(255,255,255,0.7)';
+    g.fillText(`${line.loop ? '外側' : '右'}：${directionLabel(line, go)}`, 8, 26);
+    if (back) g.fillText(`${line.loop ? '内側' : '左'}：${directionLabel(line, back)}`, 8, 41);
 
     this.showStatus(line, now, running);
     this.showDepartures(line, now);
@@ -295,9 +310,9 @@ interface Layout {
  */
 function loopLayout(go: Route, frac: number[], w: number, h: number): Layout {
   const cx = w / 2;
-  const cy = h / 2 + 8;
+  const cy = h / 2 + 14;
   // 駅名が板からはみ出さないよう、横は名前の幅（約 70px）を空ける
-  const R = Math.max(40, Math.min(w / 2 - 78, h / 2 - 52));
+  const R = Math.max(40, Math.min(w / 2 - 78, h / 2 - 60));
   // 地図の中心から見た始発の駅の向き（画面は上が北）
   const pts = frac.map((_, i) => go.stopLatLon(i));
   const clat = pts.reduce((a, p) => a + p[0], 0) / pts.length;
@@ -323,7 +338,7 @@ function loopLayout(go: Route, frac: number[], w: number, h: number): Layout {
 /** ふつうの路線：縦の線（上が行きの始発の駅）。offset が正なら線の右 */
 function straightLayout(frac: number[], w: number, h: number): Layout {
   const x = Math.round(w * 0.38);
-  const top = 48;
+  const top = 60;
   const bottom = h - 16;
   const y = (f: number) => top + Math.min(1, Math.max(0, f)) * (bottom - top);
   return {
@@ -337,17 +352,21 @@ function straightLayout(frac: number[], w: number, h: number): Layout {
   };
 }
 
-/** 始発の駅を出てから tau 秒後の、行きの向きの駅の並びでの位置（0..1） */
-function positionY(r: Route, tau: number, ys: number[]): number {
+/** 走っている列車の色（三角）と、駅に止まっている列車の色（丸） */
+const MOVING = '#ffa23a';
+const STOPPED = '#4fd1ff';
+
+/** 始発の駅を出てから tau 秒後の、行きの向きの駅の並びでの位置（0..1）と、駅に止まっているか */
+function positionY(r: Route, tau: number, ys: number[]): { f: number; stopped: boolean } {
   const st = r.stops;
   for (let k = 0; k < st.length - 1; k++) {
-    if (tau <= st[k].depart) return ys[k];
+    if (tau <= st[k].depart) return { f: ys[k], stopped: true };
     if (tau < st[k + 1].arrive) {
       const f = (tau - st[k].depart) / Math.max(1, st[k + 1].arrive - st[k].depart);
-      return ys[k] + (ys[k + 1] - ys[k]) * f;
+      return { f: ys[k] + (ys[k + 1] - ys[k]) * f, stopped: false };
     }
   }
-  return ys[st.length - 1];
+  return { f: ys[st.length - 1], stopped: true };
 }
 
 /** 向きの名前：終点の駅（環状は、駅 k の次の駅の向き） */
