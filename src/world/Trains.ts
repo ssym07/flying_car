@@ -581,7 +581,7 @@ export interface DiagramLine {
 
 /** 一覧の見出し：JR・地下鉄・私鉄・モノレール・新交通・路面電車 */
 function groupOf(r: Route): string {
-  if (/^JR|山手線|湘南新宿|上野東京|新幹線|川越線|相模線|京葉線/.test(r.name)) return 'JR';
+  if (r.kindName === 'express' || /^JR|山手線|湘南新宿|上野東京|新幹線|川越線|相模線|京葉線/.test(r.name)) return 'JR';
   if (r.kindName === 'subway' || /メトロ|都営|地下鉄/.test(r.name)) return '地下鉄';
   if (r.kindName === 'monorail' || r.kindName === 'agt' || r.kindName === 'tram') return 'モノレール・新交通・路面電車';
   return '私鉄';

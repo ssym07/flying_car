@@ -830,6 +830,7 @@ export const TRAINS = {
   kinds: {
     train: { length: 20, width: 2.95, height: 3.6, cars: 10, speed: 25, body: 0xf2f4f6 },
     subway: { length: 20, width: 2.8, height: 3.5, cars: 10, speed: 22, body: 0xf2f4f6 },
+    express: { length: 21.3, width: 2.9, height: 3.7, cars: 5, speed: 33, body: 0xeef1f4 },
     shinkansen: { length: 25, width: 3.38, height: 3.6, cars: 16, speed: 45, body: 0xf2f3f0 },
     monorail: { length: 15, width: 3.0, height: 3.6, cars: 6, speed: 20, body: 0xe9ecee },
     agt: { length: 9, width: 2.4, height: 3.2, cars: 6, speed: 16, body: 0xeef0f2 },
@@ -840,6 +841,16 @@ export const TRAINS = {
    * 普段走っているいちばん多い編成（湘南新宿ラインなどの 15 両は基本 10 両 + 付属 5 両）
    */
   formations: [
+    // ---- 北海道 ----
+    { region: 'hokkaido', match: '特急北斗', cars: 5 },
+    { region: 'hokkaido', match: '特急すずらん', cars: 5 },
+    { region: 'hokkaido', match: '快速エアポート', cars: 6 },
+    { region: 'hokkaido', match: '^JR(函館本線|千歳線|札沼線)$|空港支線', cars: 6 },
+    { region: 'hokkaido', match: '^JR室蘭本線$', cars: 2 },
+    { region: 'hokkaido', match: '^JR|いさりび', cars: 1, length: 21 },
+    { region: 'hokkaido', match: '^南北線', cars: 6, length: 18 },
+    { region: 'hokkaido', match: '^東西線', cars: 7, length: 18 },
+    { region: 'hokkaido', match: '^東豊線', cars: 4, length: 18 },
     // ---- 福岡 ----
     { region: 'kyushu', match: '^JR(鹿児島本線|篠栗線|筑肥線)', cars: 6 },
     { region: 'kyushu', match: '長崎本線', cars: 4 },
@@ -940,7 +951,8 @@ export const TRAINS = {
   majorStations: ['東京', '新宿', '渋谷', '池袋', '品川', '上野', '秋葉原', '横浜', '大宮', '北千住', '新橋', '大手町', '表参道', '飯田橋', '御茶ノ水', '高田馬場', '川崎', '武蔵小杉', '船橋', '立川',
     '大阪', '梅田', '新大阪', '難波', 'なんば', '天王寺', '京橋', '鶴橋', '三ノ宮', '三宮', '神戸三宮', '京都', '本町', '淀屋橋', '西九条', '尼崎', '十三', '新今宮',
     '名古屋', '名鉄名古屋', '近鉄名古屋', '金山', '栄', '大曽根', '上前津', '伏見', '久屋大通', '神宮前',
-    '博多', '天神', '西鉄福岡（天神）', '中洲川端', '薬院', '姪浜', '吉塚'],
+    '博多', '天神', '西鉄福岡（天神）', '中洲川端', '薬院', '姪浜', '吉塚',
+    '札幌', '大通', 'さっぽろ', '新札幌', '新千歳空港', '南千歳', '苫小牧', '東室蘭', '函館', '小樽'],
   /**
    * ダイヤ（各駅停車だけ）。路線を型に分け、型ごとに時間帯の運転間隔（分）を決める：[この時刻（時）から, 間隔]。
    * 最初の行の時刻が始発、間隔 0 の行の時刻で終わり（その後は出ない）。24 時より後は次の日の 0 時台
@@ -960,6 +972,11 @@ export const TRAINS = {
     // モノレール・新交通・路面電車・短い支線
     small: [[5.2, 12], [6, 8], [7, 5], [9, 7], [10, 8], [17, 6], [19, 7], [21, 10], [22, 12], [23.8, 0]],
     shinkansen: [[6, 15], [7, 8], [9, 10], [17, 8], [20, 12], [22.5, 0]],
+    // 特急（1〜2 時間に 1 本）と、快速エアポート（12〜15 分おき）
+    express: [[6, 90], [7, 60], [20, 90], [21.5, 0]],
+    airport: [[5.5, 20], [6.5, 15], [7, 12], [22, 15], [23.5, 0]],
+    // 田舎の路線（1 時間に 1 本くらい）
+    rural: [[5.5, 60], [6.5, 45], [9, 60], [16, 45], [19, 60], [22.5, 0]],
   } as Record<string, Array<[number, number]>>,
   /**
    * ダイヤの板の一覧で、本線と支線を 1 つにまとめる：名前が match に当てはまる路線を name の 1 つの項目にする
@@ -989,6 +1006,10 @@ export const TRAINS = {
     { name: '叡山電鉄（叡山本線・鞍馬線）', match: '^叡山' },
     { name: '山陽電鉄（本線・網干線）', match: '^山陽電気鉄道' },
     { region: 'kinki', name: 'JR京都線・神戸線（東海道・山陽本線）', match: '^JR(京都線|神戸線|東海道本線|山陽本線|琵琶湖線)' },
+    // ---- 北海道 ----
+    { region: 'hokkaido', name: 'JR函館本線（砂原支線）', match: '^JR函館本線' },
+    { region: 'hokkaido', name: 'JR室蘭本線（室蘭支線）', match: '^JR室蘭本線' },
+    { region: 'hokkaido', name: 'JR千歳線（空港支線）', match: '^JR千歳線' },
     // ---- 福岡 ----
     { region: 'kyushu', name: '西鉄天神大牟田線・太宰府線', match: '天神大牟田線|太宰府線' },
     // ---- 名古屋 ----
@@ -1000,6 +1021,13 @@ export const TRAINS = {
   ] as Array<{ region?: string; name: string; match: string }>,
   /** 路線の型：名前が match に当てはまる最初のもの。どれにも当てはまらなければ種類で決める（地下鉄 subway・ほか small・私鉄 privateLocal） */
   categories: [
+    // ---- 北海道 ----
+    { region: 'hokkaido', match: '^特急', profile: 'express' },
+    { region: 'hokkaido', match: '快速エアポート', profile: 'airport' },
+    { region: 'hokkaido', match: '^JR千歳線', profile: 'jrBranch' },
+    { region: 'hokkaido', match: '^JR(函館本線|札沼線)$', profile: 'small' },
+    { region: 'hokkaido', match: '^JR|いさりび', profile: 'rural' },
+    { region: 'hokkaido', match: '線$', profile: 'subway' },
     // ---- 福岡 ----
     { region: 'kyushu', match: '原田線|唐津線|久大本線|甘木|太宰府線|香椎線|貝塚線', profile: 'small' },
     // ---- 名古屋 ----
@@ -1030,7 +1058,16 @@ export const TRAINS = {
    * formations・categories・diagramGroups も同じ
    */
   styles: [
-    // ---- 名古屋（region を付けたものは、その地域だけ） ----
+    // ---- 北海道（region を付けたものは、その地域だけ） ----
+    // JR 北海道（733 系）：銀色に緑と萌黄
+    { region: 'hokkaido', match: '^JR', bands: [[0x00a650, 0.285, 0.05], [0xa6ce39, 0.335, 0.03]] },
+    // 特急北斗（261 系）：白い車体に紫と黄色、特急すずらん（789 系）：緑、快速エアポート（733 系）：青と萌黄
+    { region: 'hokkaido', match: '特急北斗', bands: [[0x7b5ea7, 0.285, 0.06], [0xe6c92a, 0.35, 0.02]] },
+    { region: 'hokkaido', match: '特急すずらん', bands: [[0x00a650, 0.285, 0.07]] },
+    { region: 'hokkaido', match: '快速エアポート', bands: [[0x1f6fb2, 0.285, 0.05], [0xa6ce39, 0.335, 0.03]] },
+    // 道南いさりび鉄道：白に青
+    { region: 'hokkaido', match: 'いさりび', body: 0xf0f0ee, bands: [[0x1f6fb2, 0.05, 0.3]] },
+    // ---- 名古屋 ----
     // JR 東海（313 系）：銀色にオレンジ
     { region: 'chubu', match: '^JR', bands: [[0xf77321, 0.285, 0.075]] },
     // 名鉄：名鉄スカーレットの赤い車体

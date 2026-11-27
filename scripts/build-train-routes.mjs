@@ -13,9 +13,9 @@
 //
 // 出力: { lines: [{ n: 路線名, c: 色, k: 種類, d: 向き（0 = 駅の並びの順、1 = 逆）, loop: 環状なら 1, p: [緯度, 経度, ...（1e-6度、先頭以外は差分）],
 //         st: [[駅名, 点の番号], ...], g: [[見えない区間の始めの点, 終わりの点], ...] }] }
-// 種類：train（JR・私鉄）・subway（地下鉄の地上区間）・shinkansen・monorail・agt（新交通）・tram（路面電車・小さな電車）
+// 種類：train（JR・私鉄）・express（特急・快速。北海道の SETTINGS.trainLines）・subway（地下鉄の地上区間）・shinkansen・monorail・agt（新交通）・tram（路面電車・小さな電車）
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { BOUNDS, regionPath } from './lib/region.mjs';
+import { BOUNDS, regionPath, SETTINGS } from './lib/region.mjs';
 
 const CACHE_DIR = new URL('../data/cache/railways/', import.meta.url);
 const OUT = regionPath('public/train-routes.json');
@@ -276,6 +276,7 @@ function simplify(pts) {
 
 function kindOf(name, monorailShare) {
   if (/新幹線/.test(name)) return 'shinkansen';
+  if (/^(特急|快速)/.test(name)) return 'express';
   if (monorailShare > 0.5 || /モノレール/.test(name)) return 'monorail';
   if (/ゆりかもめ|シーサイドライン|ニューシャトル|伊奈線|ディズニーリゾートライン|山口線|舎人ライナー|ニュートラム|南港ポートタウン線|ポートライナー|六甲ライナー/.test(name)) return 'agt';
   if (/世田谷線|荒川線|江ノ島電鉄|江ノ電|阪堺|嵐電|市電/.test(name)) return 'tram';
@@ -421,7 +422,15 @@ const encode = (pts) => {
 /** 特急・観光列車（路線図に路線として入っていることがある）。各駅停車だけ走らせるので除く */
 const EXPRESS = /^(こうのとり|サンダーバード|まいづる|みずほ|はるか|くろしお|きのさき|はしだて|スーパーはくと|ひかり|のぞみ|さくら|しらさぎ|しなの|ひだ|南紀|つばめ|ソニック|かもめ|みどり|ハウステンボス|きらめき|有明)$|観光/;
 
-for (const [name, color, ids] of route.lines) {
+// 路線図に無い列車（北海道の特急・快速エアポート。SETTINGS.trainLines）を、止まる駅の並びで足す
+const stationIndex = new Map(route.stations.map(([name], i) => [name, i]));
+const extra = (SETTINGS.trainLines ?? []).map(({ name, colour, stops }) => {
+  const ids = stops.map((n) => stationIndex.get(n)).filter((i) => i !== undefined);
+  if (ids.length !== stops.length) console.warn(`trainLines の駅が路線図にありません（飛ばします）: ${stops.filter((n) => !stationIndex.has(n)).join(' ')}`);
+  return [name, colour, ids];
+});
+
+for (const [name, color, ids] of [...route.lines, ...extra]) {
   if (EXPRESS.test(name)) continue;
   const isMine = matcher(name);
   const loop = ids.length > 2 && ids[0] === ids[ids.length - 1];
