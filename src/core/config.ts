@@ -840,6 +840,23 @@ export const TRAINS = {
    * 普段走っているいちばん多い編成（湘南新宿ラインなどの 15 両は基本 10 両 + 付属 5 両）
    */
   formations: [
+    // ---- 名古屋 ----
+    { region: 'chubu', match: '^JR(東海道本線|中央西線|関西本線)', cars: 6 },
+    { region: 'chubu', match: '^JR', cars: 4 },
+    { region: 'chubu', match: '東山線', cars: 6, length: 15.5 },
+    { region: 'chubu', match: '名城線|名港線', cars: 6, length: 18 },
+    { region: 'chubu', match: '鶴舞線', cars: 6 },
+    { region: 'chubu', match: '桜通線', cars: 5, length: 18 },
+    { region: 'chubu', match: '上飯田線', cars: 4 },
+    { region: 'chubu', match: '名古屋鉄道(名古屋本線|犬山線|常滑線)', cars: 6, length: 19 },
+    { region: 'chubu', match: '^名古屋鉄道', cars: 4, length: 19 },
+    { region: 'chubu', match: 'あおなみ線', cars: 4 },
+    { region: 'chubu', match: '城北線', cars: 1, length: 18 },
+    { region: 'chubu', match: '伊勢鉄道', cars: 2, length: 18 },
+    { region: 'chubu', match: '北勢線', cars: 3, length: 15 },
+    { region: 'chubu', match: 'あすなろう', cars: 3, length: 11 },
+    { region: 'chubu', match: '三岐', cars: 3 },
+    { region: 'chubu', match: '^近', cars: 4, length: 20.7 },
     { match: '山手線', cars: 11 },
     { match: '湘南新宿|上野東京|東海道|宇都宮|高崎|東北本線|横須賀|総武快速', cars: 15 },
     { match: '常磐', cars: 15 },
@@ -905,14 +922,15 @@ export const TRAINS = {
     { match: '神戸電鉄|有馬・三田線', cars: 3, length: 18 },
     { match: '叡山', cars: 2, length: 15.7 },
     { match: '新幹線', cars: 17 },
-  ] as Array<{ match: string; cars: number; length?: number }>,
+  ] as Array<{ region?: string; match: string; cars: number; length?: number }>,
   /** 加速・減速 (m/s²) と、駅に止まる時間（秒。大きな駅は majorDwell） */
   accel: 0.8,
   dwell: 20,
   majorDwell: 45,
   /** 乗り降りの多い大きな駅 */
   majorStations: ['東京', '新宿', '渋谷', '池袋', '品川', '上野', '秋葉原', '横浜', '大宮', '北千住', '新橋', '大手町', '表参道', '飯田橋', '御茶ノ水', '高田馬場', '川崎', '武蔵小杉', '船橋', '立川',
-    '大阪', '梅田', '新大阪', '難波', 'なんば', '天王寺', '京橋', '鶴橋', '三ノ宮', '三宮', '神戸三宮', '京都', '本町', '淀屋橋', '西九条', '尼崎', '十三', '新今宮'],
+    '大阪', '梅田', '新大阪', '難波', 'なんば', '天王寺', '京橋', '鶴橋', '三ノ宮', '三宮', '神戸三宮', '京都', '本町', '淀屋橋', '西九条', '尼崎', '十三', '新今宮',
+    '名古屋', '名鉄名古屋', '近鉄名古屋', '金山', '栄', '大曽根', '上前津', '伏見', '久屋大通', '神宮前'],
   /**
    * ダイヤ（各駅停車だけ）。路線を型に分け、型ごとに時間帯の運転間隔（分）を決める：[この時刻（時）から, 間隔]。
    * 最初の行の時刻が始発、間隔 0 の行の時刻で終わり（その後は出ない）。24 時より後は次の日の 0 時台
@@ -960,10 +978,19 @@ export const TRAINS = {
     { name: '京阪（宇治線・交野線）', match: '^京阪' },
     { name: '叡山電鉄（叡山本線・鞍馬線）', match: '^叡山' },
     { name: '山陽電鉄（本線・網干線）', match: '^山陽電気鉄道' },
-    { name: 'JR京都線・神戸線（東海道・山陽本線）', match: '^JR(京都線|神戸線|東海道本線|山陽本線|琵琶湖線)' },
-  ] as Array<{ name: string; match: string }>,
+    { region: 'kinki', name: 'JR京都線・神戸線（東海道・山陽本線）', match: '^JR(京都線|神戸線|東海道本線|山陽本線|琵琶湖線)' },
+    // ---- 名古屋 ----
+    { region: 'chubu', name: '名鉄名古屋本線（津島線・尾西線・竹鼻線）', match: '名古屋鉄道(名古屋本線|津島線|尾西線|竹鼻線)' },
+    { region: 'chubu', name: '名鉄常滑線（河和線・知多新線・空港線・築港線）', match: '名古屋鉄道(常滑線|河和線|知多新線|空港線|築港線)' },
+    { region: 'chubu', name: '名鉄犬山線（各務原線・小牧線）', match: '名古屋鉄道(犬山線|各務原線|小牧線)' },
+    { region: 'chubu', name: '名古屋市営地下鉄 名城線・名港線', match: '名城線|名港線' },
+    { region: 'chubu', name: '近鉄（名古屋線・湯の山線・鈴鹿線）', match: '^近' },
+  ] as Array<{ region?: string; name: string; match: string }>,
   /** 路線の型：名前が match に当てはまる最初のもの。どれにも当てはまらなければ種類で決める（地下鉄 subway・ほか small・私鉄 privateLocal） */
   categories: [
+    // ---- 名古屋 ----
+    { region: 'chubu', match: '東山線', profile: 'subwayBusy' },
+    { region: 'chubu', match: '築港線|竹鼻線|三岐|北勢線|あすなろう|城北線|伊勢鉄道|湯の山線|鈴鹿線|武豊線|高山線|紀勢本線|上飯田線', profile: 'small' },
     { match: '山手線|京浜東北|^JR中央線|中央・総武|大阪環状線', profile: 'jrCore' },
     { match: '湘南新宿|上野東京|東海道|宇都宮|高崎|東北本線|横須賀|総武快速|常磐', profile: 'jrLong' },
     { match: '^JR|埼京|川越|相模線|京葉', profile: 'jrBranch' },
@@ -971,7 +998,7 @@ export const TRAINS = {
     { match: '新幹線', profile: 'shinkansen' },
     { match: '世田谷線|江ノ島電鉄|こどもの国|大師線|亀戸線|流山|山口線|狭山線|西武園線|競馬場線|金町線|多摩湖線|国分寺線|西武多摩川線|鶴見', profile: 'small' },
     { match: '汐見橋線|武庫川線|信貴線|甲陽線|箕面線|伊丹線|叡山|網干線|播但線|神戸電鉄|有馬・三田線', profile: 'small' },
-  ] as Array<{ match: string; profile: string }>,
+  ] as Array<{ region?: string; match: string; profile: string }>,
   /** 車両の間のすき間 (m)、道床の上面から車体の床までの高さ (m) */
   gap: 0.6,
   floor: 0.75,
@@ -984,10 +1011,20 @@ export const TRAINS = {
   headlightNight: 4,
   glow: 0.9,
   /**
-   * 路線ごとの帯：[色, 下の端, 高さ]（車体の高さに対する割合。色が null なら路線図の色）。最大 3 本。
-   * 名前が match に当てはまる最初のもの。どれにも当てはまらなければ default
+   * 路線ごとの帯：[色, 下の端, 高さ]（車体の高さに対する割合。色が null なら路線図の色）。最大 3 本。body は車体の色。
+   * 名前が match に当てはまる最初のもの（region を付けたものは、その地域（kanto・kinki・chubu など）だけ）。
+   * formations・categories・diagramGroups も同じ
    */
   styles: [
+    // ---- 名古屋（region を付けたものは、その地域だけ） ----
+    // JR 東海（313 系）：銀色にオレンジ
+    { region: 'chubu', match: '^JR', bands: [[0xf77321, 0.285, 0.075]] },
+    // 名鉄：名鉄スカーレットの赤い車体
+    { region: 'chubu', match: '^名古屋鉄道', body: 0xc8161e, bands: [[0xf2f2f2, 0.3, 0.02]] },
+    // あおなみ線：銀色に青とオレンジ
+    { region: 'chubu', match: 'あおなみ線', bands: [[0x1d4fa0, 0.285, 0.05], [0xf39800, 0.34, 0.025]] },
+    // 三岐鉄道：黄色とオレンジ
+    { region: 'chubu', match: '三岐', body: 0xf6c400, bands: [[0xe86d1f, 0.05, 0.3]] },
     // 中央線快速（E233 系）：窓の下と屋根の下のオレンジ
     { match: '^JR中央線', bands: [[0xf15a22, 0.3, 0.065], [0xf15a22, 0.86, 0.045]] },
     // 湘南新宿ライン・上野東京ライン・東海道線・宇都宮線・高崎線（E231・E233 系）：緑の上にオレンジ
@@ -1028,7 +1065,7 @@ export const TRAINS = {
     // 京阪：緑の 2 色
     { match: '京阪', body: 0x1f7a48, bands: [[0x9ccc3c, 0.28, 0.1]] },
     // 近鉄：下がマルーンレッド、上が白
-    { match: '近畿日本鉄道', body: 0xf2f0ea, bands: [[0xa31d36, 0.04, 0.4]] },
+    { match: '近畿日本鉄道|^近鉄', body: 0xf2f0ea, bands: [[0xa31d36, 0.04, 0.4]] },
     // 南海：銀色にオレンジと青
     { match: '南海', bands: [[0xf18d00, 0.285, 0.045], [0x0f4c9a, 0.335, 0.03]] },
     // 山陽電鉄：赤
@@ -1038,7 +1075,7 @@ export const TRAINS = {
     // 叡山電鉄：クリームに緑
     { match: '叡山', body: 0xf3efe2, bands: [[0x2e8b57, 0.05, 0.35]] },
     { match: '', bands: [[null, 0.29, 0.075]] },
-  ] as Array<{ match: string; body?: number; bands: Array<[number | null, number, number]> }>,
+  ] as Array<{ region?: string; match: string; body?: number; bands: Array<[number | null, number, number]> }>,
 };
 
 /** 夜の駅の明かり（src/world/StationRoofs.ts）：光の色と、ホームの床・屋根の縁の帯・柱・屋根の明るさ */

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TRAINS } from '../core/config';
-import { regionUrl } from '../core/region';
+import { REGION, regionUrl } from '../core/region';
 import { timeOfDay } from '../core/timeOfDay';
 import type { RailNetwork } from './RailNetwork';
 import type { Terrain } from './Terrain';
@@ -70,14 +70,14 @@ export class Route {
     this.color = new THREE.Color(data.c);
     const kind = kinds[data.k] ?? kinds.train;
     // 路線ごとの編成（両数・1 両の長さ）
-    const formation = TRAINS.formations.find((f) => new RegExp(f.match).test(data.n));
+    const formation = TRAINS.formations.find((f) => forRegion(f) && new RegExp(f.match).test(data.n));
     this.kind = formation ? { ...kind, cars: formation.cars, length: formation.length ?? kind.length } : kind;
     this.loop = data.loop === 1;
     this.name = data.n;
     this.direction = data.d;
     this.kindName = data.k;
     // 始発の駅を出る時刻：型の時間帯ごとの間隔で並べる。路線・向きごとに少しずらす（全部の路線が同時に出ないように）
-    const category = TRAINS.categories.find((c) => new RegExp(c.match).test(data.n));
+    const category = TRAINS.categories.find((c) => forRegion(c) && new RegExp(c.match).test(data.n));
     const profileName =
       category?.profile ?? (data.k === 'subway' ? 'subway' : data.k === 'train' ? 'privateLocal' : data.k === 'shinkansen' ? 'shinkansen' : 'small');
     const profile = TRAINS.profiles[profileName];
@@ -91,7 +91,7 @@ export class Route {
       this.departures.push(Math.round(t));
       t += gap * 60;
     }
-    const style = TRAINS.styles.find((st) => new RegExp(st.match).test(data.n)) ?? TRAINS.styles[TRAINS.styles.length - 1];
+    const style = TRAINS.styles.find((st) => forRegion(st) && new RegExp(st.match).test(data.n)) ?? TRAINS.styles[TRAINS.styles.length - 1];
     this.body = style.body ?? this.kind.body;
     this.bands = style.bands.slice(0, BAND_SLOTS).map(([c, at, h]) => ({ color: c === null ? this.color : new THREE.Color(c), at, h }));
     let lat = 0;
@@ -349,7 +349,7 @@ export class Trains {
       r.prepare(this.terrain);
       if (r.journey <= 0) continue;
       // 本線と支線をまとめる路線（TRAINS.diagramGroups）は、まとめた名前で 1 つに
-      const name = TRAINS.diagramGroups.find((gr) => new RegExp(gr.match).test(r.name))?.name ?? r.name;
+      const name = TRAINS.diagramGroups.find((gr) => forRegion(gr) && new RegExp(gr.match).test(r.name))?.name ?? r.name;
       let line = out.get(name);
       if (!line) {
         line = { key: name, name, color: `#${r.color.getHexString()}`, loop: r.loop, group: groupOf(r), routes: [], pieces: [], pieceOf: new Map() };
@@ -559,6 +559,11 @@ export class Trains {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+
+/** 設定の行が今の地域に当てはまるか（region の無い行はどの地域にも当てはまる） */
+function forRegion(entry: { region?: string }): boolean {
+  return !entry.region || entry.region === REGION.id;
+}
 
 /** ダイヤの板に出す路線（Trains.lines） */
 export interface DiagramLine {
