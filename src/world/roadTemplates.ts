@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { ROADS } from '../core/config';
+import { NIGHT_LIGHTS, ROADS } from '../core/config';
+import { night } from './facade';
 import { roadWidths } from './roadSpec';
 
 /**
@@ -129,6 +130,13 @@ export function createRoadMaterial(): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ map: atlasTexture, roughness: 0.92 });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.asphaltColor = { value: new THREE.Color(ROADS.asphaltColor) };
+    // 夜の度合い（窓の灯りと同じ値）と街灯
+    shader.uniforms.facadeNight = night.facadeNight;
+    const st = NIGHT_LIGHTS.street;
+    shader.uniforms.streetColor = { value: new THREE.Color(st.color).multiplyScalar(st.glow) };
+    shader.uniforms.streetSpacing = { value: st.spacing };
+    shader.uniforms.streetSpread = { value: st.spread };
+    shader.uniforms.streetCross = { value: st.intersection / st.glow };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -148,6 +156,11 @@ export function createRoadMaterial(): THREE.MeshStandardMaterial {
         '#include <common>',
         `#include <common>
         uniform vec3 asphaltColor;
+        uniform float facadeNight;
+        uniform vec3 streetColor;
+        uniform float streetSpacing;
+        uniform float streetSpread;
+        uniform float streetCross;
         varying vec2 vRoadAttr;
         varying vec3 vRoadWorld;
         float roadHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -165,7 +178,31 @@ export function createRoadMaterial(): THREE.MeshStandardMaterial {
           vec3 asphalt = asphaltColor * vRoadAttr.y * (0.85 + patches * 0.25 + grain * 0.06);
           vec4 marking = texture2D(map, vMapUv);
           diffuseColor.rgb *= mix(asphalt, marking.rgb, marking.a * vRoadAttr.x);
+        }
+        // 夜の街灯：道の両端に streetSpacing m ごと（右は半分ずらす）の街灯の足元を丸く照らす。
+        // 交差点の面（uv が (0.5, 0) のまま）は全体を明るく
+        vec3 streetGlow = vec3(0.0);
+        if (facadeNight > 0.001) {
+          float lit;
+          if (abs(vMapUv.x - 0.5) < 1e-4 && vMapUv.y == 0.0) {
+            lit = streetCross;
+          } else {
+            float along = vMapUv.y * ${TEMPLATE_LENGTH_M.toFixed(1)};
+            float across = fract(vMapUv.x * ${COLUMNS.toFixed(1)});
+            float dl = (fract(along / streetSpacing + 0.5) - 0.5) * streetSpacing;
+            float dr = (fract(along / streetSpacing) - 0.5) * streetSpacing;
+            float s2 = 2.0 * streetSpread * streetSpread;
+            float left = exp(-dl * dl / s2) * exp(-pow(across / 0.4, 2.0));
+            float right = exp(-dr * dr / s2) * exp(-pow((1.0 - across) / 0.4, 2.0));
+            lit = left + right;
+          }
+          streetGlow = streetColor * lit * facadeNight;
         }`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance += streetGlow;`,
       );
   };
   material.customProgramCacheKey = () => 'road';

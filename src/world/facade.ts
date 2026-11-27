@@ -62,6 +62,8 @@ const ROOF_OFFSET = WALL_LIST.length;
 
 /** 高さの区分の境目 (m) */
 const TOWER_MIN = 45;
+/** これより高い建物は、夜の窓の灯りを白を基本にする */
+const TALL_M = 80;
 const MID_MIN = 12;
 
 let atlas: { map: THREE.Texture; mask: THREE.Texture } | null = null;
@@ -111,8 +113,8 @@ function getAtlas(): { map: THREE.Texture; mask: THREE.Texture } {
   return atlas;
 }
 
-/** 夜の窓の灯り（全部の外壁のマテリアルで同じ値を使う） */
-const night = {
+/** 夜の窓の灯り（全部の外壁のマテリアルで同じ値を使う。facadeNight は道路の街灯も使う） */
+export const night = {
   facadeNight: { value: 0 },
   facadeLitRatio: { value: 0.5 },
   facadeWarm: { value: new THREE.Color(NIGHT_LIGHTS.warm).multiplyScalar(NIGHT_LIGHTS.glow) },
@@ -196,7 +198,7 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
           bool station = vFacade.z < 0.0;
           if (abs(n.y) > 0.6) {
             // 屋上：真上から見た座標で貼る
-            row = station ? ${STATION_ROOF_ROW.toFixed(1)} : ${ROOF_OFFSET.toFixed(1)} + mod(vFacade.x, ${NORMAL_ROOFS.length.toFixed(1)});
+            row = station ? ${STATION_ROOF_ROW.toFixed(1)} : ${ROOF_OFFSET.toFixed(1)} + mod(floor(vFacade.x), ${NORMAL_ROOFS.length.toFixed(1)});
             cont = vFacadeWorldPos.xz / 12.0;
           } else {
             // 壁：壁に沿った水平距離と、建物の底からの高さで貼る
@@ -219,11 +221,13 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
               // 建物ごとの点き方のばらつき（0.2〜1.5 倍）
               float busy = 0.2 + 1.3 * facadeHash(vec3(building, 3.7, 1.3));
               float on = step(facadeHash(cell), facadeLitRatio * busy);
-              // 低い建物（テンプレートの行が大きい）ほど暖色が多い
-              float warmShare = mix(0.35, 0.8, clamp(vFacade.x / ${(WALL_LIST.length - 1).toFixed(1)}, 0.0, 1.0));
+              // 低い建物（テンプレートの行が大きい）ほど暖色が多い。高さ ${TALL_M}m 以上（テンプレートの番号の小数が 0.5）は
+              // 白を基本にして暖色を少しだけ混ぜ、明るさのばらつきも小さくする（色と明るさがばらばらだと目がちかちかする）
+              bool tall = fract(vFacade.x) > 0.25;
+              float warmShare = tall ? 0.08 : mix(0.35, 0.8, clamp(floor(vFacade.x) / ${(WALL_LIST.length - 1).toFixed(1)}, 0.0, 1.0));
               vec3 tone = facadeHash(cell + 17.0) < warmShare ? facadeWarm : facadeCool;
               // 窓ごとに明るさを少し変える
-              tone *= 0.6 + 0.6 * facadeHash(cell + 41.0);
+              tone *= tall ? 0.85 + 0.2 * facadeHash(cell + 41.0) : 0.6 + 0.6 * facadeHash(cell + 41.0);
               facadeGlow = tone * on * win.r * facadeNight;
             }
           }
@@ -280,21 +284,22 @@ export function assignFacadeAttributes(scene: THREE.Object3D): void {
 
     // 建物ごとにテンプレートを選ぶ（タイルの位置も混ぜて、タイルごとに違う並びにする）
     const tileSeed = Math.round(obj.matrixWorld.elements[12] + obj.matrixWorld.elements[13]);
-    const styles = new Map<number, { style: number; tint: number }>();
+    const styles = new Map<number, { style: number; tint: number; tall: boolean }>();
     for (const [id, r] of range) {
       const rnd = hash(id * 7919 + tileSeed);
       const height = r.max - r.min;
       const group = height >= TOWER_MIN ? 'tower' : height >= MID_MIN ? 'mid' : 'low';
       const style = STYLE_OFFSET[group] + Math.floor(rnd * WALLS[group].length);
       const tint = 0.85 + hash(id * 31 + tileSeed * 17) * 0.25;
-      styles.set(id, { style, tint: isStationBuilding(r.footprint) ? -tint : tint });
+      styles.set(id, { style, tint: isStationBuilding(r.footprint) ? -tint : tint, tall: height >= TALL_M });
     }
 
     const facade = new Float32Array(position.count * 3);
     for (let i = 0; i < position.count; i++) {
       const id = batch ? batch.getX(i) : 0;
       const s = styles.get(id)!;
-      facade[i * 3] = s.style;
+      // 高い建物は、テンプレートの番号に 0.5 を足して印にする（シェーダーは整数の部分を番号に使う）
+      facade[i * 3] = s.style + (s.tall ? 0.5 : 0);
       facade[i * 3 + 1] = heights[i] - range.get(id)!.min;
       facade[i * 3 + 2] = s.tint;
     }
@@ -587,8 +592,9 @@ export function addNightWindows(material: THREE.MeshStandardMaterial): void {
             // 模様の明るい所（石・白いルーバー）は窓ではないので弱く
             float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
             float glassy = 1.0 - smoothstep(0.25, 0.6, lum);
-            vec3 tone = lmHash(cell + 17.0) < 0.35 ? facadeWarm : facadeCool;
-            tone *= 0.6 + 0.6 * lmHash(cell + 41.0);
+            // 手で作った建物は高層ビルが多いので、白を基本にして暖色は少しだけ、明るさのばらつきも小さく
+            vec3 tone = lmHash(cell + 17.0) < 0.08 ? facadeWarm : facadeCool;
+            tone *= 0.85 + 0.2 * lmHash(cell + 41.0);
             lmGlow = tone * on * inside * glassy * facadeNight;
           }
         }`,

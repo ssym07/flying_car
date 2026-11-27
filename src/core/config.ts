@@ -287,6 +287,11 @@ export const NIGHT_LIGHTS = {
   warm: 0xffb466,
   cool: 0xdde8ff,
   /**
+   * 道路の街灯（src/world/roadTemplates.ts の道の材質）：道の両端に spacing m ごと（左右で半分ずらす）に街灯がある
+   * として、その足元を丸く照らす。spread は光の広がり（道に沿った向きの m）、glow は明るさ。交差点は全体を intersection の明るさで
+   */
+  street: { color: 0xffd6a0, glow: 0.32, spacing: 30, spread: 7, intersection: 0.22 },
+  /**
    * 時刻（時）ごとの、点いている窓の割合。間はまっすぐつなぐ。明るい間は空の明るさで消える（Atmosphere の night）。
    * 建物ごとにも 0.2〜1.5 倍のばらつきを付ける（真っ暗な建物・よく点いている建物がある）
    */
