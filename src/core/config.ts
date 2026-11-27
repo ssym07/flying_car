@@ -828,8 +828,8 @@ export const STATION_ROOFS = {
  */
 export const TRAINS = {
   kinds: {
-    train: { length: 20, width: 2.95, height: 3.6, cars: 10, speed: 25, headway: 300, body: 0xc9ced3 },
-    subway: { length: 20, width: 2.8, height: 3.5, cars: 10, speed: 22, headway: 300, body: 0xc9ced3 },
+    train: { length: 20, width: 2.95, height: 3.6, cars: 10, speed: 25, headway: 300, body: 0xf2f4f6 },
+    subway: { length: 20, width: 2.8, height: 3.5, cars: 10, speed: 22, headway: 300, body: 0xf2f4f6 },
     shinkansen: { length: 25, width: 3.38, height: 3.6, cars: 16, speed: 45, headway: 600, body: 0xf2f3f0 },
     monorail: { length: 15, width: 3.0, height: 3.6, cars: 6, speed: 20, headway: 360, body: 0xe9ecee },
     agt: { length: 9, width: 2.4, height: 3.2, cars: 6, speed: 16, headway: 420, body: 0xeef0f2 },
@@ -849,6 +849,41 @@ export const TRAINS = {
   closed: [1, 4.75] as [number, number],
   /** 夜の窓の明るさ */
   windowGlow: 1.1,
+  /** 前照灯の明るさ（昼・夜）と、夜に前へにじむ光の濃さ */
+  headlightDay: 1.4,
+  headlightNight: 4,
+  glow: 0.9,
+  /**
+   * 路線ごとの帯：[色, 下の端, 高さ]（車体の高さに対する割合。色が null なら路線図の色）。最大 3 本。
+   * 名前が match に当てはまる最初のもの。どれにも当てはまらなければ default
+   */
+  styles: [
+    // 中央線快速（E233 系）：窓の下と屋根の下のオレンジ
+    { match: '^JR中央線', bands: [[0xf15a22, 0.3, 0.065], [0xf15a22, 0.86, 0.045]] },
+    // 湘南新宿ライン・上野東京ライン・東海道線・宇都宮線・高崎線（E231・E233 系）：緑の上にオレンジ
+    { match: '湘南新宿|上野東京|東海道|宇都宮|高崎|東北本線', bands: [[0x1a9e4a, 0.285, 0.055], [0xf68b1e, 0.34, 0.035]] },
+    // 横須賀線・総武快速線（E235 系）：紺とクリーム
+    { match: '横須賀|総武快速', bands: [[0x1d2e73, 0.285, 0.06], [0xe8e2c4, 0.345, 0.03]] },
+    // 京浜東北線（E233 系）：水色
+    { match: '京浜東北', bands: [[0x00b2e5, 0.29, 0.075]] },
+    // 山手線（E235 系）：黄緑
+    { match: '山手線', bands: [[0x9acd32, 0.29, 0.075]] },
+    // 中央・総武緩行線：黄色
+    { match: '中央・総武|総武緩行', bands: [[0xffd400, 0.29, 0.075]] },
+    // 埼京線・川越線：緑
+    { match: '埼京|川越', bands: [[0x00ac9a, 0.29, 0.075]] },
+    // 常磐線：緑と青
+    { match: '常磐', bands: [[0x00b261, 0.285, 0.055], [0x0067c0, 0.34, 0.03]] },
+    // 武蔵野線：オレンジと茶色
+    { match: '武蔵野', bands: [[0xf15a22, 0.285, 0.04], [0x7f3a1e, 0.325, 0.04]] },
+    // 京葉線：赤
+    { match: '京葉', bands: [[0xc9252f, 0.29, 0.075]] },
+    // 南武線：黄色とオレンジ
+    { match: '南武', bands: [[0xffd400, 0.285, 0.05], [0xf68b1e, 0.335, 0.03]] },
+    // 横浜線：黄緑と緑
+    { match: '横浜線', bands: [[0x7fc342, 0.285, 0.05], [0x00a040, 0.335, 0.03]] },
+    { match: '', bands: [[null, 0.29, 0.075]] },
+  ] as Array<{ match: string; bands: Array<[number | null, number, number]> }>,
 };
 
 /** 夜の駅の明かり（src/world/StationRoofs.ts）：光の色と、ホームの床・屋根の縁の帯・柱・屋根の明るさ */
