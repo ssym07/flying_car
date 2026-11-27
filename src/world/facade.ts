@@ -522,3 +522,84 @@ function shade(hex: string, k: number): string {
   const b = Math.round((n & 255) * k);
   return `rgb(${r},${gr},${b})`;
 }
+
+/**
+ * 手で作った建物（src/world/landmarks）の材質に、夜の窓の灯りを足す。窓のマスクは無いので、
+ * 建物の座標で「階 3.8m × 幅 1.8m」の格子を作り、その内側を窓として、外壁テンプレートと同じ割合（時刻）で点ける。
+ * 模様の明るい所（石・白いルーバー・れんがの目地）は弱くし、屋上（上を向いた面）は光らない
+ */
+export function addNightWindows(material: THREE.MeshStandardMaterial): void {
+  if (material.userData.nightWindows) return;
+  material.userData.nightWindows = true;
+  const before = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    before.call(material, shader, renderer);
+    Object.assign(shader.uniforms, night);
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        varying vec3 vLmPos;
+        varying vec3 vLmNormal;
+        varying vec2 vLmSeed;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vLmPos = position;
+        vLmNormal = normal;
+        vLmSeed = modelMatrix[3].xz;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float facadeNight;
+        uniform float facadeLitRatio;
+        uniform vec3 facadeWarm;
+        uniform vec3 facadeCool;
+        varying vec3 vLmPos;
+        varying vec3 vLmNormal;
+        varying vec2 vLmSeed;
+        float lmHash(vec3 p) {
+          p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+          p += dot(p, p.yxz + 33.33);
+          return fract((p.x + p.y) * p.z);
+        }`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        vec3 lmGlow = vec3(0.0);
+        if (facadeNight > 0.001) {
+          vec3 nn = normalize(vLmNormal);
+          if (abs(nn.y) < 0.5) {
+            vec2 t = normalize(vec2(-nn.z, nn.x));
+            float u = dot(vLmPos.xz, t) / 1.8;
+            float w = vLmPos.y / 3.8;
+            vec2 f = fract(vec2(u, w));
+            float inside = step(0.12, f.x) * step(f.x, 0.88) * step(0.22, f.y) * step(f.y, 0.86);
+            // 建物（置いた位置）と壁の向きで乱数を変える
+            float building = floor(vLmSeed.x * 0.37 + vLmSeed.y * 0.73) + dot(sign(nn), vec3(1.0, 3.0, 7.0));
+            vec3 cell = vec3(floor(u), floor(w), building);
+            float busy = 0.2 + 1.3 * lmHash(vec3(building, 3.7, 1.3));
+            float on = step(lmHash(cell), facadeLitRatio * busy);
+            // 模様の明るい所（石・白いルーバー）は窓ではないので弱く
+            float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+            float glassy = 1.0 - smoothstep(0.25, 0.6, lum);
+            vec3 tone = lmHash(cell + 17.0) < 0.35 ? facadeWarm : facadeCool;
+            tone *= 0.6 + 0.6 * lmHash(cell + 41.0);
+            lmGlow = tone * on * inside * glassy * facadeNight;
+          }
+        }`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance += lmGlow;`,
+      );
+  };
+  const key = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${key()}|night-windows`;
+  material.needsUpdate = true;
+}

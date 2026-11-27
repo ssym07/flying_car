@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TERRAIN } from '../../core/config';
+import { addNightWindows } from '../facade';
 import type { ChunkListener, Terrain } from '../Terrain';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildMarunouchiPlaza, createStoneMaterial, type PlazaParts } from './marunouchiPlaza';
@@ -240,6 +241,8 @@ interface Landmark {
   /** 正面の向き：from から to へ向かって左なら 1、右なら -1（形は長い向きに左右対称にする） */
   front: 1 | -1;
   build: (length: number) => THREE.Group;
+  /** 夜に窓の灯りを付けない（塔・ドーム・競技場・城・れんがの建物など、オフィスの窓の並びでないもの） */
+  noLights?: true;
 }
 
 /**
@@ -358,6 +361,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 東京ビッグサイトの会議棟（会議棟とエントランスプラザの PLATEAU の箱を消して置く）。x・z = 正方形の辺の向き
     gmlId: 'bldg_8794832f-3815-445c-85de-dcb96f5ca6ea',
+    noLights: true,
     ...around(35.629785, 139.79407, -56.7),
     front: -1,
     build: (length) => {
@@ -382,6 +386,7 @@ const LANDMARKS: Landmark[] = [
     // 有明テニスの森公園のコート・インドアコート・ショーコート（インドアコートとショーコートの PLATEAU の箱を消して置く）。
     // x = 公園の長い向き（東北東）、z = 南南東
     gmlId: 'bldg_36f9e4e1-0db4-44fe-9eb4-bb56fccc8468',
+    noLights: true,
     ...around(35.6355, 139.788, 33.5),
     front: -1,
     build: (length) => {
@@ -405,6 +410,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 有明コロシアム（PLATEAU に箱が無いので、そのまま置く）。x = 長い向き（東から 18.4°）
     gmlId: '',
+    noLights: true,
     ...around(35.63641, 139.79005, 18.4),
     front: -1,
     build: (length) => {
@@ -506,6 +512,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 三菱一号館（PLATEAU の箱を消して置く）。x = 北北東、z = 通りの側（東南東）
     gmlId: 'bldg_eca59423-ac27-46b4-8ccf-451b63652d52',
+    noLights: true,
     ...around(35.67847, 139.76318, 75),
     front: -1,
     build: (length) => {
@@ -638,6 +645,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 東京ドーム（PLATEAU の箱を消して置く。ドームシティは作らない）。x・z = 角の丸い四角の辺の向き
     gmlId: 'bldg_369e50ad-eaf1-4484-9d31-9802cc32ab5a',
+    noLights: true,
     ...around(35.70559, 139.7519, 84),
     front: 1,
     build: (length) => {
@@ -658,6 +666,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 日本武道館（PLATEAU の低い箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_d4c6fe12-0eeb-4395-aecf-93c9b5a5c6ee',
+    noLights: true,
     ...around(35.69336, 139.74987, 0),
     front: -1,
     build: (length) => {
@@ -683,6 +692,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 国立競技場（PLATEAU の楕円の箱を消して置く）。x = 楕円の長い向き（北北東）
     gmlId: 'bldg_d840231c-8174-4086-9ca6-6417886b0fda',
+    noLights: true,
     ...around(35.677837, 139.714508, 68),
     front: 1,
     build: (length) => {
@@ -710,6 +720,7 @@ const LANDMARKS: Landmark[] = [
   {
     // シンデレラ城（浦安市は国土地理院の建物の形から作っていて、城の場所の建物は作らない）。建物の座標は x = 東、z = 南
     gmlId: '',
+    noLights: true,
     ...around(35.63208, 139.88084, 0),
     front: -1,
     build: (length) => {
@@ -751,6 +762,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 博多ポートタワー（PLATEAU に塔は無い。足元の低い建物の箱はそのままで、脚がまたぐ）。建物の座標は x・z = 塔の辺の向き
     gmlId: '',
+    noLights: true,
     ...around(33.6043, 130.39776, 0),
     front: -1,
     build: (length) => {
@@ -916,6 +928,7 @@ const LANDMARKS: Landmark[] = [
   {
     // みずほPayPayドーム福岡（PLATEAU の、ドームと周りのデッキをまとめた高さ 40m の箱を消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_ec9150b2-0a27-4b64-a8bf-66cb714d46f0',
+    noLights: true,
     ...around(33.5953, 130.3621, 0),
     front: -1,
     build: (length) => {
@@ -942,6 +955,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 福岡タワー（PLATEAU には塔が無く、足元の低い建物の箱だけがあるので、それを消して置く）。建物の座標は x = 東、z = 南
     gmlId: 'bldg_478d8445-d980-4744-a2ca-3dbb47074129',
+    noLights: true,
     ...around(33.59328, 130.35152, 0),
     front: -1,
     build: (length) => {
@@ -1223,6 +1237,7 @@ const LANDMARKS: Landmark[] = [
     // 東京スカイツリーとスカイツリータウン（PLATEAU にはソラマチの平らな箱しか無いので、それを消して置く）。
     // タウンの長い向き（東西）にそろえ、塔の中心から ±50m の2点で置く。イーストタワーの箱は別に消す
     gmlId: 'bldg_58ab8c46-8369-49c4-86cf-6912bbc4efe1',
+    noLights: true,
     from: [35.710041, 139.810148],
     to: [35.710085, 139.811252],
     front: -1,
@@ -1242,6 +1257,7 @@ const LANDMARKS: Landmark[] = [
     // 東京タワー（PLATEAU には足元の建物（フットタウン）の箱しか無いので、それを消して塔と足元の建物を置く）。
     // 長い向きは足元の建物にそろえ、中心から ±50m の2点で置く
     gmlId: 'bldg_7aff4a51-be8b-405b-abe4-ac489697cbc8',
+    noLights: true,
     from: [35.65833, 139.745891],
     to: [35.658832, 139.744975],
     front: -1,
@@ -1258,6 +1274,7 @@ const LANDMARKS: Landmark[] = [
   {
     // 東京駅丸の内駅舎（南の端 → 北の端。正面は西の丸の内側）
     gmlId: 'bldg_6af58cef-669e-4aca-bc01-355e870d1ad5',
+    noLights: true,
     from: [35.67977, 139.765822],
     to: [35.682603, 139.766392],
     front: 1,
@@ -1455,6 +1472,7 @@ export class Landmarks implements ChunkListener {
         continue;
       }
       if (!object) continue;
+      if (!lm.noLights) lightWindows(object);
       this.built.set(lm, { chunk: chunkOf(lm), object });
       this.group.add(object);
     }
@@ -1497,6 +1515,17 @@ export class Landmarks implements ChunkListener {
     object.matrixWorldNeedsUpdate = true;
     return object;
   }
+}
+
+/** 模様を貼った壁の材質に、夜の窓の灯りを足す（単色・半透明の材質は屋根・鉄骨・ガラスの屋根などなので足さない） */
+function lightWindows(object: THREE.Object3D): void {
+  object.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (m instanceof THREE.MeshStandardMaterial && m.map && !m.transparent) addNightWindows(m);
+    }
+  });
 }
 
 function chunkOf(lm: Landmark): string {
