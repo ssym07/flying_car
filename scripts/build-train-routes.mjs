@@ -7,6 +7,8 @@
 // - 隣の駅どうしを、網の上の最短の道で結ぶ。次の区間は前の区間で着いた線路の点から続ける（上下線の線路を行き来しない）。
 //   行きと帰りを別に作り、帰りは行きの線路を少し長く数えて、並んだ反対向きの線路を通りやすくする。その路線の名前の線路（「JR山手線」なら「山手線」）は短く、
 //   ほかの路線の線路は長く数えて、なるべく自分の線路を通る（並んで走る京浜東北線と山手線を取り違えない）
+// - 停車位置：駅ごとに、道のすぐ横（PLATFORM_NEAR m 以内）にあるその駅のホーム（public/station-roofs のホームの面）を探し、
+//   ホームの真ん中を道に下ろした所を停車位置にする（列車の真ん中をそこに止める）。ホームが見つからない駅は、駅の点に近い道の点のまま
 // - 道の見つからない区間（地下・トンネル）は、駅と駅をまっすぐ結んで「見えない区間」にする（電車はそこを通る間は描かない）
 //
 // 出力: { lines: [{ n: 路線名, c: 色, k: 種類, d: 向き（0 = 駅の並びの順、1 = 逆）, loop: 環状なら 1, p: [緯度, 経度, ...（1e-6度、先頭以外は差分）],
@@ -29,6 +31,35 @@ const JUMP = 400;
 const SIMPLIFY = 0.4;
 
 const route = JSON.parse(await readFile(regionPath('public/route-map.json'), 'utf8'));
+/** 道の中心線からホームの真ん中までの距離の上限 (m)。島式ホームの幅の半分 + 線路の間を見込む */
+const PLATFORM_NEAR = 12;
+
+// ---- ホーム（駅の名前 → ホームの真ん中の [緯度, 経度] と長さ） ----
+const stationList = JSON.parse(await readFile(regionPath('src/data/stations.json'), 'utf8'));
+const platforms = new Map();
+{
+  const ROOFS = regionPath('public/station-roofs/15/');
+  for (const x of await readdir(ROOFS).catch(() => [])) {
+    for (const f of await readdir(new URL(`${x}/`, ROOFS))) {
+      for (const [kind, , station, coords] of JSON.parse(await readFile(new URL(`${x}/${f}`, ROOFS), 'utf8'))) {
+        if (kind !== 2 || !stationList[station]) continue;
+        let lat = 0;
+        let lon = 0;
+        const ring = [];
+        for (let i = 0; i < coords.length; i += 2) {
+          lat += coords[i];
+          lon += coords[i + 1];
+          ring.push([lat / 1e6, lon / 1e6]);
+        }
+        if (ring.length < 3) continue;
+        const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+        const name = stationList[station].name;
+        if (!platforms.has(name)) platforms.set(name, []);
+        platforms.get(name).push(c);
+      }
+    }
+  }
+}
 
 // ---- 線路の網 ----
 const ways = new Map();
@@ -312,6 +343,69 @@ function buildPath(stops, isMine, penalty) {
   return { pts, st, gaps, used, monorail: total > 0 ? monorail / total : 0 };
 }
 
+/**
+ * 停車位置をホームに合わせる：駅ごとに、前後の駅の間の道で、その駅のホームの真ん中にいちばん近い所（PLATFORM_NEAR m 以内）に
+ * 点を足して、そこを停車位置にする。見えない区間の点の番号も付け直す
+ */
+function alignStops(r) {
+  const { pts, st, gaps } = r;
+  const toXY = ([lat, lon]) => [lon * 111320 * COS, lat * 110950];
+  const inserts = [];
+  for (let k = 0; k < st.length; k++) {
+    const list = platforms.get(st[k][0]);
+    if (!list) continue;
+    const lo = k > 0 ? st[k - 1][1] : 0;
+    const hi = k < st.length - 1 ? st[k + 1][1] : pts.length - 1;
+    let best = null;
+    for (const c of list) {
+      const [cx, cy] = toXY(c);
+      for (let j = Math.max(lo, 0); j < Math.min(hi, pts.length - 1); j++) {
+        // 見えない区間（まっすぐ結んだ所）には止めない
+        if (gaps.some(([a, b]) => j >= a && j < b)) continue;
+        const [ax, ay] = toXY(pts[j]);
+        const [bx, by] = toXY(pts[j + 1]);
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len2 = dx * dx + dy * dy || 1e-9;
+        const t = Math.min(1, Math.max(0, ((cx - ax) * dx + (cy - ay) * dy) / len2));
+        const d = Math.hypot(ax + dx * t - cx, ay + dy * t - cy);
+        if (d < PLATFORM_NEAR && (!best || d < best.d)) best = { j, t, d, k };
+      }
+    }
+    if (best) inserts.push(best);
+  }
+  if (inserts.length === 0) return r;
+  // 点を足す（後ろから足すと前の番号がずれない）
+  const out = pts.slice();
+  const newIndex = pts.map((_, i) => i);
+  const stopAt = new Map();
+  inserts.sort((a, b) => b.j - a.j || b.t - a.t);
+  for (const { j, t, k } of inserts) {
+    if (t <= 1e-6) {
+      stopAt.set(k, j);
+      continue;
+    }
+    if (t >= 1 - 1e-6) {
+      stopAt.set(k, j + 1);
+      continue;
+    }
+    const [alat, alon] = pts[j];
+    const [blat, blon] = pts[j + 1];
+    out.splice(j + 1, 0, [alat + (blat - alat) * t, alon + (blon - alon) * t]);
+    for (let i = j + 1; i < newIndex.length; i++) newIndex[i]++;
+    // 後ろから足しているので、これより後ろの駅の番号もずらす
+    for (const [kk, idx] of stopAt) if (idx > j) stopAt.set(kk, idx + 1);
+    stopAt.set(k, j + 1);
+  }
+  const map = (i) => newIndex[i];
+  return {
+    ...r,
+    pts: out,
+    st: st.map(([name, i], k) => [name, stopAt.has(k) ? stopAt.get(k) : map(i)]),
+    gaps: gaps.map(([a, b]) => [map(a), map(b)]),
+  };
+}
+
 const encode = (pts) => {
   const p = [];
   let plat = 0;
@@ -329,8 +423,8 @@ for (const [name, color, ids] of route.lines) {
   const loop = ids.length > 2 && ids[0] === ids[ids.length - 1];
   const stops = ids.map((i) => route.stations[i]);
   // 行きと帰り。帰りは行きの線路を少し長く数えて、並んだもう 1 本の線路（反対向きの線路）を通りやすくする
-  const go = buildPath(stops, isMine, null);
-  const back = buildPath([...stops].reverse(), isMine, go.used);
+  const go = alignStops(buildPath(stops, isMine, null));
+  const back = alignStops(buildPath([...stops].reverse(), isMine, go.used));
   if (go.pts.length < 2) continue;
   const kind = kindOf(name, go.monorail);
   for (const [dir, r] of [[0, go], [1, back]]) {
