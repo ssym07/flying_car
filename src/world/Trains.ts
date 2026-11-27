@@ -151,6 +151,12 @@ export class Route {
     this.journey = t;
   }
 
+  /** k 番目の駅の位置 [緯度, 経度] */
+  stopLatLon(k: number): [number, number] {
+    const i = this.data.st[k]?.[1] ?? 0;
+    return [this.lat[i], this.lon[i]];
+  }
+
   /** 始発の駅を出てから tau 秒後の、列車の真ん中の s */
   centerAt(tau: number): number {
     const dep = this.depart;

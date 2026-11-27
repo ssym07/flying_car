@@ -2,18 +2,14 @@ import type { Route, Trains } from '../world/Trains';
 
 type Line = ReturnType<Trains['lines']>[number];
 
-/** 図の時間の幅（分）の選択肢と、最初の幅 */
-const SPANS = [20, 40, 60, 120, 180];
-const DEFAULT_SPAN = 40;
-/** 今の時刻を、図の幅のこの割合の所に置く（少し先まで見えるように） */
-const NOW_AT = 0.3;
 const STORAGE_KEY = 'sky-drive.diagram-line';
 /** 描き直す間隔（秒） */
 const REDRAW = 0.25;
 
 /**
- * ダイヤ：路線図の隣の「ダイヤ」ボタンで開く板。選んだ路線のダイヤグラム（横 = 時刻、縦 = 駅。列車 1 本を 1 本の線）と、
- * 今の時刻の縦線・走っている列車の位置、運行状況（走っている本数・運転間隔・始発と終電）、選んだ駅の次の発車を出す。
+ * ダイヤ：路線図の隣の「ダイヤ」ボタンで開く板。選んだ路線の運行図（環状の路線は円、ほかは縦の線に駅を並べ、
+ * 走っている列車を向きごとに外側・内側（右・左）の三角で動かす）と、運行状況（走っている本数・運転間隔・始発と終電）、
+ * 選んだ駅の次の発車を出す。
  * 時刻表は src/world/Trains.ts（各駅停車だけ）
  */
 export class DiagramPanel {
@@ -26,12 +22,11 @@ export class DiagramPanel {
   private readonly departures: HTMLDivElement;
   private lines: Line[] = [];
   private line: Line | null = null;
-  private span = DEFAULT_SPAN;
   private station: string | null = null;
   private opened = false;
   private wait = 0;
-  /** 駅名の縦の位置（図の上の端から、0..1）。押した駅を探すため */
-  private rows: Array<{ name: string; y: number }> = [];
+  /** 駅の画面の位置（押した駅を探すため） */
+  private rows: Array<{ name: string; x: number; y: number }> = [];
 
   constructor(
     parent: HTMLElement,
@@ -52,10 +47,6 @@ export class DiagramPanel {
     this.panel.innerHTML = `
       <div class="diagram-head">
         <select aria-label="路線"></select>
-        <div class="diagram-span">
-          <button type="button" data-span="-1" aria-label="時間を短く">−</button>
-          <button type="button" data-span="1" aria-label="時間を長く">＋</button>
-        </div>
       </div>
       <div class="diagram-body"><canvas></canvas></div>
       <div class="diagram-status"></div>
@@ -69,24 +60,17 @@ export class DiagramPanel {
       this.choose(this.select.value);
       this.select.blur();
     });
-    this.panel.querySelector('.diagram-span')!.addEventListener('click', (e) => {
-      const b = (e.target as HTMLElement).closest('button');
-      if (!b) return;
-      const i = SPANS.indexOf(this.span) + Number(b.dataset.span);
-      this.span = SPANS[Math.max(0, Math.min(SPANS.length - 1, i))];
-      this.draw();
-    });
-    // 駅名を押すと、その駅の次の発車を出す
+    // 駅（丸・名前のあたり）を押すと、その駅の次の発車を出す
     this.canvas.addEventListener('click', (e) => {
       const r = this.canvas.getBoundingClientRect();
-      if (e.clientX - r.left > LABEL_W + 8) return;
+      const x = e.clientX - r.left;
       const y = e.clientY - r.top;
-      let best: { name: string; y: number } | null = null;
+      let best: { name: string; d: number } | null = null;
       for (const row of this.rows) {
-        const py = TOP + row.y * (r.height - TOP - BOTTOM);
-        if (!best || Math.abs(py - y) < Math.abs(TOP + best.y * (r.height - TOP - BOTTOM) - y)) best = row;
+        const d = Math.hypot(row.x - x, row.y - y);
+        if (!best || d < best.d) best = { name: row.name, d };
       }
-      if (best) {
+      if (best && best.d < 60) {
         this.station = best.name;
         this.draw();
       }
@@ -164,99 +148,95 @@ export class DiagramPanel {
       return;
     }
     const now = this.trains.now();
-    const t0 = now - this.span * 60 * NOW_AT;
-    const t1 = t0 + this.span * 60;
     const go = line.routes.find((r) => r.direction === 0) ?? line.routes[0];
-    // 駅の縦の位置：行きの向きの、始発の駅を出てからの時間に比例させる
-    const total = go.stops[go.stops.length - 1].arrive || 1;
-    const yOf = go.stops.map((s) => s.arrive / total);
-    this.rows = go.stops.map((s, i) => ({ name: s.name, y: yOf[i] }));
-    const plotX = (t: number) => LABEL_W + ((t - t0) / (t1 - t0)) * (w - LABEL_W - RIGHT);
-    const plotY = (y: number) => TOP + y * (h - TOP - BOTTOM);
-
-    // 駅の横線と駅名（多い時は間引く）
-    g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
-    g.textBaseline = 'middle';
-    let lastLabel = -Infinity;
-    go.stops.forEach((s, i) => {
-      const y = plotY(yOf[i]);
-      const selected = s.name === this.station;
-      g.strokeStyle = selected ? 'rgba(255,210,120,0.55)' : 'rgba(255,255,255,0.08)';
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(LABEL_W, y);
-      g.lineTo(w - RIGHT, y);
-      g.stroke();
-      if (y - lastLabel < 12 && !selected) return;
-      lastLabel = y;
-      g.fillStyle = selected ? '#ffd27a' : 'rgba(255,255,255,0.75)';
-      g.textAlign = 'right';
-      g.fillText(s.name, LABEL_W - 6, y);
-    });
-
-    // 時刻の目盛り
-    const step = this.span <= 40 ? 5 : this.span <= 60 ? 10 : this.span <= 120 ? 20 : 30;
-    g.textAlign = 'center';
-    g.textBaseline = 'top';
-    for (let m = Math.ceil(t0 / 60 / step) * step; m * 60 <= t1; m += step) {
-      const x = plotX(m * 60);
-      g.strokeStyle = 'rgba(255,255,255,0.08)';
-      g.beginPath();
-      g.moveTo(x, TOP);
-      g.lineTo(x, h - BOTTOM);
-      g.stroke();
-      g.fillStyle = 'rgba(255,255,255,0.6)';
-      g.fillText(clock(m * 60), x, 4);
-    }
-
-    // 列車の線（行きは実線、帰りは少し薄く）。帰りの駅は行きの駅の並びの逆
-    g.save();
-    g.beginPath();
-    g.rect(LABEL_W, TOP - 2, w - LABEL_W - RIGHT, h - TOP - BOTTOM + 4);
-    g.clip();
     const n = go.stops.length;
-    for (const r of line.routes) {
-      const ys = r.direction === 0 ? yOf : r.stops.map((_, k) => yOf[n - 1 - k] ?? 0);
-      g.strokeStyle = line.color;
-      g.globalAlpha = r.direction === 0 ? 0.95 : 0.6;
-      g.lineWidth = 1.4;
-      for (const d of r.departures) {
-        if (d + r.journey < t0 || d > t1) continue;
-        g.beginPath();
-        r.stops.forEach((s, k) => {
-          const xa = plotX(d + s.arrive);
-          const y = plotY(ys[k]);
-          if (k === 0) g.moveTo(xa, y);
-          else g.lineTo(xa, y);
-          if (s.depart > s.arrive) g.lineTo(plotX(d + s.depart), y);
-        });
-        g.stroke();
-      }
-    }
-    g.globalAlpha = 1;
-    // 今の時刻の縦線と、走っている列車の位置
-    const xn = plotX(now);
-    g.strokeStyle = '#ff5a4a';
-    g.lineWidth = 1.5;
+    // 駅の位置（0..1）：行きの向きの、始発の駅を出てからの時間に比例させる
+    const total = go.stops[n - 1].arrive || 1;
+    const frac = go.stops.map((s) => s.arrive / total);
+    const layout = line.loop ? loopLayout(go, frac, w, h) : straightLayout(frac, w, h);
+    this.rows = go.stops.map((s, i) => ({ name: s.name, x: layout.station(i).x, y: layout.station(i).y }));
+
+    // 路線（円か縦の線）
+    g.strokeStyle = line.color;
+    g.lineWidth = 6;
+    g.lineCap = 'round';
     g.beginPath();
-    g.moveTo(xn, TOP - 2);
-    g.lineTo(xn, h - BOTTOM + 2);
+    layout.path(g);
     g.stroke();
+
+    // 駅：白い丸と名前（近すぎる名前は間引く。選んだ駅は必ず出す）
+    g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
+    const placed: Array<[number, number, number, number]> = [];
+    const order = go.stops.map((_, i) => i).sort((a, b) => Number(go.stops[b].name === this.station) - Number(go.stops[a].name === this.station));
+    for (const i of order) {
+      // 環状の終点（始発の駅と同じ）は描かない
+      if (line.loop && i === n - 1) continue;
+      const p = layout.station(i);
+      const selected = go.stops[i].name === this.station;
+      g.fillStyle = selected ? '#ffd27a' : '#f4f1ea';
+      g.beginPath();
+      g.arc(p.x, p.y, selected ? 4.5 : 3, 0, Math.PI * 2);
+      g.fill();
+      const label = layout.label(i);
+      const tw = g.measureText(go.stops[i].name).width;
+      const x0 = label.align === 'right' ? label.x - tw : label.align === 'center' ? label.x - tw / 2 : label.x;
+      const box: [number, number, number, number] = [x0 - 1, label.y - 7, x0 + tw + 1, label.y + 7];
+      if (!selected && placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
+      placed.push(box);
+      g.textAlign = label.align;
+      g.textBaseline = 'middle';
+      g.fillStyle = selected ? '#ffd27a' : 'rgba(255,255,255,0.8)';
+      g.fillText(go.stops[i].name, label.x, label.y);
+    }
+
+    // 走っている列車：行きは外側（縦の線なら右）、帰りは内側（左）に、進む向きの三角で
     const running = line.routes.map(() => 0);
     line.routes.forEach((r, ri) => {
-      const ys = r.direction === 0 ? yOf : r.stops.map((_, k) => yOf[n - 1 - k] ?? 0);
+      const ys = r.direction === 0 ? frac : r.stops.map((_, k) => frac[n - 1 - k] ?? 0);
+      const side = r.direction === 0 ? 1 : -1;
       for (const d of r.departures) {
         const tau = now - d;
         if (tau < 0 || tau >= r.journey) continue;
         running[ri]++;
-        const y = positionY(r, tau, ys);
-        g.fillStyle = '#fff';
+        const f = positionY(r, tau, ys);
+        const p = layout.at(f, side * 11);
+        // 進む向き：少し先の位置との差
+        const q = layout.at(f + (r.direction === 0 ? 0.004 : -0.004), side * 11);
+        const a = Math.atan2(q.y - p.y, q.x - p.x);
+        g.save();
+        g.translate(p.x, p.y);
+        g.rotate(a);
+        g.fillStyle = r.direction === 0 ? '#ffffff' : '#ffd27a';
+        g.strokeStyle = 'rgba(0,0,0,0.6)';
+        g.lineWidth = 1;
         g.beginPath();
-        g.arc(xn, plotY(y), 3, 0, Math.PI * 2);
+        g.moveTo(6, 0);
+        g.lineTo(-4, -4.5);
+        g.lineTo(-4, 4.5);
+        g.closePath();
         g.fill();
+        g.stroke();
+        g.restore();
       }
     });
-    g.restore();
+
+    // 凡例
+    const back = line.routes.find((r) => r.direction === 1);
+    g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    const legend = (y: number, color: string, text: string) => {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(16, y + 6);
+      g.lineTo(8, y + 2);
+      g.lineTo(8, y + 10);
+      g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.85)';
+      g.fillText(text, 20, y);
+    };
+    legend(8, '#ffffff', `${line.loop ? '外側' : '右'}：${directionLabel(line, go)}`);
+    if (back) legend(24, '#ffd27a', `${line.loop ? '内側' : '左'}：${directionLabel(line, back)}`);
 
     this.showStatus(line, now, running);
     this.showDepartures(line, now);
@@ -281,7 +261,7 @@ export class DiagramPanel {
   /** 選んだ駅の次の発車（向きごとに 3 本） */
   private showDepartures(line: Line, now: number): void {
     if (!this.station) {
-      this.departures.innerHTML = '<span class="diagram-hint">左の駅名を押すと、その駅の次の発車を出します</span>';
+      this.departures.innerHTML = '<span class="diagram-hint">駅を押すと、その駅の次の発車を出します</span>';
       return;
     }
     const name = this.station;
@@ -301,13 +281,63 @@ export class DiagramPanel {
   }
 }
 
-/** 図の余白（px） */
-const LABEL_W = 104;
-const RIGHT = 10;
-const TOP = 22;
-const BOTTOM = 10;
+/** 図の形：駅 i の位置・名前の位置、道に沿った位置 f（0..1）から横へ offset px ずらした点、路線を描く */
+interface Layout {
+  station(i: number): { x: number; y: number };
+  label(i: number): { x: number; y: number; align: CanvasTextAlign };
+  at(f: number, offset: number): { x: number; y: number };
+  path(g: CanvasRenderingContext2D): void;
+}
 
-/** 始発の駅を出てから tau 秒後の、縦の位置（0..1） */
+/**
+ * 環状の路線：円。駅の角度は始発の駅からの時間に比例させ、回る向き（外回りは時計回り）と、始発の駅の角度は地図にそろえる。
+ * offset が正なら円の外側
+ */
+function loopLayout(go: Route, frac: number[], w: number, h: number): Layout {
+  const cx = w / 2;
+  const cy = h / 2 + 8;
+  // 駅名が板からはみ出さないよう、横は名前の幅（約 70px）を空ける
+  const R = Math.max(40, Math.min(w / 2 - 78, h / 2 - 52));
+  // 地図の中心から見た始発の駅の向き（画面は上が北）
+  const pts = frac.map((_, i) => go.stopLatLon(i));
+  const clat = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  const clon = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  const start = Math.atan2(-(pts[0][0] - clat), (pts[0][1] - clon) * Math.cos((clat * Math.PI) / 180));
+  // 外回り（時計回り）の路線は、画面でも時計回り（角度が増える向き）
+  const dir = go.loopName === '内回り' ? -1 : 1;
+  const angle = (f: number) => start + dir * f * Math.PI * 2;
+  const point = (f: number, r: number) => ({ x: cx + Math.cos(angle(f)) * r, y: cy + Math.sin(angle(f)) * r });
+  return {
+    station: (i) => point(frac[i], R),
+    label: (i) => {
+      const a = angle(frac[i]);
+      const p = point(frac[i], R + 24);
+      const c = Math.cos(a);
+      return { x: p.x, y: p.y, align: c > 0.3 ? 'left' : c < -0.3 ? 'right' : 'center' };
+    },
+    at: (f, offset) => point(f, R + offset),
+    path: (g) => g.arc(cx, cy, R, 0, Math.PI * 2),
+  };
+}
+
+/** ふつうの路線：縦の線（上が行きの始発の駅）。offset が正なら線の右 */
+function straightLayout(frac: number[], w: number, h: number): Layout {
+  const x = Math.round(w * 0.38);
+  const top = 48;
+  const bottom = h - 16;
+  const y = (f: number) => top + Math.min(1, Math.max(0, f)) * (bottom - top);
+  return {
+    station: (i) => ({ x, y: y(frac[i]) }),
+    label: (i) => ({ x: x + 22, y: y(frac[i]), align: 'left' }),
+    at: (f, offset) => ({ x: x + offset, y: y(f) }),
+    path: (g) => {
+      g.moveTo(x, top);
+      g.lineTo(x, bottom);
+    },
+  };
+}
+
+/** 始発の駅を出てから tau 秒後の、行きの向きの駅の並びでの位置（0..1） */
 function positionY(r: Route, tau: number, ys: number[]): number {
   const st = r.stops;
   for (let k = 0; k < st.length - 1; k++) {
