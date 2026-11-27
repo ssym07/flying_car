@@ -292,6 +292,11 @@ export const NIGHT_LIGHTS = {
    */
   street: { color: 0xffd6a0, glow: 0.32, spacing: 30, spread: 7, intersection: 0.22 },
   /**
+   * 高速道路：街灯（EXPRESSWAYS.lampSpacing ごとに左の壁高欄の上）の足元の路面を照らす明るさと、道に沿った広がり (m)。
+   * 灯具は昼は lampDay 倍、夜は lampNight 倍の明るさ
+   */
+  expressway: { glow: 0.75, spread: 13, lampDay: 1, lampNight: 2.6 },
+  /**
    * 時刻（時）ごとの、点いている窓の割合。間はまっすぐつなぐ。明るい間は空の明るさで消える（Atmosphere の night）。
    * 建物ごとにも 0.2〜1.5 倍のばらつきを付ける（真っ暗な建物・よく点いている建物がある）
    */

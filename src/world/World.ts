@@ -182,6 +182,7 @@ export class World {
     this.terrain.update(this.camera.position);
     this.atmosphere.update(this.camera, dt);
     setFacadeNight(this.atmosphere.night, timeOfDay.minutes);
+    this.expressways.setNight(this.atmosphere.night);
     this.skyTraffic.update(this.camera.position, dt);
     this.labels.update(this.camera, dt);
     this.expresswaySigns.update(this.camera, dt);

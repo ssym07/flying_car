@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { EXPRESSWAYS, WATER } from '../core/config';
+import { EXPRESSWAYS, NIGHT_LIGHTS, WATER } from '../core/config';
+import { night } from './facade';
 import { cutFloor, fillGaps, smoothGround } from './groundProfile';
 import { approxMeters, decode, MeshBuilder } from './RoadNetwork';
 import type { ChunkListener, Terrain } from './Terrain';
@@ -66,6 +67,7 @@ export class ExpresswayNetwork implements ChunkListener {
   private readonly rail = new THREE.MeshStandardMaterial({ color: EXPRESSWAYS.railColor, metalness: 0.4, roughness: 0.5 });
   private readonly zebraMaterial = createZebraMaterial();
   private readonly lampPole = new THREE.MeshStandardMaterial({ color: EXPRESSWAYS.lampPoleColor, roughness: 0.6 });
+  private readonly lampColor = new THREE.Color(EXPRESSWAYS.lampColor);
   private readonly lampHead = new THREE.MeshBasicMaterial({ color: EXPRESSWAYS.lampColor, toneMapped: false });
   private readonly nameTextures = new Map<string, { texture: THREE.CanvasTexture; aspect: number; users: number }>();
 
@@ -652,11 +654,18 @@ export class ExpresswayNetwork implements ChunkListener {
     }
   }
 
+  /** 夜の度合い（0..1、Atmosphere の night）で灯具の明るさを変える。毎フレーム呼ぶ */
+  setNight(night: number): void {
+    const n = NIGHT_LIGHTS.expressway;
+    this.lampHead.color.copy(this.lampColor).multiplyScalar(THREE.MathUtils.lerp(n.lampDay, n.lampNight, night));
+  }
+
   /** 車線数ごとの路面の材質（画像は共有） */
   private deckMaterial(lanes: number): THREE.MeshStandardMaterial {
     let m = this.deckMaterials.get(lanes);
     if (!m) {
       m = new THREE.MeshStandardMaterial({ map: createDeckTexture(lanes), roughness: 0.9, side: THREE.DoubleSide });
+      addDeckLights(m);
       this.deckMaterials.set(lanes, m);
     }
     return m;
@@ -689,6 +698,36 @@ interface SideKind {
   gap: number;
   /** join の時：重なる所で、自分の路面を隣の路面の縁で切る側か */
   yields: boolean;
+}
+
+/**
+ * 夜の路面の街灯の光：街灯は本線の左の壁高欄の上に lampSpacing m ごと（道の始まりからの距離が lampSpacing の倍数の所）。
+ * 路面の uv は u = 0 が左の縁、v = 道の始まりからの距離 / TEXTURE_LENGTH_M。灯具は道の内側へ張り出して高いので、幅いっぱいに照らす
+ */
+function addDeckLights(material: THREE.MeshStandardMaterial): void {
+  const n = NIGHT_LIGHTS.expressway;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.facadeNight = night.facadeNight;
+    shader.uniforms.deckLight = { value: new THREE.Color(EXPRESSWAYS.lampColor).multiplyScalar(n.glow) };
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float facadeNight;
+        uniform vec3 deckLight;`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        if (facadeNight > 0.001) {
+          float along = vMapUv.y * ${TEXTURE_LENGTH_M.toFixed(1)};
+          float d = (fract(along / ${EXPRESSWAYS.lampSpacing.toFixed(1)} + 0.5) - 0.5) * ${EXPRESSWAYS.lampSpacing.toFixed(1)};
+          float lit = exp(-d * d / ${(2 * n.spread * n.spread).toFixed(1)}) * (0.6 + 0.4 * exp(-pow(vMapUv.x / 0.7, 2.0)));
+          totalEmissiveRadiance += deckLight * lit * facadeNight;
+        }`,
+      );
+  };
+  material.customProgramCacheKey = () => 'expressway-deck';
 }
 
 /** 路面の画像：濃いアスファルトに白い外側線と、車線の境界の白い破線（幅 = 車線数 × 車線幅 + 路肩×2、長さ 12m） */
