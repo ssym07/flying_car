@@ -12,6 +12,8 @@ interface RouteData {
   k: string;
   d: 0 | 1;
   loop: 0 | 1;
+  /** 急行（乗り換えのある駅にだけ止まる。scripts/build-train-routes.mjs が足す） */
+  x?: 1;
   p: number[];
   st: Array<[string, number]>;
   g: Array<[number, number]>;
@@ -36,6 +38,9 @@ export class Route {
   piece = 0;
   /** 種類（train・subway・shinkansen・monorail・agt・tram） */
   readonly kindName: string;
+  /** 急行か（名前は「〇〇（急行）」、baseName は元の路線名） */
+  readonly express: boolean;
+  readonly baseName: string;
   /** 環状の路線の向き：上から見て時計回りなら「外回り」、反時計回りなら「内回り」 */
   loopName = '';
   /** 始発の駅を出る時刻（運行日の 0 時からの秒、早い順） */
@@ -68,16 +73,19 @@ export class Route {
     kinds: typeof TRAINS.kinds,
   ) {
     this.color = new THREE.Color(data.c);
-    const kind = kinds[data.k] ?? kinds.train;
-    // 路線ごとの編成（両数・1 両の長さ）
-    const formation = TRAINS.formations.find((f) => forRegion(f) && new RegExp(f.match).test(data.n));
-    this.kind = formation ? { ...kind, cars: formation.cars, length: formation.length ?? kind.length } : kind;
     this.loop = data.loop === 1;
     this.name = data.n;
     this.direction = data.d;
     this.kindName = data.k;
+    this.express = data.x === 1;
+    this.baseName = this.express ? data.n.replace(/（急行）$/, '') : data.n;
+    const kind = kinds[data.k] ?? kinds.train;
+    // 路線ごとの編成（両数・1 両の長さ）。急行は最高速度を TRAINS.expressSpeed 以上に
+    const formation = TRAINS.formations.find((f) => forRegion(f) && new RegExp(f.match).test(this.baseName));
+    const k2 = formation ? { ...kind, cars: formation.cars, length: formation.length ?? kind.length } : kind;
+    this.kind = this.express ? { ...k2, speed: Math.max(k2.speed, TRAINS.expressSpeed) } : k2;
     // 始発の駅を出る時刻：型の時間帯ごとの間隔で並べる。路線・向きごとに少しずらす（全部の路線が同時に出ないように）
-    const category = TRAINS.categories.find((c) => forRegion(c) && new RegExp(c.match).test(data.n));
+    const category = TRAINS.categories.find((c) => forRegion(c) && new RegExp(c.match).test(this.baseName));
     const profileName =
       category?.profile ?? (data.k === 'subway' ? 'subway' : data.k === 'train' ? 'privateLocal' : data.k === 'shinkansen' ? 'shinkansen' : 'small');
     const profile = TRAINS.profiles[profileName];
@@ -91,7 +99,7 @@ export class Route {
       this.departures.push(Math.round(t));
       t += gap * 60;
     }
-    const style = TRAINS.styles.find((st) => forRegion(st) && new RegExp(st.match).test(data.n)) ?? TRAINS.styles[TRAINS.styles.length - 1];
+    const style = TRAINS.styles.find((st) => forRegion(st) && new RegExp(st.match).test(this.baseName)) ?? TRAINS.styles[TRAINS.styles.length - 1];
     this.body = style.body ?? this.kind.body;
     this.bands = style.bands.slice(0, BAND_SLOTS).map(([c, at, h]) => ({ color: c === null ? this.color : new THREE.Color(c), at, h }));
     let lat = 0;
@@ -243,6 +251,8 @@ export class Trains {
   private readonly rearMaterial: THREE.MeshStandardMaterial;
   private readonly glowMaterial: THREE.MeshBasicMaterial;
   private readonly counts = { car: 0, band: [0, 0, 0], front: 0, rear: 0 };
+  /** 調べる用：このフレームの、範囲の中の列車・描いた列車・重なりで描かなかった列車・線路が無くて描かなかった列車 */
+  readonly stats = { inRange: 0, drawn: 0, overlapped: 0, noTrack: 0 };
   private readonly front = new THREE.Vector3();
   private readonly rear = new THREE.Vector3();
   private readonly center = new THREE.Vector3();
@@ -348,14 +358,19 @@ export class Trains {
     for (const r of this.routes) {
       r.prepare(this.terrain);
       if (r.journey <= 0) continue;
-      // 本線と支線をまとめる路線（TRAINS.diagramGroups）は、まとめた名前で 1 つに
-      const name = TRAINS.diagramGroups.find((gr) => forRegion(gr) && new RegExp(gr.match).test(r.name))?.name ?? r.name;
+      // 本線と支線をまとめる路線（TRAINS.diagramGroups）は、まとめた名前で 1 つに。急行は元の路線と同じ項目
+      const name = TRAINS.diagramGroups.find((gr) => forRegion(gr) && new RegExp(gr.match).test(r.baseName))?.name ?? r.baseName;
       let line = out.get(name);
       if (!line) {
-        line = { key: name, name, color: `#${r.color.getHexString()}`, loop: r.loop, group: groupOf(r), routes: [], pieces: [], pieceOf: new Map() };
+        line = { key: name, name, color: `#${r.color.getHexString()}`, loop: r.loop, group: groupOf(r), routes: [], pieces: [], extras: [], pieceOf: new Map() };
         out.set(name, line);
       }
       line.routes.push(r);
+      // 急行は区間を作らず、各停の区間の上に重ねて出す
+      if (r.express) {
+        line.extras.push(r);
+        continue;
+      }
       const pk = `${r.name}#${r.piece}`;
       let piece = line.pieceOf.get(pk);
       if (!piece) {
@@ -384,6 +399,7 @@ export class Trains {
     this.glowMaterial.opacity = TRAINS.glow * night;
     const c = this.counts;
     this.occupancy.clear();
+    this.stats.inRange = this.stats.drawn = this.stats.overlapped = this.stats.noTrack = 0;
     c.car = 0;
     c.band.fill(0);
     c.front = 0;
@@ -421,7 +437,16 @@ export class Trains {
             const pose = this.carPose(route, f, f - K.length, n);
             if (pose) poses.push(pose);
           }
-          if (poses.length === 0 || poses.some((p) => this.occupied(p, K.length))) continue;
+          this.stats.inRange++;
+          if (poses.length === 0) {
+            this.stats.noTrack++;
+            continue;
+          }
+          if (poses.some((p) => this.occupied(p, K.length))) {
+            this.stats.overlapped++;
+            continue;
+          }
+          this.stats.drawn++;
           for (const p of poses) this.occupy(p, K.length);
           // 前面は先頭の車両、後面は最後尾の車両が見えている時だけ（トンネルから出てくる途中の車両には付けない）
           for (const p of poses) {
@@ -577,6 +602,8 @@ export interface DiagramLine {
   routes: Route[];
   /** 本ごとの行き（駅の並びの順）と帰り */
   pieces: Array<{ go: Route; back: Route | null }>;
+  /** 急行（各停の区間の上に重ねる） */
+  extras: Route[];
 }
 
 /** 一覧の見出し：JR・地下鉄・私鉄・モノレール・新交通・路面電車 */

@@ -11,7 +11,7 @@
 //   ホームの真ん中を道に下ろした所を停車位置にする（列車の真ん中をそこに止める）。ホームが見つからない駅は、駅の点に近い道の点のまま
 // - 道の見つからない区間（地下・トンネル）は、駅と駅をまっすぐ結んで「見えない区間」にする（電車はそこを通る間は描かない）
 //
-// 出力: { lines: [{ n: 路線名, c: 色, k: 種類, d: 向き（0 = 駅の並びの順、1 = 逆）, loop: 環状なら 1, p: [緯度, 経度, ...（1e-6度、先頭以外は差分）],
+// 出力: { lines: [{ n: 路線名（急行は「〇〇（急行）」）, c: 色, k: 種類, d: 向き（0 = 駅の並びの順、1 = 逆）, loop: 環状なら 1, x: 急行なら 1, p: [緯度, 経度, ...（1e-6度、先頭以外は差分）],
 //         st: [[駅名, 点の番号], ...], g: [[見えない区間の始めの点, 終わりの点], ...] }] }
 // 種類：train（JR・私鉄）・express（特急・快速。北海道の SETTINGS.trainLines）・subway（地下鉄の地上区間）・shinkansen・monorail・agt（新交通）・tram（路面電車・小さな電車）
 import { readdir, readFile, writeFile } from 'node:fs/promises';
@@ -430,6 +430,19 @@ const extra = (SETTINGS.trainLines ?? []).map(({ name, colour, stops }) => {
   return [name, colour, ids];
 });
 
+// 急行：乗り換えのある駅（路線図で 2 路線以上が通る駅）と終点にだけ止まる列車を、私鉄と JR の主な路線に足す。
+// 各停と同じ道を通り、止まる駅だけを減らす。各停しか走らない路線・地下鉄・環状線・短い路線、特急を別に足す地域（北海道）は除く
+const linesAt = new Map();
+for (const [, , ids] of route.lines) for (const i of new Set(ids)) linesAt.set(i, (linesAt.get(i) ?? 0) + 1);
+const transfer = new Set(route.stations.map((_, i) => i).filter((i) => (linesAt.get(i) ?? 0) >= 2).map((i) => route.stations[i][0]));
+const LOCAL_ONLY = /山手線|中央・総武|総武緩行|大阪環状線|^(快速|特急)/;
+function expressOf(r, kind, loop) {
+  if (SETTINGS.trainLines || kind !== 'train' || loop || r.st.length < 10) return null;
+  const st = r.st.filter(([name], k) => k === 0 || k === r.st.length - 1 || transfer.has(name));
+  if (st.length < 3 || st.length > r.st.length * 0.7) return null;
+  return { ...r, st };
+}
+
 for (const [name, color, ids] of [...route.lines, ...extra]) {
   if (EXPRESS.test(name)) continue;
   const isMine = matcher(name);
@@ -442,6 +455,12 @@ for (const [name, color, ids] of [...route.lines, ...extra]) {
   const kind = kindOf(name, go.monorail);
   for (const [dir, r] of [[0, go], [1, back]]) {
     out.push({ n: name, c: color, k: kind, d: dir, loop: loop ? 1 : 0, p: encode(r.pts), st: r.st, g: r.gaps });
+  }
+  if (!LOCAL_ONLY.test(name)) {
+    for (const [dir, r] of [[0, go], [1, back]]) {
+      const ex = expressOf(r, kind, loop);
+      if (ex) out.push({ n: `${name}（急行）`, c: color, k: kind, d: dir, loop: 0, x: 1, p: encode(ex.pts), st: ex.st, g: ex.gaps });
+    }
   }
 }
 

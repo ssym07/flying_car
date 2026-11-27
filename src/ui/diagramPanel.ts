@@ -265,6 +265,48 @@ export class DiagramPanel {
       }
     });
 
+    // 急行：各停の区間の駅の位置に合わせ、白い縁で描く
+    for (const r of line.extras) {
+      const pi = P.findIndex((p) => {
+        const names = p.go.stops.map((st) => st.name);
+        return names.includes(r.stops[0].name) && names.includes(r.stops[r.stops.length - 1].name);
+      });
+      if (pi < 0) continue;
+      const goNames = P[pi].go.stops.map((st) => st.name);
+      const ys = r.stops.map((st) => pieceFrac[pi][goNames.indexOf(st.name)] ?? 0);
+      const side = r.direction === 0 ? 1 : -1;
+      for (const d of r.departures) {
+        const tau = now - d;
+        if (tau < 0 || tau >= r.journey) continue;
+        running[r.direction]++;
+        const { f, stopped } = positionY(r, tau, ys);
+        const p = layout.at(f, side * 11);
+        g.strokeStyle = '#ffffff';
+        g.lineWidth = 1.6;
+        if (stopped) {
+          g.fillStyle = STOPPED;
+          g.beginPath();
+          g.arc(p.x, p.y, 5, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+          continue;
+        }
+        const q = layout.at(f + (r.direction === 0 ? 0.004 : -0.004), side * 11);
+        g.save();
+        g.translate(p.x, p.y);
+        g.rotate(Math.atan2(q.y - p.y, q.x - p.x));
+        g.fillStyle = MOVING;
+        g.beginPath();
+        g.moveTo(8, 0);
+        g.lineTo(-5, -5.5);
+        g.lineTo(-5, 5.5);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.restore();
+      }
+    }
+
     // 凡例：色（走っている・止まっている）と、向き（外側・内側、右・左）
     g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
     g.textAlign = 'left';
@@ -283,6 +325,13 @@ export class DiagramPanel {
     g.fill();
     g.fillStyle = 'rgba(255,255,255,0.85)';
     g.fillText('駅に止まっている', 100, 8);
+    if (line.extras.length > 0) {
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = 1.6;
+      g.strokeRect(196, 9, 10, 10);
+      g.fillStyle = 'rgba(255,255,255,0.85)';
+      g.fillText('白い縁：急行', 212, 8);
+    }
     g.fillStyle = 'rgba(255,255,255,0.7)';
     g.fillText(`${line.loop ? '外側' : '右'}：${directionName(line, 0)}`, 8, 26);
     if (P.some((p) => p.back)) g.fillText(`${line.loop ? '内側' : '左'}：${directionName(line, 1)}`, 8, 41);
@@ -326,7 +375,7 @@ export class DiagramPanel {
         if (t >= now) times.push(t);
         if (times.length >= 3) break;
       }
-      const label = directionLabel(line, r, k);
+      const label = `${r.express ? '急行 ' : ''}${directionLabel(line, r, k)}`;
       return `<div><b>${escapeHtml(label)}</b>　${times.length ? times.map((t) => `${clock(t)}（${Math.max(0, Math.ceil((t - now) / 60))} 分後）`).join('　') : '今日はもうありません'}</div>`;
     });
     this.departures.innerHTML = `<div class="diagram-station">${escapeHtml(name)} の次の発車</div>${rows.filter(Boolean).join('')}`;
