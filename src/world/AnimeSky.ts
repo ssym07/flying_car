@@ -92,15 +92,17 @@ export class AnimeSky extends THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMater
             float sunAmount = max(dot(dir, sun), 0.0);
             col += glowColor * (pow(sunAmount, 12.0) * 0.6 + pow(sunAmount, 400.0) * 1.5);
 
-            // 星：夕方は天頂付近にまばらに、夜は地平線の近くまで多く（starAmount。夕焼けの空で 0.6）
-            float starLow = mix(0.35, 0.06, clamp(starAmount - 0.6, 0.0, 1.0));
+            // 星：夕方は天頂付近にまばらに、夜は少し低い所まで、少しだけ増やす（starAmount。夕焼けの空で 0.6、夜で 1.6）。
+            // 街の明かりで空が明るいので、数は多くしない
+            float night = clamp(starAmount - 0.6, 0.0, 1.0);
+            float starLow = mix(0.35, 0.18, night);
             if (starAmount > 0.0 && h > starLow) {
               vec2 sp = dir.xz / (h + 0.2) * 220.0;
               float rnd = hash(floor(sp));
-              float star = step(mix(0.9975, 0.993, clamp(starAmount - 0.6, 0.0, 1.0)), rnd);
-              // 明るさにばらつき
-              star *= 0.5 + 0.5 * hash(floor(sp) + 7.1);
-              col += vec3(star) * starAmount * smoothstep(starLow, starLow + 0.3, h);
+              float star = step(mix(0.9975, 0.997, night), rnd);
+              // 明るさにばらつき（明るい星は少なく）
+              star *= 0.35 + 0.65 * pow(hash(floor(sp) + 7.1), 2.0);
+              col += vec3(star) * min(starAmount, 0.6 + 0.3 * night) * smoothstep(starLow, starLow + 0.3, h);
             }
             // 月（夜だけ）：白い円と、まわりのぼんやりした光
             if (starAmount > 0.6 && moonDirection.y > -0.05) {
