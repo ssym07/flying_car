@@ -824,17 +824,17 @@ export const STATION_ROOFS = {
 /** 線路（OpenStreetMap の線路。scripts/fetch-railways.mjs → build-rail-heights.mjs で作る） */
 /**
  * 走る電車（src/world/Trains.ts。道は scripts/build-train-routes.mjs の train-routes.json）。
- * 種類ごとに、車両の長さ・幅・高さ (m)、両数、最高速度 (m/s)、運転間隔（秒、それぞれの向き）
+ * 種類ごとに、車両の長さ・幅・高さ (m)、両数、最高速度 (m/s)、車体の色
  */
 export const TRAINS = {
   kinds: {
-    train: { length: 20, width: 2.95, height: 3.6, cars: 10, speed: 25, headway: 300, body: 0xf2f4f6 },
-    subway: { length: 20, width: 2.8, height: 3.5, cars: 10, speed: 22, headway: 300, body: 0xf2f4f6 },
-    shinkansen: { length: 25, width: 3.38, height: 3.6, cars: 16, speed: 45, headway: 600, body: 0xf2f3f0 },
-    monorail: { length: 15, width: 3.0, height: 3.6, cars: 6, speed: 20, headway: 360, body: 0xe9ecee },
-    agt: { length: 9, width: 2.4, height: 3.2, cars: 6, speed: 16, headway: 420, body: 0xeef0f2 },
-    tram: { length: 14, width: 2.4, height: 3.4, cars: 2, speed: 11, headway: 480, body: 0xe8e6df },
-  } as Record<string, { length: number; width: number; height: number; cars: number; speed: number; headway: number; body: number }>,
+    train: { length: 20, width: 2.95, height: 3.6, cars: 10, speed: 25, body: 0xf2f4f6 },
+    subway: { length: 20, width: 2.8, height: 3.5, cars: 10, speed: 22, body: 0xf2f4f6 },
+    shinkansen: { length: 25, width: 3.38, height: 3.6, cars: 16, speed: 45, body: 0xf2f3f0 },
+    monorail: { length: 15, width: 3.0, height: 3.6, cars: 6, speed: 20, body: 0xe9ecee },
+    agt: { length: 9, width: 2.4, height: 3.2, cars: 6, speed: 16, body: 0xeef0f2 },
+    tram: { length: 14, width: 2.4, height: 3.4, cars: 2, speed: 11, body: 0xe8e6df },
+  } as Record<string, { length: number; width: number; height: number; cars: number; speed: number; body: number }>,
   /**
    * 路線ごとの編成（両数と 1 両の長さ m）。名前が match に当てはまる最初のもの。無ければ種類（kinds）の値。
    * 普段走っているいちばん多い編成（湘南新宿ラインなどの 15 両は基本 10 両 + 付属 5 両）
@@ -878,18 +878,46 @@ export const TRAINS = {
     { match: '世田谷線', cars: 2, length: 12.5 },
     { match: '新幹線', cars: 17 },
   ] as Array<{ match: string; cars: number; length?: number }>,
-  /** JR の路線（名前が JR で始まる・山手線など）は運転間隔をこの倍に（本数が多い） */
-  jrHeadway: 0.8,
-  /** 加速・減速 (m/s²) と、駅に止まる時間（秒） */
+  /** 加速・減速 (m/s²) と、駅に止まる時間（秒。大きな駅は majorDwell） */
   accel: 0.8,
-  dwell: 25,
+  dwell: 20,
+  majorDwell: 45,
+  /** 乗り降りの多い大きな駅 */
+  majorStations: ['東京', '新宿', '渋谷', '池袋', '品川', '上野', '秋葉原', '横浜', '大宮', '北千住', '新橋', '大手町', '表参道', '飯田橋', '御茶ノ水', '高田馬場', '川崎', '武蔵小杉', '船橋', '立川'],
+  /**
+   * ダイヤ（各駅停車だけ）。路線を型に分け、型ごとに時間帯の運転間隔（分）を決める：[この時刻（時）から, 間隔]。
+   * 最初の行の時刻が始発、間隔 0 の行の時刻で終わり（その後は出ない）。24 時より後は次の日の 0 時台
+   */
+  profiles: {
+    // 山手線・京浜東北線・中央線・中央総武緩行線（朝夕のラッシュは 2〜3 分おき）
+    jrCore: [[4.5, 10], [5, 7], [6, 4], [7, 2.5], [9, 4], [10, 5], [17, 3.5], [19, 4], [21, 5], [22, 6], [23, 8], [24, 10], [24.75, 0]],
+    // 湘南新宿・上野東京ライン・横須賀線・常磐線（遠くまで行く路線）
+    jrLong: [[4.6, 20], [5.5, 10], [6.5, 6], [9, 10], [17, 8], [18, 6], [20, 10], [22, 12], [23, 15], [24.3, 0]],
+    // 南武線・横浜線・武蔵野線・京葉線・埼京線・青梅線など
+    jrBranch: [[4.7, 15], [5.5, 9], [6.5, 5], [7, 4], [9, 7], [10, 10], [16, 8], [17, 6], [19, 7], [20, 9], [22, 12], [23, 15], [24.5, 0]],
+    // 地下鉄（銀座線・丸ノ内線はラッシュに 2 分おき）
+    subway: [[5, 8], [6, 5], [7, 2.5], [9, 4], [10, 5], [17, 4], [19, 4.5], [21, 6], [22, 7], [23, 8], [24.5, 0]],
+    subwayBusy: [[5, 6], [6, 4], [7, 2], [9, 3], [10, 4], [17, 3], [19, 3.5], [21, 5], [22, 6], [23, 7], [24.5, 0]],
+    // 私鉄の各駅停車
+    privateLocal: [[4.8, 12], [5.5, 8], [6, 6], [7, 4], [9, 6], [10, 10], [16, 8], [17, 6], [19, 6], [20, 8], [22, 10], [23, 12], [24.5, 0]],
+    // モノレール・新交通・路面電車・短い支線
+    small: [[5.2, 12], [6, 8], [7, 5], [9, 7], [10, 8], [17, 6], [19, 7], [21, 10], [22, 12], [23.8, 0]],
+    shinkansen: [[6, 15], [7, 8], [9, 10], [17, 8], [20, 12], [22.5, 0]],
+  } as Record<string, Array<[number, number]>>,
+  /** 路線の型：名前が match に当てはまる最初のもの。どれにも当てはまらなければ種類で決める（地下鉄 subway・ほか small・私鉄 privateLocal） */
+  categories: [
+    { match: '山手線|京浜東北|^JR中央線|中央・総武', profile: 'jrCore' },
+    { match: '湘南新宿|上野東京|東海道|宇都宮|高崎|東北本線|横須賀|総武快速|常磐', profile: 'jrLong' },
+    { match: '^JR|埼京|川越|相模線|京葉', profile: 'jrBranch' },
+    { match: '銀座線|丸ノ内線', profile: 'subwayBusy' },
+    { match: '新幹線', profile: 'shinkansen' },
+    { match: '世田谷線|江ノ島電鉄|こどもの国|大師線|亀戸線|流山|山口線|狭山線|西武園線|競馬場線|金町線|多摩湖線|国分寺線|西武多摩川線|鶴見', profile: 'small' },
+  ] as Array<{ match: string; profile: string }>,
   /** 車両の間のすき間 (m)、道床の上面から車体の床までの高さ (m) */
   gap: 0.6,
   floor: 0.75,
   /** カメラからこの距離 (m) までの電車だけ描く */
   range: 3000,
-  /** 夜中に電車の走らない時間（時。開始〜終了） */
-  closed: [1, 4.75] as [number, number],
   /** 夜の窓の明るさ */
   windowGlow: 1.1,
   /** 前照灯の明るさ（昼・夜）と、夜に前へにじむ光の濃さ */

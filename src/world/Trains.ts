@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TRAINS } from '../core/config';
 import { regionUrl } from '../core/region';
+import { timeOfDay } from '../core/timeOfDay';
 import type { RailNetwork } from './RailNetwork';
 import type { Terrain } from './Terrain';
 
@@ -20,14 +21,21 @@ type Kind = (typeof TRAINS.kinds)[string];
 
 /**
  * 1 路線の 1 つの向き。道（緯度経度）はローカル座標に直して、道に沿った距離 s で位置を引く。
- * 時刻表：始発の駅を headway 秒ごとに出て、駅の間は加速・最高速度・減速で走り、駅に dwell 秒止まる
+ * 時刻表（各駅停車だけ）：始発の駅を、路線の型（TRAINS.categories）の時間帯ごとの間隔（TRAINS.profiles）で出て、
+ * 駅の間は加速・最高速度・減速で走り、駅に dwell 秒（大きな駅は majorDwell 秒）止まる。始発・終電も型で決まる。
+ * 時刻は「運行日の 0 時からの秒」（4 時より前は前の日の 24 時台として数える）
  */
 class Route {
   readonly color: THREE.Color;
   readonly kind: Kind;
   readonly loop: boolean;
-  readonly headway: number;
-  readonly offset: number;
+  readonly name: string;
+  /** 向き（0 = 路線図の駅の並びの順、1 = 逆） */
+  readonly direction: 0 | 1;
+  /** 始発の駅を出る時刻（運行日の 0 時からの秒、早い順） */
+  readonly departures: number[] = [];
+  /** 駅の名前と、始発の駅を出てから着く・出るまでの秒 */
+  readonly stops: Array<{ name: string; arrive: number; depart: number }> = [];
   /** 帯（色・下の端・高さ。車体の高さに対する割合） */
   readonly bands: Array<{ color: THREE.Color; at: number; h: number }>;
   private readonly lat: number[] = [];
@@ -57,9 +65,23 @@ class Route {
     const formation = TRAINS.formations.find((f) => new RegExp(f.match).test(data.n));
     this.kind = formation ? { ...kind, cars: formation.cars, length: formation.length ?? kind.length } : kind;
     this.loop = data.loop === 1;
-    const jr = /^JR|山手線|上野東京ライン|湘南新宿ライン/.test(data.n);
-    this.headway = this.kind.headway * (jr ? TRAINS.jrHeadway : 1);
-    this.offset = hash(`${data.n}/${data.d}`) * this.headway;
+    this.name = data.n;
+    this.direction = data.d;
+    // 始発の駅を出る時刻：型の時間帯ごとの間隔で並べる。路線・向きごとに少しずらす（全部の路線が同時に出ないように）
+    const category = TRAINS.categories.find((c) => new RegExp(c.match).test(data.n));
+    const profileName =
+      category?.profile ?? (data.k === 'subway' ? 'subway' : data.k === 'train' ? 'privateLocal' : data.k === 'shinkansen' ? 'shinkansen' : 'small');
+    const profile = TRAINS.profiles[profileName];
+    const shift = hash(`${data.n}/${data.d}`);
+    let t = profile[0][0] * 3600 + shift * profile[0][1] * 60;
+    for (;;) {
+      const h = t / 3600;
+      let gap = 0;
+      for (const [from, every] of profile) if (h >= from) gap = every;
+      if (gap <= 0) break;
+      this.departures.push(Math.round(t));
+      t += gap * 60;
+    }
     const style = TRAINS.styles.find((st) => new RegExp(st.match).test(data.n)) ?? TRAINS.styles[TRAINS.styles.length - 1];
     this.bands = style.bands.slice(0, BAND_SLOTS).map(([c, at, h]) => ({ color: c === null ? this.color : new THREE.Color(c), at, h }));
     let lat = 0;
@@ -93,9 +115,12 @@ class Route {
     this.stopS = this.data.st.map(([, i]) => s[i]);
     this.gapS = this.data.g.map(([a, b]) => [s[a], s[b]]);
 
-    // 時刻表
+    // 駅の間の走る時間と、駅に止まる時間
     const a = TRAINS.accel;
+    const names = this.data.st.map(([name]) => name);
+    const dwellAt = (name: string) => (TRAINS.majorStations.includes(name) ? TRAINS.majorDwell : TRAINS.dwell);
     let t = 0;
+    this.stops.push({ name: names[0], arrive: 0, depart: 0 });
     for (let i = 1; i < this.stopS.length; i++) {
       const L = Math.max(1, this.stopS[i] - this.stopS[i - 1]);
       const V = this.kind.speed;
@@ -104,7 +129,11 @@ class Route {
       this.run.push(r);
       this.segLen.push(L);
       this.segV.push(V);
-      t += r + TRAINS.dwell;
+      const arrive = t + r;
+      // 終点では止まらない（そこで列車は消える）
+      const dwell = i === this.stopS.length - 1 ? 0 : dwellAt(names[i]);
+      this.stops.push({ name: names[i], arrive, depart: arrive + dwell });
+      t = arrive + dwell;
     }
     this.journey = t;
   }
@@ -164,8 +193,8 @@ class Route {
 /**
  * 線路の上を走る電車。路線ごとの道（public/train-routes.json）に沿って、時刻表どおりの位置に車両を置く。
  * 車両は線路の高さ（RailNetwork.trackHeightAt）に乗せ、線路の無い所（トンネル・地下・まだ読んでいないタイル）は描かない。
- * 描くのはカメラから TRAINS.range m までの電車だけ。夜は窓が光り、夜中（TRAINS.closed）は走らない。
- * 時刻表の時計はゲームの時刻とは別に、実際の時間で進む（時刻を止めていても電車は走る）
+ * 描くのはカメラから TRAINS.range m までの電車だけ。夜は窓が光り、始発の前・終電の後は走らない。
+ * 時刻表はゲームの時刻に合わせる。時刻を止めている間も、電車はその時刻から実際の時間で走り続ける
  *
  * 見た目は首都圏の JR の通勤電車（E233・E231・E235 系）に寄せる：ステンレスの銀色の車体（屋根の肩が丸い）、
  * 黒い枠の窓と 4 つの扉、路線ごとの色の帯（TRAINS.styles）、屋根の冷房装置と床下の機器。先頭車の前面は大きな黒いガラスと
@@ -174,7 +203,8 @@ class Route {
 export class Trains {
   readonly group = new THREE.Group();
   private routes: Route[] = [];
-  private clock = 0;
+  /** 時刻表の時計（日本時間の 0 時からの秒） */
+  private clock = timeOfDay.minutes * 60;
   /** 車両の部品：車体・床下の機器・屋根の冷房装置・帯（BAND_SLOTS 本）・前面（先頭）・後面（最後尾）・前照灯のにじみ */
   private readonly bodies: THREE.InstancedMesh;
   private readonly unders: THREE.InstancedMesh;
@@ -256,6 +286,9 @@ export class Trains {
     // 影を落とさない・受けない（数が多く、動くので）
     for (const mesh of this.group.children) mesh.userData.noShadow = true;
 
+    // ゲームの時刻が変わったら（スライダー・キー・時間を流している間）、時刻表の時計を合わせる
+    timeOfDay.onChange((m) => (this.clock = m * 60));
+
     fetch(regionUrl('train-routes.json'))
       .then((res) => (res.ok && res.headers.get('content-type')?.includes('json') ? res.json() : null))
       .then((data: { lines: RouteData[] } | null) => {
@@ -270,7 +303,6 @@ export class Trains {
    * @param minutes ゲームの時刻（日本時間の 0 時からの分）。夜中は走らない
    */
   update(camera: THREE.Camera, dt: number, night: number, minutes: number): void {
-    this.clock += Math.min(dt, 0.25);
     this.bodyMaterial.emissiveIntensity = night * TRAINS.windowGlow;
     const lamp = THREE.MathUtils.lerp(TRAINS.headlightDay, TRAINS.headlightNight, night);
     this.frontMaterial.emissiveIntensity = lamp;
@@ -281,9 +313,11 @@ export class Trains {
     c.band.fill(0);
     c.front = 0;
     c.rear = 0;
-    const hour = minutes / 60;
-    const [c0, c1] = TRAINS.closed;
-    if (this.routes.length > 0 && !(hour >= c0 && hour < c1)) {
+    void minutes;
+    // 時刻表の時計：ゲームの時刻を止めている間も、実際の時間で進める（時刻を変えると、その時刻に合わせ直す）
+    if (!timeOfDay.playing) this.clock = (this.clock + Math.min(dt, 0.25)) % 86400;
+    const now = serviceTime(this.clock);
+    if (this.routes.length > 0) {
       const cam = camera.position;
       const range2 = TRAINS.range * TRAINS.range;
       for (const route of this.routes) {
@@ -291,13 +325,11 @@ export class Trains {
         if (route.journey <= 0) continue;
         const K = route.kind;
         const trainLength = K.cars * K.length + (K.cars - 1) * TRAINS.gap;
-        // いま走っている列車：出た時刻 = offset + k × headway で、終点に着くまで（環状は 1 周して始発の駅に戻るまで。
+        // いま走っている列車：始発の駅を出てから、終点に着くまで（環状は 1 周して始発の駅に戻るまで。
         // 戻った所で次の列車と入れ替わるので、ずっと回っているように見える）
-        const elapsed = this.clock - route.offset;
-        const first = Math.ceil((elapsed - route.journey) / route.headway);
-        const last = Math.floor(elapsed / route.headway);
-        for (let k = Math.max(first, last - 200); k <= last; k++) {
-          const tau = elapsed - k * route.headway;
+        const deps = route.departures;
+        for (let k = lowerBound(deps, now - route.journey); k < deps.length && deps[k] <= now; k++) {
+          const tau = now - deps[k];
           if (tau < 0 || tau >= route.journey) continue;
           const center = route.centerAt(tau);
           if (!route.pointAt(center, this.front)) continue;
@@ -396,6 +428,23 @@ export class Trains {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+
+/** 日本時間の 0 時からの秒 → 運行日の秒（4 時より前は前の日の 24 時台） */
+export function serviceTime(seconds: number): number {
+  return seconds < 4 * 3600 ? seconds + 86400 : seconds;
+}
+
+/** 並んだ数の中で、value 以上の最初の番号 */
+function lowerBound(list: number[], value: number): number {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid] < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 /** 帯の本数の上限 */
 const BAND_SLOTS = 3;
 
