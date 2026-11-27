@@ -822,6 +822,38 @@ export const STATION_ROOFS = {
 };
 
 /** 線路（OpenStreetMap の線路。scripts/fetch-railways.mjs → build-rail-heights.mjs で作る） */
+/**
+ * 走る電車（src/world/Trains.ts。道は scripts/build-train-routes.mjs の train-routes.json）。
+ * 種類ごとに、車両の長さ・幅・高さ (m)、両数、最高速度 (m/s)、運転間隔（秒、それぞれの向き）
+ */
+export const TRAINS = {
+  kinds: {
+    train: { length: 20, width: 2.95, height: 3.6, cars: 10, speed: 25, headway: 300, body: 0xc9ced3 },
+    subway: { length: 20, width: 2.8, height: 3.5, cars: 10, speed: 22, headway: 300, body: 0xc9ced3 },
+    shinkansen: { length: 25, width: 3.38, height: 3.6, cars: 16, speed: 45, headway: 600, body: 0xf2f3f0 },
+    monorail: { length: 15, width: 3.0, height: 3.6, cars: 6, speed: 20, headway: 360, body: 0xe9ecee },
+    agt: { length: 9, width: 2.4, height: 3.2, cars: 6, speed: 16, headway: 420, body: 0xeef0f2 },
+    tram: { length: 14, width: 2.4, height: 3.4, cars: 2, speed: 11, headway: 480, body: 0xe8e6df },
+  } as Record<string, { length: number; width: number; height: number; cars: number; speed: number; headway: number; body: number }>,
+  /** JR の路線（名前が JR で始まる・山手線など）は運転間隔をこの倍に（本数が多い） */
+  jrHeadway: 0.8,
+  /** 加速・減速 (m/s²) と、駅に止まる時間（秒） */
+  accel: 0.8,
+  dwell: 25,
+  /** 車両の間のすき間 (m)、道床の上面から車体の床までの高さ (m) */
+  gap: 0.6,
+  floor: 0.75,
+  /** カメラからこの距離 (m) までの電車だけ描く */
+  range: 3000,
+  /** 夜中に電車の走らない時間（時。開始〜終了） */
+  closed: [1, 4.75] as [number, number],
+  /** 夜の窓の明るさ */
+  windowGlow: 1.1,
+};
+
+/** 夜の駅の明かり（src/world/StationRoofs.ts）：光の色と、ホームの床・屋根の縁の帯・柱・屋根の明るさ */
+export const STATION_LIGHTS = { color: 0xf4f1ea, platform: 0.55, fascia: 0.35, pillar: 0.25, roof: 0.07 };
+
 export const RAILWAYS = {
   tilePath: `${REGION.dataDir}rail-tracks/15/{x}/{y}.json`,
   /** 道床（砂利を敷いた部分）の幅 (m) */

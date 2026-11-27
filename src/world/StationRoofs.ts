@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RAILWAYS, STATION_ROOFS } from '../core/config';
+import { RAILWAYS, STATION_LIGHTS, STATION_ROOFS } from '../core/config';
 import { stationGround } from './groundProfile';
 import { createSidewalkMaterial } from './roadTemplates';
 import type { ChunkListener, Terrain } from './Terrain';
@@ -51,6 +51,21 @@ export class StationRoofs implements ChunkListener {
 
   constructor(private readonly terrain: Terrain) {
     terrain.addListener(this);
+    // 夜の明かり：ホームの床と点字ブロックは照明で明るく、屋根の縁の帯と柱は少し、屋根は上から形が分かるくらい
+    for (const m of [this.platformMaterial, this.tactileMaterial, this.platformEdgeMaterial]) {
+      m.emissive.set(STATION_LIGHTS.color);
+      if (m.map) m.emissiveMap = m.map;
+    }
+    for (const m of [this.fasciaMaterial, this.pillarMaterial, this.roofMaterial]) m.emissive.set(STATION_LIGHTS.color);
+  }
+
+  /** 夜の度合い（0..1）で駅の明かりを変える。毎フレーム呼ぶ */
+  setNight(night: number): void {
+    const L = STATION_LIGHTS;
+    for (const m of [this.platformMaterial, this.tactileMaterial, this.platformEdgeMaterial]) m.emissiveIntensity = night * L.platform;
+    this.fasciaMaterial.emissiveIntensity = night * L.fascia;
+    this.pillarMaterial.emissiveIntensity = night * L.pillar;
+    this.roofMaterial.emissiveIntensity = night * L.roof;
   }
 
   onChunkAdded(x: number, y: number): void {

@@ -1441,17 +1441,36 @@ function plazaMaterials() {
 
 let shared: Record<'brick' | 'roof' | 'trim' | 'canopy', THREE.Material> | null = null;
 function materials() {
-  shared ??= {
-    brick: createBrickMaterial(),
-    roof: new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.55, metalness: 0.2, side: THREE.DoubleSide }),
-    trim: new THREE.MeshStandardMaterial({ color: 0xd4cdbe, roughness: 0.8, side: THREE.DoubleSide }),
-    canopy: new THREE.MeshStandardMaterial({ color: 0xc9ced3, roughness: 0.4, metalness: 0.5, side: THREE.DoubleSide }),
-  };
+  if (!shared) {
+    shared = {
+      brick: createBrickMaterial(),
+      roof: new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.55, metalness: 0.2, side: THREE.DoubleSide }),
+      trim: new THREE.MeshStandardMaterial({ color: 0xd4cdbe, roughness: 0.8, side: THREE.DoubleSide }),
+      canopy: new THREE.MeshStandardMaterial({ color: 0xc9ced3, roughness: 0.4, metalness: 0.5, side: THREE.DoubleSide }),
+    };
+    // 夜は丸の内駅舎をライトアップする（れんがと白い帯を暖かい色で照らす）
+    lightUp(shared.brick as THREE.MeshStandardMaterial, 0.55);
+    lightUp(shared.trim as THREE.MeshStandardMaterial, 0.45);
+  }
   return shared;
+}
+
+/** 夜にライトアップする材質と、その明るさ（Landmarks.setNight が夜の度合いを掛ける） */
+const lightUps: Array<[THREE.MeshStandardMaterial, number]> = [];
+function lightUp(material: THREE.MeshStandardMaterial, strength: number): void {
+  material.emissive.set(0xffd2a0);
+  if (material.map) material.emissiveMap = material.map;
+  material.emissiveIntensity = 0;
+  lightUps.push([material, strength]);
 }
 
 export class Landmarks implements ChunkListener {
   readonly group = new THREE.Group();
+
+  /** 夜の度合い（0..1）でライトアップの明るさを変える。毎フレーム呼ぶ */
+  setNight(night: number): void {
+    for (const [m, k] of lightUps) m.emissiveIntensity = night * k;
+  }
   private readonly built = new Map<Landmark, { chunk: string; object: THREE.Group }>();
 
   constructor(private readonly terrain: Terrain) {

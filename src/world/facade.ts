@@ -220,10 +220,11 @@ export function createFacadeMaterial(): THREE.MeshStandardMaterial {
               vec3 cell = vec3(floor(cont.x) * 8.0 + index, floor(cont.y), building);
               // 建物ごとの点き方のばらつき（0.2〜1.5 倍）
               float busy = 0.2 + 1.3 * facadeHash(vec3(building, 3.7, 1.3));
-              float on = step(facadeHash(cell), facadeLitRatio * busy);
+              // 駅の建物は遅くまで、ほとんどの窓が点いている
+              float on = step(facadeHash(cell), station ? 0.85 : facadeLitRatio * busy);
               // 低い建物（テンプレートの行が大きい）ほど暖色が多い。高さ ${TALL_M}m 以上（テンプレートの番号の小数が 0.5）は
               // 白を基本にして暖色を少しだけ混ぜ、明るさのばらつきも小さくする（色と明るさがばらばらだと目がちかちかする）
-              bool tall = fract(vFacade.x) > 0.25;
+              bool tall = fract(vFacade.x) > 0.25 || station;
               float warmShare = tall ? 0.08 : mix(0.35, 0.8, clamp(floor(vFacade.x) / ${(WALL_LIST.length - 1).toFixed(1)}, 0.0, 1.0));
               vec3 tone = facadeHash(cell + 17.0) < warmShare ? facadeWarm : facadeCool;
               // 窓ごとに明るさを少し変える

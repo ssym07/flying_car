@@ -220,7 +220,7 @@ MVP は **PLATEAU の1区画**で進める。
 | 3 | `fetch-railways` → `fetch-expressways` → `fetch-station-roofs` | 鉄道・高速道路・駅の屋根 |
 | 4 | `build-rail-heights` → `build-station-footprints` → `build-platforms` → `build-expressways` | 線路の高さ・ホーム・高速道路の形 |
 | 5 | `build-local-buildings 市区町村コード... --clip`（PLATEAU）／`build-gsi-buildings コード 名前 都道府県`（国土地理院。線路の上の建物を除くので 4 の後） → `build-building-pads`（引数なしでその地域の全部を作り直す） | 建物と敷地 |
-| 6 | `fetch-airports` →（PLATEAU の空港なら `build-airport-fixed-links 区コード`）→ `build-station-cutouts` → `build-sky-lanes` → `fetch-route-map` → `build-route-map-sea` | 空港・駅の切り抜き（5 の後）・空路・路線図 |
+| 6 | `fetch-airports` →（PLATEAU の空港なら `build-airport-fixed-links 区コード`）→ `build-station-cutouts` → `build-sky-lanes` → `fetch-route-map` → `build-route-map-sea` → `build-train-routes` | 空港・駅の切り抜き（5 の後）・空路・路線図・走る電車の道（路線図の駅の並びを線路のキャッシュの上でつなぐ） |
 | 7 | `fetch-landuse`・`fetch-parks`（2 と同じく長方形ごと）→ `add-beaches` → `fetch-airports` | 地面の種類・公園・砂浜・空港の地面 |
 | 8 | `fetch-station-english` → `build-expressway-signs` → `fetch-expressway-junctions` → `fetch-river-names` | 方面看板・地図の JCT／IC と川の名前 |
 | 9 | `fetch-schools` → `fetch-park-names` → `fetch-museums` → `build-municipalities` | 学校・公園・ミュージアムの名前、エントランスの地図と役所 |

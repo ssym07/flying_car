@@ -22,6 +22,30 @@ interface RailTile {
   p?: PortalRecord[];
 }
 
+/** 線路の高さを引く表の格子の大きさ (m) */
+const TRACK_CELL = 16;
+
+/** 線路の中心線の線分を、線分にかかる格子（まわり 3m まで）に入れる */
+function addTrackSegments(cells: Map<string, number[]>, pts: THREE.Vector3[]): void {
+  const pad = 3;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const x0 = Math.floor((Math.min(a.x, b.x) - pad) / TRACK_CELL);
+    const x1 = Math.floor((Math.max(a.x, b.x) + pad) / TRACK_CELL);
+    const z0 = Math.floor((Math.min(a.z, b.z) - pad) / TRACK_CELL);
+    const z1 = Math.floor((Math.max(a.z, b.z) + pad) / TRACK_CELL);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cz = z0; cz <= z1; cz++) {
+        const key = `${cx},${cz}`;
+        let list = cells.get(key);
+        if (!list) cells.set(key, (list = []));
+        list.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+    }
+  }
+}
+
 /** 道床の画像1枚が表す長さ (m)。枕木 4 本ぶん */
 const TEXTURE_LENGTH_M = 2.4;
 
@@ -33,6 +57,11 @@ const TEXTURE_LENGTH_M = 2.4;
 export class RailNetwork implements ChunkListener {
   readonly group = new THREE.Group();
   private readonly tiles = new Map<string, THREE.Group | 'loading'>();
+  /**
+   * 線路の中心線の高さを場所で引く表（電車を線路の上に乗せるため。src/world/Trains.ts）。
+   * タイル → 格子（TRACK_CELL m 四方）→ 線分 [ax, ay, az, bx, by, bz, ...]（ay・by は道床の上面の高さ）
+   */
+  private readonly trackGrid = new Map<string, Map<string, number[]>>();
   /** 均した地面（smoothGround）の格子点の平均。タイルを作る間だけ使い回す（読込前のチャンクの値を残さないよう、毎回作り直す） */
   private smoothCache = new Map<string, number | null>();
   private readonly trackMaterials: Record<'narrow' | 'standard', THREE.MeshStandardMaterial> = {
@@ -91,6 +120,7 @@ export class RailNetwork implements ChunkListener {
     this.terrain.removeCarve(`rail-portal:${key}`);
     this.terrain.removeCarve(`rail-grade:${key}`);
     this.terrain.removeTrench(`rail:${key}`);
+    this.trackGrid.delete(key);
     if (!tile || tile === 'loading') return;
     this.group.remove(tile);
     tile.traverse((obj) => {
@@ -116,6 +146,7 @@ export class RailNetwork implements ChunkListener {
     const stationBase = (data.s ?? []).map(([lat, lon, cut]) =>
       stationGround(this.terrain, lat / 1e6, lon / 1e6, cut === 1, RAILWAYS.smoothRadius, RAILWAYS.cutFloorRadius),
     );
+    const trackCells = new Map<string, number[]>();
     for (const [gauge, coords, offsets, cut, stations, weights] of data.t) {
       const station = stations && weights ? { stations, weights, base: stationBase } : null;
       const built = this.buildTrack(
@@ -130,6 +161,7 @@ export class RailNetwork implements ChunkListener {
         gauge === 0 ? monorail : null,
       );
       if (!built) continue;
+      addTrackSegments(trackCells, built.pts);
       // 柵は地上の線路（掘割・モノレールを除く）の外側に立てる
       if (cut !== 1 && gauge > 0) fenceTracks.push(built);
       const floor = (p: THREE.Vector3) => p.clone().setY(p.y - RAILWAYS.lift - RAILWAYS.cutDepthBelow);
@@ -215,6 +247,7 @@ export class RailNetwork implements ChunkListener {
     if (approachCuts.length > 0) {
       this.terrain.addCarve(`rail-portal:${key}`, approachCuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
     }
+    this.trackGrid.set(key, trackCells);
     const fence = this.buildFences(fenceTracks, noPier);
     const group = new THREE.Group();
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
@@ -229,6 +262,36 @@ export class RailNetwork implements ChunkListener {
     add(lining, this.liningMaterial);
     add(fence, this.fenceMaterial);
     return group;
+  }
+
+  /**
+   * (x, z)（ローカル座標）の近く（near m 以内）を通る線路の中心線の、道床の上面の高さ。近くに線路が無い（トンネルの中・
+   * まだ読んでいないタイル）なら null。並んだ線路は高さがほぼ同じなので、いちばん近い線分のものを使う
+   */
+  trackHeightAt(x: number, z: number, near = 2.5): number | null {
+    const key = `${Math.floor(x / TRACK_CELL)},${Math.floor(z / TRACK_CELL)}`;
+    let best = near * near;
+    let y: number | null = null;
+    for (const cells of this.trackGrid.values()) {
+      const segs = cells.get(key);
+      if (!segs) continue;
+      for (let i = 0; i < segs.length; i += 6) {
+        const ax = segs[i];
+        const az = segs[i + 2];
+        const dx = segs[i + 3] - ax;
+        const dz = segs[i + 5] - az;
+        const len2 = dx * dx + dz * dz || 1e-9;
+        const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2));
+        const ex = ax + dx * t - x;
+        const ez = az + dz * t - z;
+        const d2 = ex * ex + ez * ez;
+        if (d2 < best) {
+          best = d2;
+          y = segs[i + 1] + (segs[i + 4] - segs[i + 1]) * t;
+        }
+      }
+    }
+    return y;
   }
 
   /**

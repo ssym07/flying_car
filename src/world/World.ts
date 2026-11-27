@@ -4,6 +4,7 @@ import { REGION, dataUrl } from '../core/region';
 import { WARDS } from '../data/wards';
 import { Airports } from './Airports';
 import { Atmosphere } from './Atmosphere';
+import { Trains } from './Trains';
 import { setFacadeNight } from './facade';
 import { timeOfDay } from '../core/timeOfDay';
 import { computeEcefToLocal } from './geoFrame';
@@ -45,6 +46,8 @@ export class World {
   /** 空を流れる車の列 */
   readonly skyTraffic: SkyTraffic;
   readonly airports: Airports;
+  /** 線路の上を走る電車 */
+  readonly trains: Trains;
   readonly terrain = new Terrain();
   /** 当たり判定の対象 */
   readonly colliders: THREE.Object3D[];
@@ -100,6 +103,7 @@ export class World {
     );
     this.roads = new RoadNetwork(this.terrain);
     this.rails = new RailNetwork(this.terrain);
+    this.trains = new Trains(this.terrain, this.rails);
     this.expressways = new ExpresswayNetwork(this.terrain);
     this.expresswaySigns = new ExpresswaySigns(this.terrain, this.expressways.group);
     this.stationRoofs = new StationRoofs(this.terrain);
@@ -118,6 +122,7 @@ export class World {
       this.landmarks.group,
       this.skyTraffic.group,
       this.airports.group,
+      this.trains.group,
     );
     this.colliders = [
       ...this.layers.map((l) => l.group),
@@ -183,6 +188,9 @@ export class World {
     this.atmosphere.update(this.camera, dt);
     setFacadeNight(this.atmosphere.night, timeOfDay.minutes);
     this.expressways.setNight(this.atmosphere.night);
+    this.stationRoofs.setNight(this.atmosphere.night);
+    this.landmarks.setNight(this.atmosphere.night);
+    this.trains.update(this.camera, dt, this.atmosphere.night, timeOfDay.minutes);
     this.skyTraffic.update(this.camera.position, dt);
     this.labels.update(this.camera, dt);
     this.expresswaySigns.update(this.camera, dt);
