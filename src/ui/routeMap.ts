@@ -188,6 +188,8 @@ export class RouteMap {
     this.button.classList.toggle('active', open);
     if (open) {
       this.onOpen();
+      // 覚えている大きさを開くたびに当て直す（作った時は上のボタンがまだ無く、広げられる幅を決められないので）
+      this.restoreSize();
       this.centerOnHere();
     }
   }
@@ -199,8 +201,11 @@ export class RouteMap {
   /** 窓の大きさを変える（右上は動かさない）。覚えていない間は CSS の大きさのまま */
   private setSize(width: number, height: number): void {
     const top = this.panel.offsetTop || 132;
-    const maxHeight = Math.max(MIN_SIZE.height, Math.min(MINIMAP.maxHeight, window.innerHeight - top - 16));
-    const maxWidth = Math.max(MIN_SIZE.width, Math.min(MINIMAP.maxWidth, window.innerWidth - 32));
+    const maxHeight = Math.max(MIN_SIZE.height, window.innerHeight - top - 16);
+    // 幅は、左の端が上の「ピン」ボタンの左の端に来るまで（右の端は画面の右から 16px で動かない）
+    const pin = document.querySelector('.pin-toggle')?.getBoundingClientRect();
+    const right = window.innerWidth - 16;
+    const maxWidth = Math.max(MIN_SIZE.width, pin && pin.left > 0 ? right - pin.left : Math.min(MINIMAP.maxWidth, window.innerWidth - 32));
     this.panel.style.width = `${Math.round(Math.min(maxWidth, Math.max(MIN_SIZE.width, width)))}px`;
     this.panel.style.height = `${Math.round(Math.min(maxHeight, Math.max(MIN_SIZE.height, height)))}px`;
     this.dirty = true;

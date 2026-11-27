@@ -842,11 +842,17 @@ export class Minimap {
     this.menuCleanup = null;
   }
 
-  /** 大きさを変える（CSS px。最小 MINIMAP.size、最大は路線図の大きさと画面に収まる高さ） */
+  /**
+   * 大きさを変える（CSS px）。最小 MINIMAP.size。幅は上の時刻のバーの「今」ボタンの右の端まで（バーが無ければ MINIMAP.maxWidth）、
+   * 高さは画面の下の余白まで
+   */
   private setSize(width: number, height: number): void {
     const top = this.root.offsetTop || MINIMAP.top;
-    const maxHeight = Math.max(MINIMAP.size, Math.min(MINIMAP.maxHeight, window.innerHeight - top - MINIMAP.bottomMargin));
-    this.width = Math.round(Math.min(MINIMAP.maxWidth, Math.max(MINIMAP.size, width)));
+    const maxHeight = Math.max(MINIMAP.size, window.innerHeight - top - MINIMAP.bottomMargin);
+    const now = document.querySelector('.time-now')?.getBoundingClientRect();
+    const left = this.root.getBoundingClientRect().left || 16;
+    const maxWidth = Math.max(MINIMAP.size, now && now.right > 0 ? now.right - left : MINIMAP.maxWidth);
+    this.width = Math.round(Math.min(maxWidth, Math.max(MINIMAP.size, width)));
     this.height = Math.round(Math.min(maxHeight, Math.max(MINIMAP.size, height)));
     this.root.style.width = `${this.width}px`;
     this.root.style.height = `${this.height}px`;
