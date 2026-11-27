@@ -52,7 +52,10 @@ class Route {
     kinds: typeof TRAINS.kinds,
   ) {
     this.color = new THREE.Color(data.c);
-    this.kind = kinds[data.k] ?? kinds.train;
+    const kind = kinds[data.k] ?? kinds.train;
+    // 路線ごとの編成（両数・1 両の長さ）
+    const formation = TRAINS.formations.find((f) => new RegExp(f.match).test(data.n));
+    this.kind = formation ? { ...kind, cars: formation.cars, length: formation.length ?? kind.length } : kind;
     this.loop = data.loop === 1;
     const jr = /^JR|山手線|上野東京ライン|湘南新宿ライン/.test(data.n);
     this.headway = this.kind.headway * (jr ? TRAINS.jrHeadway : 1);

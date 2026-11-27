@@ -22,6 +22,69 @@ interface RailTile {
   p?: PortalRecord[];
 }
 
+/**
+ * 線路の高さをなめらかにする：まわり ±MEDIAN_M m の中央値で短い段・跳ねを消してから、σ = GAUSS_M m でぼかす。
+ * 両端から END_M m は元の高さへ戻し（ほかの線路とつながる所がずれないように）、駅の中も元の高さを使う
+ */
+const MEDIAN_M = 12;
+const GAUSS_M = 8;
+const END_M = 16;
+export function smoothTrackHeights(h: number[], s: number[], station: number[]): number[] {
+  const n = h.length;
+  if (n < 3) return h;
+  const median = h.map((_, i) => {
+    let a = i;
+    let b = i;
+    while (a > 0 && s[i] - s[a - 1] <= MEDIAN_M) a--;
+    while (b < n - 1 && s[b + 1] - s[i] <= MEDIAN_M) b++;
+    const w = h.slice(a, b + 1).sort((x, y) => x - y);
+    return w[w.length >> 1];
+  });
+  const total = s[n - 1];
+  return h.map((orig, i) => {
+    let sum = 0;
+    let ws = 0;
+    for (let j = i; j >= 0 && s[i] - s[j] <= GAUSS_M * 3; j--) {
+      const w = Math.exp(-((s[i] - s[j]) ** 2) / (2 * GAUSS_M * GAUSS_M));
+      sum += median[j] * w;
+      ws += w;
+    }
+    for (let j = i + 1; j < n && s[j] - s[i] <= GAUSS_M * 3; j++) {
+      const w = Math.exp(-((s[j] - s[i]) ** 2) / (2 * GAUSS_M * GAUSS_M));
+      sum += median[j] * w;
+      ws += w;
+    }
+    const smooth = sum / ws;
+    const end = Math.min(s[i], total - s[i]);
+    const keep = Math.max(1 - THREE.MathUtils.smoothstep(end, 0, END_M), station[i]);
+    return THREE.MathUtils.lerp(smooth, orig, keep);
+  });
+}
+
+/**
+ * 両端の高さを ends にそろえる。ずれは両端から ALIGN_M m（短い線路は全体）でなめらかに 0 へ戻す
+ */
+const ALIGN_M = 40;
+export function alignEnds(h: number[], s: number[], ends: [number | null, number | null]): number[] {
+  const n = h.length;
+  const [e0, e1] = ends;
+  if (n < 2 || (e0 === null && e1 === null)) return h;
+  const total = s[n - 1] || 1;
+  const d0 = e0 === null ? 0 : e0 - h[0];
+  const d1 = e1 === null ? 0 : e1 - h[n - 1];
+  // 短い線路（2 × ALIGN_M より短い）は、両端の間をまっすぐ補間
+  const R = Math.min(ALIGN_M, total / 2);
+  return h.map((v, i) => {
+    if (total <= ALIGN_M * 2) {
+      const t = s[i] / total;
+      return v + d0 * (1 - t) + d1 * t;
+    }
+    const w0 = 1 - THREE.MathUtils.smoothstep(s[i], 0, R);
+    const w1 = 1 - THREE.MathUtils.smoothstep(total - s[i], 0, R);
+    return v + d0 * w0 + d1 * w1;
+  });
+}
+
 /** 線路の高さを引く表の格子の大きさ (m) */
 const TRACK_CELL = 16;
 
@@ -62,6 +125,17 @@ export class RailNetwork implements ChunkListener {
    * タイル → 格子（TRACK_CELL m 四方）→ 線分 [ax, ay, az, bx, by, bz, ...]（ay・by は道床の上面の高さ）
    */
   private readonly trackGrid = new Map<string, Map<string, number[]>>();
+  /** 読んだタイルのデータ（隣の地形が後から読まれた時に作り直すため） */
+  private readonly tileData = new Map<string, RailTile>();
+  /** 作った時に、まだ読んでいない隣の地形の高さを仮の値で埋めたタイル（隣が読まれたら作り直す） */
+  private readonly incomplete = new Set<string>();
+  /**
+   * 線路の端の高さ（点 → 高さと、それを決めたタイル）。タイルの境目で切れた線路は、先に作ったタイルの高さに
+   * あとから作るタイルを合わせる（タイルごとに高さを決めると、境目で数 m 食い違うことがある）
+   */
+  private readonly endHeights = new Map<string, Map<string, number>>();
+  /** build の間だけ：地形の高さの取れない点があったか */
+  private hadGaps = false;
   /** 均した地面（smoothGround）の格子点の平均。タイルを作る間だけ使い回す（読込前のチャンクの値を残さないよう、毎回作り直す） */
   private smoothCache = new Map<string, number | null>();
   private readonly trackMaterials: Record<'narrow' | 'standard', THREE.MeshStandardMaterial> = {
@@ -92,6 +166,13 @@ export class RailNetwork implements ChunkListener {
 
   onChunkAdded(x: number, y: number): void {
     const key = `${x}/${y}`;
+    // 隣のタイルで、この地形が読まれていない間に作った線路を作り直す（仮の高さのままだと線路が段になる）
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const k = `${x + dx}/${y + dy}`;
+        if ((dx !== 0 || dy !== 0) && this.incomplete.has(k)) this.rebuild(k);
+      }
+    }
     if (this.tiles.has(key)) return;
     this.tiles.set(key, 'loading');
     const url = `${DATA_BASE}${RAILWAYS.tilePath.replace('{x}', `${x}`).replace('{y}', `${y}`)}`;
@@ -102,6 +183,7 @@ export class RailNetwork implements ChunkListener {
       )
       .then((data) => {
         if (this.tiles.get(key) !== 'loading') return;
+        if (data) this.tileData.set(key, data);
         const group = data ? this.build(data, key) : new THREE.Group();
         this.tiles.set(key, group);
         this.group.add(group);
@@ -116,11 +198,33 @@ export class RailNetwork implements ChunkListener {
     const key = `${x}/${y}`;
     const tile = this.tiles.get(key);
     this.tiles.delete(key);
+    this.tileData.delete(key);
+    this.incomplete.delete(key);
+    this.dropTile(key, tile);
+  }
+
+  /** タイルの線路を作り直す（隣の地形が読まれた時） */
+  private rebuild(key: string): void {
+    const data = this.tileData.get(key);
+    const old = this.tiles.get(key);
+    if (!data || !old || old === 'loading') return;
+    this.dropTile(key, old);
+    const group = this.build(data, key);
+    this.tiles.set(key, group);
+    this.group.add(group);
+  }
+
+  /** タイルの線路と、地形の削り・線路の高さの表を捨てる */
+  private dropTile(key: string, tile: THREE.Group | 'loading' | undefined): void {
     this.terrain.removeCarve(`rail:${key}`);
     this.terrain.removeCarve(`rail-portal:${key}`);
     this.terrain.removeCarve(`rail-grade:${key}`);
     this.terrain.removeTrench(`rail:${key}`);
     this.trackGrid.delete(key);
+    for (const [k, byTile] of this.endHeights) {
+      byTile.delete(key);
+      if (byTile.size === 0) this.endHeights.delete(k);
+    }
     if (!tile || tile === 'loading') return;
     this.group.remove(tile);
     tile.traverse((obj) => {
@@ -130,6 +234,7 @@ export class RailNetwork implements ChunkListener {
 
   private build(data: RailTile, key: string): THREE.Group {
     this.smoothCache = new Map();
+    this.hadGaps = false;
     const narrow = new MeshBuilder();
     const standard = new MeshBuilder();
     const viaduct = new MeshBuilder();
@@ -147,10 +252,33 @@ export class RailNetwork implements ChunkListener {
       stationGround(this.terrain, lat / 1e6, lon / 1e6, cut === 1, RAILWAYS.smoothRadius, RAILWAYS.cutFloorRadius),
     );
     const trackCells = new Map<string, number[]>();
-    for (const [gauge, coords, offsets, cut, stations, weights] of data.t) {
+    // つながる線路の端の高さをそろえる：まず全部の線路の高さを出し、同じ点（端・途中の点）の高さを集める。
+    // 端の高さは、その点を通るほかの線路の高さとの平均にする（途中の点は動かさず、端だけをそこへ寄せる）
+    const decoded = data.t.map(([, coords]) => decode(coords));
+    const pointKey = ([lat, lon]: [number, number]) => `${Math.round(lat * 1e6)},${Math.round(lon * 1e6)}`;
+    const atPoint = new Map<string, number[]>();
+    data.t.forEach(([, , offsets, cut, stations, weights], k) => {
+      const station = stations && weights ? { stations, weights, base: stationBase } : null;
+      const h = this.trackHeights(decoded[k], offsets, cut === 1, station);
+      if (!h) return;
+      decoded[k].forEach((p, i) => {
+        const key = pointKey(p);
+        let list = atPoint.get(key);
+        if (!list) atPoint.set(key, (list = []));
+        list.push(h.heights[h.pointSample[i]]);
+      });
+    });
+    const endTarget = (p: [number, number]): number | null => {
+      // 隣のタイルが決めた高さがあれば、それに合わせる
+      for (const [tile, h] of this.endHeights.get(pointKey(p)) ?? []) if (tile !== key) return h;
+      const list = atPoint.get(pointKey(p));
+      return list && list.length > 1 ? list.reduce((a, b) => a + b, 0) / list.length : null;
+    };
+    for (const [k, [gauge, , offsets, cut, stations, weights]] of data.t.entries()) {
+      const coords = decoded[k];
       const station = stations && weights ? { stations, weights, base: stationBase } : null;
       const built = this.buildTrack(
-        decode(coords),
+        coords,
         offsets,
         cut === 1,
         station,
@@ -159,9 +287,17 @@ export class RailNetwork implements ChunkListener {
         viaduct,
         // 軌間 0 は跨座式のモノレール（レールの無いコンクリートの桁）
         gauge === 0 ? monorail : null,
+        [endTarget(coords[0]), endTarget(coords[coords.length - 1])],
       );
       if (!built) continue;
       addTrackSegments(trackCells, built.pts);
+      // 端の高さを覚える（タイルを作り直した時も、隣が覚えている高さに合わせられるよう、どちらのタイルも覚える）
+      for (const [p, h] of [[coords[0], built.endHeights[0]], [coords[coords.length - 1], built.endHeights[1]]] as const) {
+        const k2 = pointKey(p);
+        let byTile = this.endHeights.get(k2);
+        if (!byTile) this.endHeights.set(k2, (byTile = new Map()));
+        byTile.set(key, h);
+      }
       // 柵は地上の線路（掘割・モノレールを除く）の外側に立てる
       if (cut !== 1 && gauge > 0) fenceTracks.push(built);
       const floor = (p: THREE.Vector3) => p.clone().setY(p.y - RAILWAYS.lift - RAILWAYS.cutDepthBelow);
@@ -248,6 +384,8 @@ export class RailNetwork implements ChunkListener {
       this.terrain.addCarve(`rail-portal:${key}`, approachCuts, RAILWAYS.cutWidth, RAILWAYS.cutSlope);
     }
     this.trackGrid.set(key, trackCells);
+    if (this.hadGaps) this.incomplete.add(key);
+    else this.incomplete.delete(key);
     const fence = this.buildFences(fenceTracks, noPier);
     const group = new THREE.Group();
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
@@ -375,16 +513,26 @@ export class RailNetwork implements ChunkListener {
    * 高架の所は、地形の細かい凹凸を均した地面を基準にして、上面をなだらかにする。
    * 駅の中は駅の地面（station.base）を基準にし、駅の外へは station.weights の割合で地形に戻す
    */
-  private buildTrack(
+  /**
+   * 線路の点の高さ（道床の上面、ローカル座標の y を作るための標高）。細かく区切った点・中心線に沿った距離・地面からの高さ・
+   * 地面・駅の地面に合わせる割合と、元の点ごとの細かく区切った点の番号も返す。
+   * ends（両端の高さ）を渡すと、その高さになるよう、両端から線路に沿ってなめらかに寄せる
+   */
+  private trackHeights(
     points: Array<[number, number]>,
     offsets: number[],
     cut: boolean,
     station: { stations: number[]; weights: number[]; base: Array<number | null> } | null,
-    noPier: ReadonlyArray<readonly [number, number, number]>,
-    track: MeshBuilder,
-    viaduct: MeshBuilder,
-    monorail: MeshBuilder | null,
-  ): { pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[]; inStation: boolean[] } | null {
+    ends: [number | null, number | null] = [null, null],
+  ): {
+    samples: Array<[number, number]>;
+    s: number[];
+    lift: number[];
+    ground: number[];
+    stationWeight: number[];
+    heights: number[];
+    pointSample: number[];
+  } | null {
     // 細かく区切った点と、中心線に沿った距離 s、地面からの高さ
     const samples: Array<[number, number]> = [];
     const s: number[] = [];
@@ -396,6 +544,8 @@ export class RailNetwork implements ChunkListener {
     };
     const stationBase: Array<number | null> = [];
     const stationWeight: number[] = [];
+    /** 元の点ごとの、細かく区切った点の番号 */
+    const pointSample: number[] = [];
     for (let i = 0; i < points.length; i++) {
       const [lat, lon] = points[i];
       const off = offsets[i] / 10;
@@ -406,6 +556,7 @@ export class RailNetwork implements ChunkListener {
         lift.push(off);
         stationBase.push(base);
         stationWeight.push(base === null ? 0 : weight);
+        pointSample.push(0);
         continue;
       }
       const [plat, plon] = points[i - 1];
@@ -425,6 +576,7 @@ export class RailNetwork implements ChunkListener {
           b === null ? 0 : (base === null ? 0 : weight) * t + (pbase === null ? 0 : pweight) * (1 - t),
         );
       }
+      pointSample.push(samples.length - 1);
     }
     if (samples.length < 2) return null;
 
@@ -432,14 +584,15 @@ export class RailNetwork implements ChunkListener {
     const raw = cut
       ? cutFloor(this.terrain, samples, s, RAILWAYS.cutFloorRadius)
       : samples.map(([lat, lon]) => this.terrain.surfaceHeightAt(lat, lon));
-    // 高さの取れない所（まだ読んでいない隣のチャンク）は、線の上の近い所の高さ
+    // 高さの取れない所（まだ読んでいない隣のチャンク）は、線の上の近い所の高さ（隣が読まれたらタイルごと作り直す）
+    if (raw.some((h) => h === null)) this.hadGaps = true;
     const ground = fillGaps(raw) ?? raw.map(() => 0);
     // 均した地面：場所だけで決まる平均（周りの格子点の地形の平均）にして、隣を並んで走る線路と同じ高さにする。
     // 地上の線路もこの高さに置き、地形の細かい凸凹を拾わないようにする（まわりの地形は Terrain.addCarve で線路に合わせる）
-    const smooth =
-      fillGaps(samples.map(([lat, lon]) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius, this.smoothCache))) ??
-      ground;
-    const heights = ground.map((g, i) => {
+    const smoothRaw = samples.map(([lat, lon]) => smoothGround(this.terrain, lat, lon, RAILWAYS.smoothRadius, this.smoothCache));
+    if (smoothRaw.some((h) => h === null)) this.hadGaps = true;
+    const smooth = fillGaps(smoothRaw) ?? ground;
+    const rawHeights = ground.map((g, i) => {
       // 掘割は掘割の底、それ以外は均した地面（掘割でも高架ほど均した地面に寄せる）
       let base = cut ? THREE.MathUtils.lerp(g, smooth[i], THREE.MathUtils.clamp(lift[i] / 2, 0, 1)) : smooth[i];
       // 駅の近くは駅の地面に寄せる
@@ -450,6 +603,28 @@ export class RailNetwork implements ChunkListener {
         lift[i] < 0 ? base + lift[i] : Math.max(base + lift[i], WATER.surfaceHeight + RAILWAYS.waterClearance);
       return THREE.MathUtils.lerp(overWater, base + lift[i], stationWeight[i]) + RAILWAYS.lift;
     });
+    // 線路に沿って、短い段や V 字の跳ね（掘割の底とならした地面の行き来・元データの高さの揺れ）を取り除く。
+    // 両端（ほかの線路とつながる所）と駅の中（ホームと高さをそろえる）は元の高さのまま。そのあと両端をつながる線路とそろえる
+    const smoothed = smoothTrackHeights(rawHeights, s, stationWeight);
+    const heights = alignEnds(smoothed, s, ends);
+    return { samples, s, lift, ground, stationWeight, heights, pointSample };
+  }
+
+  private buildTrack(
+    points: Array<[number, number]>,
+    offsets: number[],
+    cut: boolean,
+    station: { stations: number[]; weights: number[]; base: Array<number | null> } | null,
+    noPier: ReadonlyArray<readonly [number, number, number]>,
+    track: MeshBuilder,
+    viaduct: MeshBuilder,
+    monorail: MeshBuilder | null,
+    /** 両端の高さ（つながる線路とそろえた値。null ならそのまま） */
+    ends: [number | null, number | null] = [null, null],
+  ): { pts: THREE.Vector3[]; lift: number[]; sides: THREE.Vector3[]; inStation: boolean[]; endHeights: [number, number] } | null {
+    const h = this.trackHeights(points, offsets, cut, station, ends);
+    if (!h) return null;
+    const { samples, s, lift, ground, stationWeight, heights } = h;
     const pts = samples.map(([lat, lon], i) => this.terrain.toLocal(lat, lon, heights[i]));
     const inStation = stationWeight.map((w) => w > 0);
     const elevated = lift.map((l) => l > RAILWAYS.elevatedFrom);
@@ -470,7 +645,7 @@ export class RailNetwork implements ChunkListener {
         .setY(pts[i].y + dy);
     if (monorail) {
       this.buildMonorailBeam(monorail, samples, s, lift, ground, pts, sides, at, noPier);
-      return { pts, lift, sides, inStation };
+      return { pts, lift, sides, inStation, endHeights: [heights[0], heights[heights.length - 1]] };
     }
 
     // 道床（u：幅方向 0..1、v：枕木の繰り返し）
@@ -482,7 +657,7 @@ export class RailNetwork implements ChunkListener {
       if (prev) track.quad(prev[0], prev[1], a, b);
       prev = [a, b];
     }
-    if (!elevated.some(Boolean)) return { pts, lift, sides, inStation };
+    if (!elevated.some(Boolean)) return { pts, lift, sides, inStation, endHeights: [heights[0], heights[heights.length - 1]] };
 
     // 高架：側壁・桁の側面・底面（高架の所だけ）
     const edge = half + RAILWAYS.viaductShoulder;
@@ -555,7 +730,7 @@ export class RailNetwork implements ChunkListener {
         viaduct.quad(a, b, c, d);
       }
     }
-    return { pts, lift, sides, inStation };
+    return { pts, lift, sides, inStation, endHeights: [heights[0], heights[heights.length - 1]] };
   }
 
   /**
