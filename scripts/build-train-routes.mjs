@@ -128,7 +128,7 @@ nodeLat.forEach((lat, i) => {
 });
 
 // ---- 路線名と線路の名前の照合 ----
-const STRIP = /JR|ＪＲ|東京メトロ|都営|東急電鉄|東急|京王電鉄|小田急電鉄|西武鉄道|東武鉄道|京成電鉄|京浜急行電鉄|相模鉄道|横浜市営地下鉄|電鉄|鉄道|本線|各駅|線|\(.*?\)|（.*?）|[\s・]/g;
+const STRIP = /JR|ＪＲ|東京メトロ|都営|東急電鉄|東急|京王電鉄|小田急電鉄|西武鉄道|東武鉄道|京成電鉄|京浜急行電鉄|相模鉄道|横浜市営地下鉄|Osaka Metro|大阪市営地下鉄|Subway|神戸市営地下鉄|京都市営地下鉄|近畿日本鉄道|阪急電鉄|阪神電気鉄道|南海電気鉄道|京阪電気鉄道|山陽電気鉄道|電鉄|鉄道|本線|各駅|線|\(.*?\)|（.*?）|[\s・]/g;
 const bigrams = (s) => {
   const t = s.replace(STRIP, '');
   const out = new Set();
@@ -277,9 +277,9 @@ function simplify(pts) {
 function kindOf(name, monorailShare) {
   if (/新幹線/.test(name)) return 'shinkansen';
   if (monorailShare > 0.5 || /モノレール/.test(name)) return 'monorail';
-  if (/ゆりかもめ|シーサイドライン|ニューシャトル|伊奈線|ディズニーリゾートライン|山口線|舎人ライナー|ニュートラム|ポートライナー|六甲ライナー/.test(name)) return 'agt';
+  if (/ゆりかもめ|シーサイドライン|ニューシャトル|伊奈線|ディズニーリゾートライン|山口線|舎人ライナー|ニュートラム|南港ポートタウン線|ポートライナー|六甲ライナー/.test(name)) return 'agt';
   if (/世田谷線|荒川線|江ノ島電鉄|江ノ電|阪堺|嵐電|市電/.test(name)) return 'tram';
-  if (/メトロ|都営|地下鉄|市営/.test(name)) return 'subway';
+  if (/メトロ|Metro|Subway|都営|地下鉄|市営/.test(name)) return 'subway';
   return 'train';
 }
 
@@ -418,7 +418,11 @@ const encode = (pts) => {
   return p;
 };
 
+/** 特急・観光列車（路線図に路線として入っていることがある）。各駅停車だけ走らせるので除く */
+const EXPRESS = /^(こうのとり|サンダーバード|まいづる|みずほ|はるか|くろしお|きのさき|はしだて|スーパーはくと|ひかり|のぞみ|さくら)$|観光/;
+
 for (const [name, color, ids] of route.lines) {
+  if (EXPRESS.test(name)) continue;
   const isMine = matcher(name);
   const loop = ids.length > 2 && ids[0] === ids[ids.length - 1];
   const stops = ids.map((i) => route.stations[i]);

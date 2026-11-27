@@ -42,6 +42,8 @@ export class Route {
   readonly departures: number[] = [];
   /** 駅の名前と、始発の駅を出てから着く・出るまでの秒 */
   readonly stops: Array<{ name: string; arrive: number; depart: number }> = [];
+  /** 車体の色（路線の塗り分け。無ければ種類の色） */
+  readonly body: number;
   /** 帯（色・下の端・高さ。車体の高さに対する割合） */
   readonly bands: Array<{ color: THREE.Color; at: number; h: number }>;
   private readonly lat: number[] = [];
@@ -90,6 +92,7 @@ export class Route {
       t += gap * 60;
     }
     const style = TRAINS.styles.find((st) => new RegExp(st.match).test(data.n)) ?? TRAINS.styles[TRAINS.styles.length - 1];
+    this.body = style.body ?? this.kind.body;
     this.bands = style.bands.slice(0, BAND_SLOTS).map(([c, at, h]) => ({ color: c === null ? this.color : new THREE.Color(c), at, h }));
     let lat = 0;
     let lon = 0;
@@ -508,7 +511,7 @@ export class Trains {
     const floor = TRAINS.floor;
     // 車体
     this.part(this.bodies, i, L, H, W, floor, 0);
-    this.bodies.setColorAt(i, this.color.set(K.body));
+    this.bodies.setColorAt(i, this.color.set(route.body));
     // 床下の機器（台車のあたりは空ける代わりに少し短く・細く）
     this.part(this.unders, i, L * 0.86, floor - 0.2, W * 0.82, 0.2, 0);
     // 屋根の冷房装置
