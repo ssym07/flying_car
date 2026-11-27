@@ -1354,85 +1354,90 @@ body {
   background: rgba(229, 57, 53, 0.3);
 }
 
-/* 時刻（速度・高度の並びの TIME の箱）。押すと上にスライダーが開く */
-.time-panel {
-  position: relative;
-  padding: 0;
-  pointer-events: auto;
-}
-
-.time-button {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.time-button .hud-value {
-  min-width: 4ch;
-}
-
-.time-panel:hover,
-.time-panel.open {
-  background: rgba(102, 204, 255, 0.35);
-}
-
-.time-pop {
+/* 時刻のバー：上の「地図」のボタンの右。▶、時刻、24 時間のスライダー、速さ、「今」 */
+.time-bar {
   position: absolute;
-  left: 0;
-  bottom: calc(100% + 8px);
-  width: 300px;
-  padding: 12px 14px 8px;
+  top: 48px;
+  left: 92px;
+  width: min(520px, calc(100vw - 92px - 680px));
+  min-width: 340px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 6px;
   border-radius: 8px;
   background: var(--panel);
   backdrop-filter: blur(6px);
+  pointer-events: auto;
+  font-variant-numeric: tabular-nums;
 }
 
-.time-pop[hidden] {
-  display: none;
-}
-
-.time-pop-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.time-pop-row input {
-  flex: 1;
-  accent-color: var(--accent);
-}
-
+.time-play,
 .time-now {
   flex: none;
-  white-space: nowrap;
   height: 28px;
-  padding: 0 12px;
+  min-width: 30px;
+  padding: 0 9px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.time-now:hover {
+.time-play:hover,
+.time-now:hover,
+.time-play.active {
   background: rgba(102, 204, 255, 0.35);
 }
 
-.time-pop-ticks {
+.time-value {
+  flex: none;
+  min-width: 3.2em;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.time-track {
+  flex: 1;
+  min-width: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.time-track input {
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.time-ticks {
   display: flex;
   justify-content: space-between;
-  margin: 2px 52px 0 2px;
-  font-size: 11px;
+  margin-top: -2px;
+  font-size: 9px;
+  line-height: 1;
   color: var(--fg-dim);
-  font-variant-numeric: tabular-nums;
+}
+
+.time-speed {
+  flex: none;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(10, 20, 35, 0.8);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }

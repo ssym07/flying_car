@@ -78,8 +78,7 @@ export class FlightScene implements GameScene {
 
     this.chase = new ChaseCamera(world.camera, this.collision, () => world.groundY);
     this.hud = new Hud(this.ctx.overlay);
-    this.timePanel = new TimePanel();
-    this.hud.addItem(this.timePanel.element);
+    this.timePanel = new TimePanel(this.ctx.overlay);
     this.instruments = new Instruments(this.ctx.overlay);
     this.lastYaw = this.vehicle.state.yaw;
     this.location = new LocationLabel(this.ctx.overlay);
@@ -213,6 +212,7 @@ export class FlightScene implements GameScene {
 
   update(dt: number): void {
     const { input } = this.ctx;
+    timeOfDay.tick(dt);
     if (input.consumePress(KEYS.pause)) {
       this.ctx.go.pause();
       return;

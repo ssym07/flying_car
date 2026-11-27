@@ -1,7 +1,8 @@
 /**
  * ゲームの中の時刻（日本時間）と、太陽・月の位置。
  *
- * - 開いた時は今の時刻・今日の日付。時間は流さず、画面の時刻の板（src/ui/timePanel.ts）やキーで動かす
+ * - 開いた時は今の時刻・今日の日付で、時間は止まっている。画面の上の時刻のバー（src/ui/timePanel.ts）で
+ *   再生すると speed（実際の 1 秒あたりのゲームの分）の速さで流れる。スライダーやキーでも動かせる
  * - 太陽の高さ・方位は、日付・時刻と地域の開始地点の緯度経度から計算する（NOAA の簡単な式。誤差は 1° 未満）
  * - 月は、太陽のほぼ反対側に置く（満ち欠けや本当の位置は追わない。夜の明かりと空の飾り）
  */
@@ -11,6 +12,13 @@ let minutes = nowMinutes();
 /** 太陽の計算に使う日付（今日。時刻は minutes で上書きする） */
 const today = new Date();
 const listeners = new Set<(minutes: number) => void>();
+/** 時間を流しているか、流す速さ（実際の 1 秒あたりのゲームの分。1/60 で実時間） */
+let playing = false;
+let speed = 1;
+
+function notify(): void {
+  for (const f of listeners) f(minutes);
+}
 
 function nowMinutes(): number {
   const d = new Date();
@@ -22,12 +30,32 @@ export const timeOfDay = {
   get minutes(): number {
     return minutes;
   },
-  /** 時刻を変える（範囲の外は 1 日でまわす） */
+  /** 時刻を変える（範囲の外は 1 日でまわす）。onChange は時刻・再生・速さのどれが変わっても呼ぶ */
   set(value: number): void {
     const next = ((value % 1440) + 1440) % 1440;
     if (next === minutes) return;
     minutes = next;
-    for (const f of listeners) f(minutes);
+    notify();
+  },
+  get playing(): boolean {
+    return playing;
+  },
+  set playing(value: boolean) {
+    if (value === playing) return;
+    playing = value;
+    notify();
+  },
+  get speed(): number {
+    return speed;
+  },
+  set speed(value: number) {
+    if (value === speed) return;
+    speed = value;
+    notify();
+  },
+  /** 毎フレーム呼ぶ（ポーズ中は呼ばない）。流している時だけ進める */
+  tick(dt: number): void {
+    if (playing && dt > 0) this.set(minutes + dt * speed);
   },
   /** 今の時刻に戻す */
   reset(): void {

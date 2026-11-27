@@ -31,11 +31,6 @@ export class Hud {
     this.aglEl.textContent = Math.round(agl).toString();
   }
 
-  /** 数値の箱の並びの最後（操作の説明の前）に箱を足す */
-  addItem(element: HTMLElement): void {
-    this.root.insertBefore(element, this.root.querySelector('.hud-help'));
-  }
-
   dispose(): void {
     this.root.remove();
   }
