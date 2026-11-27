@@ -34,6 +34,8 @@ export class Route {
   readonly direction: 0 | 1;
   /** 同じ名前の路線が何本かに分かれている時の、何本目か（行きと帰りは同じ番号） */
   piece = 0;
+  /** 種類（train・subway・shinkansen・monorail・agt・tram） */
+  readonly kindName: string;
   /** 環状の路線の向き：上から見て時計回りなら「外回り」、反時計回りなら「内回り」 */
   loopName = '';
   /** 始発の駅を出る時刻（運行日の 0 時からの秒、早い順） */
@@ -71,6 +73,7 @@ export class Route {
     this.loop = data.loop === 1;
     this.name = data.n;
     this.direction = data.d;
+    this.kindName = data.k;
     // 始発の駅を出る時刻：型の時間帯ごとの間隔で並べる。路線・向きごとに少しずらす（全部の路線が同時に出ないように）
     const category = TRAINS.categories.find((c) => new RegExp(c.match).test(data.n));
     const profileName =
@@ -333,25 +336,36 @@ export class Trains {
     return serviceTime(this.clock);
   }
 
-  /** ダイヤの板に出す路線（同じ名前・同じ本の行きと帰りの組）。時刻表を作ってから返す */
-  lines(): Array<{ key: string; name: string; color: string; loop: boolean; routes: Route[] }> {
-    const out = new Map<string, { key: string; name: string; color: string; loop: boolean; routes: Route[] }>();
+  /**
+   * ダイヤの板に出す路線。同じ名前の路線（範囲の都合で何本かに分かれたもの）は 1 つにまとめ、本（piece）ごとの行きと帰りを持つ。
+   * 駅が 2 つだけの短い支線は出さない。group は一覧の見出し（JR・地下鉄・私鉄・モノレールなど）。時刻表を作ってから返す
+   */
+  lines(): DiagramLine[] {
+    const out = new Map<string, DiagramLine & { pieceOf: Map<string, { go: Route; back: Route | null }> }>();
     for (const r of this.routes) {
       r.prepare(this.terrain);
       if (r.journey <= 0) continue;
-      const key = `${r.name}#${r.piece}`;
-      let line = out.get(key);
-      if (!line) out.set(key, (line = { key, name: r.name, color: `#${r.color.getHexString()}`, loop: r.loop, routes: [] }));
+      // 本線と支線をまとめる路線（TRAINS.diagramGroups）は、まとめた名前で 1 つに
+      const name = TRAINS.diagramGroups.find((gr) => new RegExp(gr.match).test(r.name))?.name ?? r.name;
+      let line = out.get(name);
+      if (!line) {
+        line = { key: name, name, color: `#${r.color.getHexString()}`, loop: r.loop, group: groupOf(r), routes: [], pieces: [], pieceOf: new Map() };
+        out.set(name, line);
+      }
       line.routes.push(r);
+      const pk = `${r.name}#${r.piece}`;
+      let piece = line.pieceOf.get(pk);
+      if (!piece) {
+        line.pieceOf.set(pk, (piece = { go: r, back: null }));
+        line.pieces.push(piece);
+      }
+      if (r.direction === 0) piece.go = r;
+      else piece.back = r;
     }
-    // 同じ名前が何本かある路線は、両端の駅の名前を付けて見分ける
-    const count = new Map<string, number>();
-    for (const l of out.values()) count.set(l.name, (count.get(l.name) ?? 0) + 1);
-    for (const l of out.values()) {
-      const r = l.routes.find((x) => x.direction === 0) ?? l.routes[0];
-      if ((count.get(l.name) ?? 0) > 1 && r.stops.length > 1) l.name = `${l.name}（${r.stops[0].name}〜${r.stops[r.stops.length - 1].name}）`;
-    }
-    return [...out.values()];
+    // 駅が 2 つだけの短い支線（まとめなかったもの）は出さない
+    return [...out.values()]
+      .map(({ pieceOf: _, ...l }) => l)
+      .filter((l) => l.pieces.reduce((a, p) => a + p.go.stops.length, 0) >= 3);
   }
 
   /**
@@ -542,6 +556,28 @@ export class Trains {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+
+/** ダイヤの板に出す路線（Trains.lines） */
+export interface DiagramLine {
+  key: string;
+  name: string;
+  color: string;
+  loop: boolean;
+  /** 一覧の見出し */
+  group: string;
+  /** 全部の向き・本 */
+  routes: Route[];
+  /** 本ごとの行き（駅の並びの順）と帰り */
+  pieces: Array<{ go: Route; back: Route | null }>;
+}
+
+/** 一覧の見出し：JR・地下鉄・私鉄・モノレール・新交通・路面電車 */
+function groupOf(r: Route): string {
+  if (/^JR|山手線|湘南新宿|上野東京|新幹線|川越線|相模線|京葉線/.test(r.name)) return 'JR';
+  if (r.kindName === 'subway' || /メトロ|都営|地下鉄/.test(r.name)) return '地下鉄';
+  if (r.kindName === 'monorail' || r.kindName === 'agt' || r.kindName === 'tram') return 'モノレール・新交通・路面電車';
+  return '私鉄';
+}
 /** 重なりを調べる格子の大きさ (m) */
 const OCC_CELL = 25;
 

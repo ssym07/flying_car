@@ -1,6 +1,7 @@
-import type { Route, Trains } from '../world/Trains';
+import type { DiagramLine as Line, Route, Trains } from '../world/Trains';
 
-type Line = ReturnType<Trains['lines']>[number];
+/** 一覧の見出しの順 */
+const GROUPS = ['JR', '地下鉄', '私鉄', 'モノレール・新交通・路面電車'];
 
 const STORAGE_KEY = 'sky-drive.diagram-line';
 /** 描き直す間隔（秒） */
@@ -103,7 +104,14 @@ export class DiagramPanel {
     if (!open) return;
     this.onOpen();
     this.lines = this.trains.lines().sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-    this.select.innerHTML = this.lines.map((l) => `<option value="${escapeAttr(l.key)}">${escapeHtml(l.name)}</option>`).join('');
+    // 一覧は見出し（JR・地下鉄・私鉄・モノレールなど）ごとにまとめる
+    this.select.innerHTML = GROUPS.map((group) => {
+      const items = this.lines.filter((l) => l.group === group);
+      if (items.length === 0) return '';
+      return `<optgroup label="${escapeAttr(group)}">${items
+        .map((l) => `<option value="${escapeAttr(l.key)}">${escapeHtml(l.name)}</option>`)
+        .join('')}</optgroup>`;
+    }).join('');
     let saved: string | null = null;
     try {
       saved = localStorage.getItem(STORAGE_KEY);
@@ -148,13 +156,25 @@ export class DiagramPanel {
       return;
     }
     const now = this.trains.now();
-    const go = line.routes.find((r) => r.direction === 0) ?? line.routes[0];
-    const n = go.stops.length;
-    // 駅の位置（0..1）：行きの向きの、始発の駅を出てからの時間に比例させる
-    const total = go.stops[n - 1].arrive || 1;
-    const frac = go.stops.map((s) => s.arrive / total);
-    const layout = line.loop ? loopLayout(go, frac, w, h) : straightLayout(frac, w, h);
-    this.rows = go.stops.map((s, i) => ({ name: s.name, x: layout.station(i).x, y: layout.station(i).y }));
+    // 本（範囲の都合で分かれた区間）ごとに、縦の線の上の範囲を割り当てる（間を少し空ける）。駅の位置は始発の駅からの時間に比例
+    const P = line.pieces;
+    const GAP = P.length > 1 ? 0.06 : 0;
+    const totals = P.map((p) => p.go.stops[p.go.stops.length - 1].arrive || 1);
+    const sum = totals.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    const ranges = P.map((_, i) => {
+      const a = acc;
+      const b = a + ((1 - GAP * (P.length - 1)) * totals[i]) / sum;
+      acc = b + GAP;
+      return [a, b] as [number, number];
+    });
+    const pieceFrac = P.map((p, i) => p.go.stops.map((st) => ranges[i][0] + (st.arrive / totals[i]) * (ranges[i][1] - ranges[i][0])));
+    const names = P.flatMap((p) => p.go.stops.map((st) => st.name));
+    const frac = pieceFrac.flat();
+    const n = frac.length;
+    const go = P[0].go;
+    const layout = line.loop ? loopLayout(go, frac, w, h) : straightLayout(frac, w, h, ranges);
+    this.rows = names.map((name, i) => ({ name, x: layout.station(i).x, y: layout.station(i).y }));
 
     // 路線（円か縦の線）
     g.strokeStyle = line.color;
@@ -167,18 +187,18 @@ export class DiagramPanel {
     // 駅：白い丸と名前（近すぎる名前は間引く。選んだ駅は必ず出す）
     g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
     const placed: Array<[number, number, number, number]> = [];
-    const order = go.stops.map((_, i) => i).sort((a, b) => Number(go.stops[b].name === this.station) - Number(go.stops[a].name === this.station));
+    const order = names.map((_, i) => i).sort((a, b) => Number(names[b] === this.station) - Number(names[a] === this.station));
     for (const i of order) {
       // 環状の終点（始発の駅と同じ）は描かない
       if (line.loop && i === n - 1) continue;
       const p = layout.station(i);
-      const selected = go.stops[i].name === this.station;
+      const selected = names[i] === this.station;
       g.fillStyle = selected ? '#ffd27a' : '#f4f1ea';
       g.beginPath();
       g.arc(p.x, p.y, selected ? 4.5 : 3, 0, Math.PI * 2);
       g.fill();
       const label = layout.label(i);
-      const tw = g.measureText(go.stops[i].name).width;
+      const tw = g.measureText(names[i]).width;
       const x0 = label.align === 'right' ? label.x - tw : label.align === 'center' ? label.x - tw / 2 : label.x;
       const box: [number, number, number, number] = [x0 - 1, label.y - 7, x0 + tw + 1, label.y + 7];
       if (!selected && placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
@@ -186,54 +206,56 @@ export class DiagramPanel {
       g.textAlign = label.align;
       g.textBaseline = 'middle';
       g.fillStyle = selected ? '#ffd27a' : 'rgba(255,255,255,0.8)';
-      g.fillText(go.stops[i].name, label.x, label.y);
+      g.fillText(names[i], label.x, label.y);
     }
 
     // 列車：行きは外側（縦の線なら右）、帰りは内側（左）。走っている列車はオレンジの三角（進む向き）、駅に止まっている列車は水色の丸
-    const running = line.routes.map(() => 0);
-    line.routes.forEach((r, ri) => {
-      const ys = r.direction === 0 ? frac : r.stops.map((_, k) => frac[n - 1 - k] ?? 0);
-      const side = r.direction === 0 ? 1 : -1;
-      for (const d of r.departures) {
-        const tau = now - d;
-        if (tau < 0 || tau >= r.journey) continue;
-        running[ri]++;
-        const { f, stopped } = positionY(r, tau, ys);
-        const p = layout.at(f, side * 11);
-        g.strokeStyle = 'rgba(0,0,0,0.7)';
-        g.lineWidth = 1.2;
-        if (stopped) {
-          g.fillStyle = STOPPED;
+    const running = [0, 0];
+    P.forEach((piece, pi) => {
+      for (const r of [piece.go, piece.back]) {
+        if (!r) continue;
+        const pf = pieceFrac[pi];
+        const ys = r.direction === 0 ? pf : r.stops.map((_, k) => pf[pf.length - 1 - k] ?? 0);
+        const side = r.direction === 0 ? 1 : -1;
+        for (const d of r.departures) {
+          const tau = now - d;
+          if (tau < 0 || tau >= r.journey) continue;
+          running[r.direction]++;
+          const { f, stopped } = positionY(r, tau, ys);
+          const p = layout.at(f, side * 11);
+          g.strokeStyle = 'rgba(0,0,0,0.7)';
+          g.lineWidth = 1.2;
+          if (stopped) {
+            g.fillStyle = STOPPED;
+            g.beginPath();
+            g.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+            g.fill();
+            g.stroke();
+            continue;
+          }
+          // 進む向き：少し先の位置との差
+          const q = layout.at(f + (r.direction === 0 ? 0.004 : -0.004), side * 11);
+          const a = Math.atan2(q.y - p.y, q.x - p.x);
+          g.save();
+          g.translate(p.x, p.y);
+          g.rotate(a);
+          g.fillStyle = MOVING;
           g.beginPath();
-          g.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+          g.moveTo(7, 0);
+          g.lineTo(-4.5, -5);
+          g.lineTo(-4.5, 5);
+          g.closePath();
           g.fill();
           g.stroke();
-          continue;
+          g.restore();
         }
-        // 進む向き：少し先の位置との差
-        const q = layout.at(f + (r.direction === 0 ? 0.004 : -0.004), side * 11);
-        const a = Math.atan2(q.y - p.y, q.x - p.x);
-        g.save();
-        g.translate(p.x, p.y);
-        g.rotate(a);
-        g.fillStyle = MOVING;
-        g.beginPath();
-        g.moveTo(7, 0);
-        g.lineTo(-4.5, -5);
-        g.lineTo(-4.5, 5);
-        g.closePath();
-        g.fill();
-        g.stroke();
-        g.restore();
       }
     });
 
-    // 凡例
-    const back = line.routes.find((r) => r.direction === 1);
+    // 凡例：色（走っている・止まっている）と、向き（外側・内側、右・左）
     g.font = `11px system-ui, -apple-system, 'Hiragino Sans', sans-serif`;
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    // 色：走っている（三角）・止まっている（丸）
     g.fillStyle = MOVING;
     g.beginPath();
     g.moveTo(17, 14);
@@ -248,26 +270,28 @@ export class DiagramPanel {
     g.fill();
     g.fillStyle = 'rgba(255,255,255,0.85)';
     g.fillText('駅に止まっている', 100, 8);
-    // 向き：外側・内側（右・左）
     g.fillStyle = 'rgba(255,255,255,0.7)';
-    g.fillText(`${line.loop ? '外側' : '右'}：${directionLabel(line, go)}`, 8, 26);
-    if (back) g.fillText(`${line.loop ? '内側' : '左'}：${directionLabel(line, back)}`, 8, 41);
+    g.fillText(`${line.loop ? '外側' : '右'}：${directionName(line, 0)}`, 8, 26);
+    if (P.some((p) => p.back)) g.fillText(`${line.loop ? '内側' : '左'}：${directionName(line, 1)}`, 8, 41);
 
     this.showStatus(line, now, running);
     this.showDepartures(line, now);
   }
 
-  /** 運行状況：走っている本数・今の運転間隔・始発と終電 */
+  /** 運行状況：向きごとの、走っている本数・今の運転間隔・始発と終電 */
   private showStatus(line: Line, now: number, running: number[]): void {
-    const parts = line.routes.map((r, i) => {
-      const deps = r.departures;
-      const label = directionLabel(line, r);
+    const parts = [0, 1].map((dir) => {
+      const rs = line.pieces.map((p) => (dir === 0 ? p.go : p.back)).filter((r): r is Route => r !== null);
+      if (rs.length === 0) return '';
+      const deps = rs[0].departures;
       const next = deps.find((d) => d > now);
       const prev = [...deps].reverse().find((d) => d <= now);
       const interval = next !== undefined && prev !== undefined ? Math.round((next - prev) / 6) / 10 : null;
-      return `<div><b>${escapeHtml(label)}</b>：運行中 ${running[i]} 本${
+      const first = Math.min(...rs.map((r) => r.departures[0]));
+      const last = Math.max(...rs.map((r) => r.departures[r.departures.length - 1]));
+      return `<div><b>${escapeHtml(directionName(line, dir))}</b>：運行中 ${running[dir]} 本${
         interval !== null ? `・約 ${interval} 分おき` : ''
-      }・始発 ${clock(deps[0])}・終電 ${clock(deps[deps.length - 1])}（${escapeHtml(r.stops[0].name)} 発）</div>`;
+      }・始発 ${clock(first)}・終電 ${clock(last)}</div>`;
     });
     const service = line.routes.some((r) => r.departures.some((d) => d <= now && now - d < r.journey));
     this.status.innerHTML = (service ? '' : '<div class="diagram-closed">今は運転していません（始発の前・終電の後）</div>') + parts.join('');
@@ -336,7 +360,7 @@ function loopLayout(go: Route, frac: number[], w: number, h: number): Layout {
 }
 
 /** ふつうの路線：縦の線（上が行きの始発の駅）。offset が正なら線の右 */
-function straightLayout(frac: number[], w: number, h: number): Layout {
+function straightLayout(frac: number[], w: number, h: number, ranges: Array<[number, number]>): Layout {
   const x = Math.round(w * 0.38);
   const top = 60;
   const bottom = h - 16;
@@ -345,9 +369,12 @@ function straightLayout(frac: number[], w: number, h: number): Layout {
     station: (i) => ({ x, y: y(frac[i]) }),
     label: (i) => ({ x: x + 22, y: y(frac[i]), align: 'left' }),
     at: (f, offset) => ({ x: x + offset, y: y(f) }),
+    // 分かれた区間ごとに線を引く（間は空ける）
     path: (g) => {
-      g.moveTo(x, top);
-      g.lineTo(x, bottom);
+      for (const [a, b] of ranges) {
+        g.moveTo(x, y(a));
+        g.lineTo(x, y(b));
+      }
     },
   };
 }
@@ -367,6 +394,15 @@ function positionY(r: Route, tau: number, ys: number[]): { f: number; stopped: b
     }
   }
   return { f: ys[st.length - 1], stopped: true };
+}
+
+/** 向き（0 = 行き、1 = 帰り）の名前。分かれた区間がある路線は「上から下へ」「下から上へ」 */
+function directionName(line: Line, dir: number): string {
+  const p = line.pieces[0];
+  const r = dir === 0 ? p.go : p.back;
+  if (!r) return '';
+  if (line.pieces.length > 1) return dir === 0 ? '上から下へ' : '下から上へ';
+  return directionLabel(line, r);
 }
 
 /** 向きの名前：終点の駅（環状は、駅 k の次の駅の向き） */
